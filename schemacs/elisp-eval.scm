@@ -82,7 +82,7 @@
   ;; when an exception occurs in the Emacs Lisp evaluator. The
   ;; procedure returned by this constructor should be used to
   ;; parameterize the `RAISE-ERROR-IMPL*` API from the
-  ;; `(GYPSUM ELISP-EVAL ENVIRONMENT)` library.
+  ;; `(SCHEMACS ELISP-EVAL ENVIRONMENT)` library.
   ;;
   ;; The implementation returned by this procedure takes an error
   ;; object to be raised, it then updates the error object with a
@@ -1286,7 +1286,7 @@
   ;; A procedure that returns a <SYM-TYPE> object or creates a new
   ;; interned symbol and returns it.
   ;;------------------------------------------------------------------
-  ;; TODO: place this API into (gypsum elisp-eval environment) instead?
+  ;; TODO: place this API into (schemacs elisp-eval environment) instead?
   (let ((st (*the-environment*)))
     (cond
      ((symbol? sym)

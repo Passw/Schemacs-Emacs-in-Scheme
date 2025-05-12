@@ -9,15 +9,15 @@
        (scheme complex)
        (scheme inexact)
        (scheme cxr)
-       (only (gypsum eval)
+       (only (schemacs eval)
              eval null-environment
              scheme-report-environment
              interaction-environment)
-       (gypsum editor)
-       (gypsum keymap)
-       (gypsum pretty)
-       (gypsum lens)
-       (only (gypsum backend guile-gi gtk3-init) launch-gui))
+       (schemacs editor)
+       (schemacs keymap)
+       (schemacs pretty)
+       (schemacs lens)
+       (only (schemacs backend guile-gi gtk3-init) launch-gui))
     ;; return the function used to launch the GUI
     launch-gui))
 

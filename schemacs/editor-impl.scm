@@ -118,7 +118,7 @@
 ;; -------------------------------------------------------------------------------------------------
 ;; These are global variables from the point of view of Emacs
 ;; Lisp. They are parameters in this library, and are parameterized by
-;; the GUI provider library. These APIs are exposed in the (GYPSUM
+;; the GUI provider library. These APIs are exposed in the (SCHEMACS
 ;; EDITOR) library, but as procedures which cannot modify the
 ;; parameter.
 

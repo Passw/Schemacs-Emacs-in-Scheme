@@ -1,5 +1,5 @@
-(define-library (gypsum editor)
-  ;; This is the base package for the Gypsum editor, which is a clone
+(define-library (schemacs editor)
+  ;; This is the base package for the Schemacs editor, which is a clone
   ;; of Emacs written in Scheme. The reference implementation is
   ;; written in Guile Scheme which comes with an Emacs Lisp compiler,
   ;; and therefore is not just a clone of the Emacs editor, but of the
@@ -12,23 +12,23 @@
     (only (scheme read) read)
     (only (scheme case-lambda) case-lambda)
     (only (srfi 28) format)
-    (only (gypsum hash-table)
+    (only (schemacs hash-table)
           make-hash-table  default-hash
           )
-    (only (gypsum lens)
+    (only (schemacs lens)
           view record-unit-lens lens-set update =>hash-key!)
-    (only (gypsum editor command)
+    (only (schemacs editor command)
           command-type? command-procedure
           new-command show-command apply-command)
-    (prefix (gypsum elisp-eval) gypsum:)
-    (prefix (gypsum keymap) km:)
-    (prefix (gypsum editor-impl) *impl/)
-    (only (gypsum editor-impl)
+    (prefix (schemacs elisp-eval) schemacs:)
+    (prefix (schemacs keymap) km:)
+    (prefix (schemacs editor-impl) *impl/)
+    (only (schemacs editor-impl)
           make<cell-factory>
           factor-make-cell
           factory-set!cell-value
           )
-    (only (gypsum pretty)
+    (only (schemacs pretty)
           pretty make<pp-state>
           print line-break bracketed qstr
           pp-state-output-port

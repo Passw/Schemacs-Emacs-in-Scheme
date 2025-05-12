@@ -1,11 +1,11 @@
-(define-library (gypsum keymap)
+(define-library (schemacs keymap)
   (import
     (scheme base)
     (scheme char)
     (scheme write)
     (scheme lazy)
     (scheme case-lambda)
-    (only (gypsum lens)
+    (only (schemacs lens)
           lens view update update&view lens-set
           unit-lens record-unit-lens
           =>self  =>trace  =>hash-key!
@@ -13,11 +13,11 @@
           =>head  =>encapsulate
           =>trace
           )
-    (only (gypsum pretty)
+    (only (schemacs pretty)
           pretty print qstr repeat join-by bracketed
           indent-by newline-indent line-break)
-    (only (gypsum lens vector) vector-copy-with)
-    (only (gypsum lens bin-hash-table)
+    (only (schemacs lens vector) vector-copy-with)
+    (only (schemacs lens bin-hash-table)
           make<bin-hash-table>
           empty-bin-hash-table
           bin-hash-table-size
@@ -29,11 +29,11 @@
           hash-table-copy-with
           bin-hash-table-copy
           bin-hash-table->alist)
-    (only (gypsum editor command) command-type? command-procedure)
+    (only (schemacs editor command) command-type? command-procedure)
     (only (srfi 1) fold concatenate find)
-    (only (gypsum string) string-fold)
-    (only (gypsum bitwise) bitwise-ior bitwise-and)
-    (only (gypsum hash-table)
+    (only (schemacs string) string-fold)
+    (only (schemacs bitwise) bitwise-ior bitwise-and)
+    (only (schemacs hash-table)
           hash-table-empty?
           string-hash alist->hash-table hash-table->alist
           hash-table? hash-table-size make-hash-table

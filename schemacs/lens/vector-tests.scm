@@ -1,10 +1,10 @@
 (import
   (scheme base)
-  (gypsum lens)
-  (gypsum lens vector)
+  (schemacs lens)
+  (schemacs lens vector)
   (srfi 64))
 
-(test-begin "gypsum_lens_vector")
+(test-begin "schemacs_lens_vector")
 
 (define testvec (new-mutable-vector 4))
 (test-assert (mutable-vector-empty? testvec))
@@ -229,4 +229,4 @@
 
 (test-equal "THREE" (view testvec 3))
 
-(test-end "gypsum_lens_vector")
+(test-end "schemacs_lens_vector")

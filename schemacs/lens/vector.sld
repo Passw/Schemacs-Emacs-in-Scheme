@@ -1,16 +1,16 @@
-(define-library (gypsum lens vector)
+(define-library (schemacs lens vector)
   (import
     (scheme base)
     (scheme case-lambda)
     (scheme write)
     (only (srfi 1) fold)
-    (only (gypsum lens)
+    (only (schemacs lens)
           record-unit-lens unit-lens lens
           view lens-set update&view
           =>canonical
           =>vector-index!
           declare-rule/index->lens)
-    (only (gypsum cursor)
+    (only (schemacs cursor)
           make<cursor-interface>
           declare-interface/cursor
           )
@@ -42,6 +42,6 @@
    vector-copy-with)
 
   (cond-expand
-    (stklos (include "./gypsum/lens/vector.scm"))
+    (stklos (include "./schemacs/lens/vector.scm"))
     (guile (include "vector.scm"))
     (else (include "vector.scm"))))

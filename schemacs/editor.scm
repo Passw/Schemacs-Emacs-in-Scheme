@@ -786,7 +786,7 @@ To disable this, set option 'delete-active-region' to nil."
   ;; These are global variables from the point of view of Emacs
   ;; Lisp. They are parameters in this library, and are parameterized
   ;; by the GUI provider library. These APIs are exposed in the
-  ;; (GYPSUM EDITOR) library, but as procedures which cannot modify
+  ;; (SCHEMACS EDITOR) library, but as procedures which cannot modify
   ;; the parameter.
 
 ;; -------------------------------------------------------------------------------------------------
@@ -842,7 +842,7 @@ To disable this, set option 'delete-active-region' to nil."
   ;; Construct a new text editor state.
   ;;
   ;; TODO: consider removing the <editor-type> entirely, and simply
-  ;; using the Scheme environment object constructed by this (gypsum
+  ;; using the Scheme environment object constructed by this (schemacs
   ;; editor) library as the editor state itself, with all fields of
   ;; <editor-type> redefined as parameters in this environment.
   (let*((cell           (make<cell>))
@@ -1011,7 +1011,7 @@ To disable this, set option 'delete-active-region' to nil."
   ;; TODO: for APIs like this, which wrap a simplified Scheme
   ;; procedure such as `SIMPLE-READ-MINIBUFFER` in an API that mimics
   ;; the Emacs API of the same name, I believe thse should be moved
-  ;; out of this `(GYPSUM EDITOR)` library and into their own "compat"
+  ;; out of this `(SCHEMACS EDITOR)` library and into their own "compat"
   ;; library. They are not useful to any other APIs here in this
   ;; library and are cluttering-up the code. APIs like this are more
   ;; useful to the Emacs Lisp evaluator, not to the core operation of
@@ -1063,7 +1063,7 @@ To disable this, set option 'delete-active-region' to nil."
                  (with-exception-handler (lambda (caught) (halt caught))
                    (lambda ()
                      (call-with-values
-                         (lambda () (gypsum:eval-string input-string))
+                         (lambda () (schemacs:eval-string input-string))
                        (lambda args args)))))))))
            (output-string
             (cond
@@ -1134,7 +1134,7 @@ buffer instead of printing it in the echo area."
 (define print-to-buffer
   ;; Construct a pretty-printer state structure, the record data
   ;; returned by this procedure can be used as the first argument to
-  ;; `PRETTY` in the `(GYPSUM PRETTY)` library. The "port" in this
+  ;; `PRETTY` in the `(SCHEMACS PRETTY)` library. The "port" in this
   ;; structure is a lambda that writes characters or strings to the
   ;; buffer.
   ;;

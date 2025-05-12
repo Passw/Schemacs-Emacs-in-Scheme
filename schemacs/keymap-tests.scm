@@ -1,13 +1,13 @@
 (import
   (scheme base)
   (only (scheme lazy) force)
-  (gypsum keymap)
-  (only (gypsum lens) view update lens-set)
-  (only (gypsum pretty)
+  (schemacs keymap)
+  (only (schemacs lens) view update lens-set)
+  (only (schemacs pretty)
         pretty print qstr repeat join-by bracketed
         indent-by newline-indent line-break)
-  (gypsum test)
-  (gypsum hash-table)
+  (schemacs test)
+  (schemacs hash-table)
   )
 
 (cond-expand
@@ -37,7 +37,7 @@
    (error "SRFI-60 bitwise operators are not provided"))
   )
 
-(test-begin "gypsum_keymap")
+(test-begin "schemacs_keymap")
 
 (define empty-kt (char-table '()))
 (test-assert (not empty-kt))
@@ -438,4 +438,4 @@
 (test-equal '(#f fail (#\c #\c))
   (lookup-modal! '(#\c)))
 
-(test-end "gypsum_keymap")
+(test-end "schemacs_keymap")

@@ -1,4 +1,4 @@
-# Project Gypsum
+# Project Schemacs
 
 #### A clone of Emacs and Emacs Lisp written in R7RS Scheme
 
@@ -15,15 +15,15 @@ Although this project is still incomplete and experimental, the goals of this pr
 
 - contribute patches upstream to the Guile Scheme Emacs Lisp compiler
 - provide a cross-platform GUI library like [Racket/GUI](https://docs.racket-lang.org/gui/ ) or [McCLIM](https://mcclim.common-lisp.dev/ )
-- be able to develop Gypsum from within it's own editor, create pull requests in Git.
+- be able to develop Schemacs from within it's own editor, create pull requests in Git.
 
 ## The Wiki
 
 The wiki documents several of the important libraries in this source
 code.
 
-- [`(gypsum pretty)`](../../../wiki/PrettyPrinter.md): a pretty printer
-- [`(gypsum elisp-eval environment)`](../../../wiki/ElispEnvironments.md): the environments in which Emacs Lisp code evaluates
+- [`(schemacs pretty)`](../../../wiki/PrettyPrinter.md): a pretty printer
+- [`(schemacs elisp-eval environment)`](../../../wiki/ElispEnvironments.md): the environments in which Emacs Lisp code evaluates
 
 ## How to help contribute code
 
@@ -35,7 +35,7 @@ to run on your Scheme implementation.  See the
 ["How to hack"](#how-to-hack) sections below.
 
 As of right now, the most important long-term issue to work on is
-[#30 "*Get Emacs Regression Tests (ERT) to evaluate on the `cl-lib.el`*"](https://codeberg.org/ramin_hal9001/gypsum/issues/30).
+[#30 "*Get Emacs Regression Tests (ERT) to evaluate on the `cl-lib.el`*"](https://codeberg.org/ramin_hal9001/schemacs/issues/30).
 Please refer to that issue for details, but breifly
 here is what must be done: first try running the `elisp-tests.scm`
 test program in your Scheme REPL...
@@ -46,11 +46,11 @@ test program in your Scheme REPL...
 
 ...if an error occurs, it will print the Emacs Lisp form that caused
 the error. Since the test programs run by `elisp-tests.scm` all work
-perfectly well in GNU Emacs Lisp, any error in Gypsum while evaluating
+perfectly well in GNU Emacs Lisp, any error in Schemacs while evaluating
 these tests is an implementation bug that must be corrected.
 
 If you find a bug, check if has already been recorded in the
-[list of open issues](https://codeberg.org/ramin_hal9001/gypsum/issues ),
+[list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues ),
 and if anyone is already assigned to wokring on it. If it is unassigned,
 please comment on the issue that you would like to begin working on a
 patch! You may also open a new issue if the bug seems not to have been
@@ -59,10 +59,10 @@ maintainers on your issue before starting work on a patch to make sure
 you don't end up duplicating the work of others.
 
 If you want to contribute, but are not interested in working on the
-Emacs Lisp interpreter part of the Gypsum project, please feel free to
+Emacs Lisp interpreter part of the Schemacs project, please feel free to
 contact the author (contact details on
 [Codeberg.org](https://codeberg.org/ramin_hal9001)) after reading
-through the [list of open issues](https://codeberg.org/ramin_hal9001/gypsum/issues ),
+through the [list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues ),
 or reading over the [**feature wish list**](../../../wiki/WishList.md) document.
 
 ## How to build
@@ -161,7 +161,7 @@ This will rebuild and launch the executable. If you are using the
 `./guile.sh` script to start the REPL, note that the
 `--fresh-auto-compile` flag is set, and so recompilation will occur
 every time `main-guile.scm` is loaded. If you are not hacking the
-Gypsum source code, feel free to delete this flag from the `guile.sh`
+Schemacs source code, feel free to delete this flag from the `guile.sh`
 script file so that `load` only builds the application once, and
 launches the application more quickly.
 
@@ -172,7 +172,7 @@ the load path should look something like this:
 
 ```
 scheme@(guile-user)> ,pp %load-path
-$1 = ("/home/user/work-src/gypsum"
+$1 = ("/home/user/work-src/schemacs"
  "/usr/share/guile/3.0"
  "/usr/share/guile/site/3.0"
  "/usr/share/guile/site"
@@ -188,7 +188,7 @@ similar to this, although likely with different hash codes in the
 
 ```
 scheme@(guile-user)> ,pp %load-path
-$1 = ("/home/user/work-src/gypsum"
+$1 = ("/home/user/work-src/schemacs"
  "/gnu/store/ylbycmajc0sf1pndfnsfql76cr1097iq-profile/share/guile/site/3.0"
  "/gnu/store/jqrkacxgsaf7b19xqzc2x4d77v27dbc6-guile-3.0.8/share/guile/3.0"
  "/gnu/store/jqrkacxgsaf7b19xqzc2x4d77v27dbc6-guile-3.0.8/share/guile/site/3.0"
@@ -223,7 +223,7 @@ some of the tests may not pass. As long as you create a pull request
 with equal or fewer passing tests, your request is more likely to be
 pulled into the main branch.
 
-That said, `./gypsum/lens.scm` and `./gypsum/keymap.scm` should always
+That said, `./schemacs/lens.scm` and `./schemacs/keymap.scm` should always
 pass all tests, as these libraries are most essential to the rest of
 the application.
 
@@ -232,7 +232,7 @@ the application.
 R7RS Scheme does not standardize any Meta-Object Protocol (MOP)
 implementation, not even in the R7RS "Large" standard.
 
-Gypsum has been written such that there no need for any MOP
+Schemacs has been written such that there no need for any MOP
 implementation. Rather, a "function lenses" implementation written in
 pure R7RS-Small compliant code is provided as a library. Functional
 lenses are inspired by Haskell, and are a way of defining getter and
@@ -241,16 +241,16 @@ setter functions that can be composed together.
 Conventionally, lens definitions are prefixed with the `=>`
 symbol. They may also be suffixed with `*!` or `!` whether a lens is
 canonical and/or whether a lens mutates the data structure when
-updating it. For example, the `(gypsum editor)` library exports
+updating it. For example, the `(schemacs editor)` library exports
 symbols such as `=>editor-buffer-table*!` or `=>buffer-local-keymap*!`.
 
 Since it is usually much easier to use lenses rather than getters and
-setters, many Gypsum libraries export their own lenses for working
+setters, many Schemacs libraries export their own lenses for working
 with the record types provided within.
 
 Lenses are useful enough to be separated into it's own separate source
 code package. See the documentation for Functional Lenses in its own
-[source code repository](https://codeberg.org/ramin_hal9001/gypsum-lens ).
+[source code repository](https://codeberg.org/ramin_hal9001/schemacs-lens ).
 
 
 ### Platform-independent record types
@@ -263,7 +263,7 @@ to render the view of a "buffer" or "window."
 
 ## Other resources
 
-- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/gypsum/ )
+- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/schemacs/ )
 
 ## Contributors welcome!
 
@@ -276,5 +276,5 @@ to get in touch with us, we want to help you contribute code.
 If you would like some ideas on how to contribute, a good place to
 start is to read our [**feature wish list**](../../../wiki/WishList.md) document.
 
-Also check out issue [#30 "*Get Emacs Regression Tests (ERT) to evaluate on the `cl-lib.el`*"](https://codeberg.org/ramin_hal9001/gypsum/issues/30) if you would
+Also check out issue [#30 "*Get Emacs Regression Tests (ERT) to evaluate on the `cl-lib.el`*"](https://codeberg.org/ramin_hal9001/schemacs/issues/30) if you would
 like to try contributing to the Emacs Lisp interpreter part of this project.

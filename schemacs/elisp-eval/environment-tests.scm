@@ -1,21 +1,21 @@
 (import
   (scheme base)
   (scheme case-lambda)
-  (gypsum test) ;;testing
+  (schemacs test) ;;testing
   ;;(srfi  1) ;;lists
   (only (scheme file) open-input-file open-binary-input-file)
   (only (srfi 111) box box? unbox set-box!)
-  (gypsum elisp-eval environment)
-  (gypsum lens)
-  (gypsum pretty)
-  (only (gypsum cursor) new-cursor cursor-step!)
-  (only (gypsum lens vector)
+  (schemacs elisp-eval environment)
+  (schemacs lens)
+  (schemacs pretty)
+  (only (schemacs cursor) new-cursor cursor-step!)
+  (only (schemacs lens vector)
         mutable-vector-type? =>mvector-index!
         new-mutable-vector
         mutable-vector-length
         mutable-vector-append!)
-  (prefix (gypsum editor-impl) *impl/)
-  (only (gypsum hash-table)
+  (prefix (schemacs editor-impl) *impl/)
+  (only (schemacs hash-table)
         hash-table-size
         hash-table-ref/default
         alist->hash-table
@@ -23,7 +23,7 @@
         )
   )
 
-(test-begin "gypsum_elisp_eval_environment_tests")
+(test-begin "schemacs_elisp_eval_environment_tests")
 
 (define test-elisp-env (new-empty-environment))
 
@@ -257,4 +257,4 @@
 
 (lens-set #t test-elisp-env =>env-lexical-mode?!)
 
-(test-end "gypsum_elisp_eval_environment_tests")
+(test-end "schemacs_elisp_eval_environment_tests")

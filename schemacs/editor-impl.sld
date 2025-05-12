@@ -1,14 +1,14 @@
-(define-library (gypsum editor-impl)
+(define-library (schemacs editor-impl)
   ;; This library provides a long list of parameters which must be
   ;; parameterized by a back-end implemention. APIs in lirbaries such
-  ;; as `(GYPSUM EDITOR)` call the procedures stored into these
+  ;; as `(SCHEMACS EDITOR)` call the procedures stored into these
   ;; parameters.
 
   (import
     (scheme base)
     (scheme case-lambda)
     (only (scheme write) display write)
-    (only (gypsum elisp-eval environment)
+    (only (schemacs elisp-eval environment)
           *elisp-input-port*
           *elisp-output-port*
           *elisp-error-port*

@@ -1,4 +1,4 @@
-(define-library (gypsum string)
+(define-library (schemacs string)
   (cond-expand
     ((or guile (library (srfi 13)))
      (import (only (srfi 13) string-fold))

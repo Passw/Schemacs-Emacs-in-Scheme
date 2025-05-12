@@ -1,11 +1,11 @@
 (import
   (scheme base)
   (scheme case-lambda)
-  (gypsum test) ;;testing
+  (schemacs test) ;;testing
   ;;(srfi  1) ;;lists
   (only (scheme file) open-input-file open-binary-input-file)
   (only (srfi 111) box box? unbox set-box!)
-  (only (gypsum elisp-eval environment)
+  (only (schemacs elisp-eval environment)
         =>lambda-args!
         =>lambda-optargs!
         =>lambda-rest!
@@ -16,28 +16,28 @@
         make<elisp-eval-error>
         elisp-eval-error-equal?
         )
-  (gypsum elisp-eval)
-  (gypsum lens)
-  (gypsum pretty)
-  (only (gypsum cursor) new-cursor cursor-step!)
-  (only (gypsum lens vector)
+  (schemacs elisp-eval)
+  (schemacs lens)
+  (schemacs pretty)
+  (only (schemacs cursor) new-cursor cursor-step!)
+  (only (schemacs lens vector)
         mutable-vector-type? =>mvector-index!
         new-mutable-vector
         mutable-vector-length
         mutable-vector-append!)
-  (prefix (gypsum editor-impl) *impl/)
-  (only (gypsum elisp-eval parser)
+  (prefix (schemacs editor-impl) *impl/)
+  (only (schemacs elisp-eval parser)
         list->elisp-form  elisp-form->list
         elisp-form-equal?  write-elisp-form
         )
-  (only (gypsum hash-table)
+  (only (schemacs hash-table)
         hash-table-size
         hash-table-ref/default
         alist->hash-table
         )
   )
 
-(test-begin "gypsum_elisp_eval_tests")
+(test-begin "schemacs_elisp_eval_tests")
 
 ;;--------------------------------------------------------------------------------------------------
 
@@ -886,4 +886,4 @@ top: glo = top
 
 ;;--------------------------------------------------------------------------------------------------
 
-(test-end "gypsum_elisp_eval_tests")
+(test-end "schemacs_elisp_eval_tests")

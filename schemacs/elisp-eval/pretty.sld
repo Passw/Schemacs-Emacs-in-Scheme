@@ -1,12 +1,12 @@
-(define-library (gypsum elisp-eval pretty)
-  ;; This library defines an extension to `(gypsum pretty)`
+(define-library (schemacs elisp-eval pretty)
+  ;; This library defines an extension to `(schemacs pretty)`
   ;; with rules specific to pretty-printing Emacs Lisp.
   (import
     (scheme base)
     (scheme write)
     (scheme case-lambda)
     (only (chibi match) match)
-    (only (gypsum pretty)
+    (only (schemacs pretty)
           pretty   print   qstr   pp-type?
           indent-by   newline-indent   line-break
           bracketed   form   join-by   join-lines

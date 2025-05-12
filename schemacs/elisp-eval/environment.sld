@@ -1,10 +1,10 @@
-(define-library (gypsum elisp-eval environment)
+(define-library (schemacs elisp-eval environment)
   ;; This library defines functions and record data types that are
   ;; essential to the operation of an Emacs Lisp interpreter, but the
   ;; interpreter itself is not defined here. The interpreter includes
   ;; many built-in procedures which are defined across a few different
   ;; Scheme libraries, all of which import this library. The
-  ;; interpreter itself is defined in the `(GYPSUM ELISP-EVAL)`
+  ;; interpreter itself is defined in the `(SCHEMACS ELISP-EVAL)`
   ;; library.
   (import
     (scheme base)
@@ -13,13 +13,13 @@
     (scheme case-lambda)
     (only (scheme write) display write)
     (only (srfi 1) assq)
-    (only (gypsum editor command) command-type? command-procedure)
-    (only (gypsum bit-stack)
+    (only (schemacs editor command) command-type? command-procedure)
+    (only (schemacs bit-stack)
           new-bit-stack
           bit-stack-push!
           bit-stack-pop!
           bit-stack-look)
-    (only (gypsum hash-table)
+    (only (schemacs hash-table)
           hash-table?
           hash-table-empty?
           make-hash-table
@@ -31,7 +31,7 @@
           hash-table-walk
           string-hash
           )
-    (only (gypsum lens)
+    (only (schemacs lens)
           unit-lens  record-unit-lens  lens
           lens-set  lens-set!  endo-view  view
           update  endo-update  update&view
@@ -40,10 +40,10 @@
           =>car  =>canonical  =>view-only-lens
           =>hash-key!  =>hash-key*!
           )
-    (only (gypsum pretty) pretty print bracketed line-break qstr)
-    (only (gypsum lens vector) mutable-vector-type?)
-    (only (gypsum lexer) source-file-location-type?)
-    (only (gypsum elisp-eval parser)
+    (only (schemacs pretty) pretty print bracketed line-break qstr)
+    (only (schemacs lens vector) mutable-vector-type?)
+    (only (schemacs lexer) source-file-location-type?)
+    (only (schemacs elisp-eval parser)
           elisp-quote-scheme-type?
           write-parser-location
           )

@@ -5,9 +5,9 @@
         char-whitespace? char-numeric?
         )
   (only (scheme write) display write)
-  (only (gypsum lens) view)
+  (only (schemacs lens) view)
   (only (srfi 64) test-begin test-end test-assert test-equal)
-  (gypsum lexer)
+  (schemacs lexer)
   )
 
 ;;--------------------------------------------------------------------------------------------------
@@ -50,7 +50,7 @@
 
 ;;--------------------------------------------------------------------------------------------------
 
-(test-begin "gypsum_lexer")
+(test-begin "schemacs_lexer")
 
 
 (test-assert
@@ -337,4 +337,4 @@
          (lambda (in-port)
            (write-lexer-location (lexer-state in-port) out-port))))))
 
-(test-end "gypsum_lexer")
+(test-end "schemacs_lexer")

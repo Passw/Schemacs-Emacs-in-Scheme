@@ -2,12 +2,12 @@
   (scheme base)
   (srfi 64) ;;testing
   (srfi 69)
-  (gypsum cursor)
-  (only (gypsum lens) lens-set view)
-  (only (gypsum hash-table) alist->hash-table)
+  (schemacs cursor)
+  (only (schemacs lens) lens-set view)
+  (only (schemacs hash-table) alist->hash-table)
   )
 
-(test-begin "gypsum_cursor")
+(test-begin "schemacs_cursor")
 
 ;;--------------------------------------------------------------------
 ;; Preliminary setup
@@ -153,4 +153,4 @@
 
 ;;--------------------------------------------------------------------
 
-(test-end "gypsum_cursor")
+(test-end "schemacs_cursor")

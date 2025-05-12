@@ -1,10 +1,10 @@
 (import
   (scheme base)
   (scheme case-lambda)
-  (only (gypsum lens vector) mutable-vector-for-each)
+  (only (schemacs lens vector) mutable-vector-for-each)
   (only (srfi 64) test-begin test-end test-assert test-equal)
-  (only (gypsum lexer) lexer-state lex-all)
-  (gypsum elisp-eval parser)
+  (only (schemacs lexer) lexer-state lex-all)
+  (schemacs elisp-eval parser)
   )
 
 ;;--------------------------------------------------------------------------------------------------
@@ -211,7 +211,7 @@
 
 ;;--------------------------------------------------------------------------------------------------
 
-(test-begin "gypsum_elisp-eval_parser")
+(test-begin "schemacs_elisp-eval_parser")
 
 (test-assert (run-lexer-tests all-lexer-test-cases))
 
@@ -315,4 +315,4 @@
         "1:8" (lambda (port) (write-parser-location st port)))
        )))
 
-(test-end "gypsum_elisp-eval_parser")
+(test-end "schemacs_elisp-eval_parser")

@@ -1,4 +1,4 @@
-(define-library (gypsum elisp-eval)
+(define-library (schemacs elisp-eval)
   ;; This library defines functions and record data types that are
   ;; essential to the operation of an Emacs Lisp interpreter. When
   ;; evaluating Emacs Lisp code, it is first translated to Scheme
@@ -7,7 +7,7 @@
   ;; library are always available to be used by `EVAL` when evaluating
   ;; Scheme forms that have been translated from Emacs Lisp. although
   ;; the actual Scheme `ENVIRONMENT` object used to `EVAL` Emacs Lisp
-  ;; is defined in the `(GYPSUM ELISP)` library.
+  ;; is defined in the `(SCHEMACS ELISP)` library.
   (import
     (scheme base)
     (scheme cxr)
@@ -15,10 +15,10 @@
     (only (scheme file) open-input-file)
     (only (scheme write) display write)
     (only (srfi 1) assq)
-    (only (gypsum editor command) command-type? command-procedure)
-    (only (gypsum hash-table) hash-table-empty? default-hash)
-    (only (gypsum pretty) pretty print line-break)
-    (only (gypsum lens)
+    (only (schemacs editor command) command-type? command-procedure)
+    (only (schemacs hash-table) hash-table-empty? default-hash)
+    (only (schemacs pretty) pretty print line-break)
+    (only (schemacs lens)
           unit-lens  record-unit-lens  lens
           lens-set  lens-set!  endo-view  view
           update  endo-update  update&view
@@ -27,15 +27,15 @@
           =>canonical  =>view-only-lens  =>encapsulate
           =>hash-key!  =>hash-key*!  =>find
           )
-    (only (gypsum lens vector) mutable-vector-type?)
-    (only (gypsum cursor)
+    (only (schemacs lens vector) mutable-vector-type?)
+    (only (schemacs cursor)
           new-cursor  cursor-ref  cursor-step!
           cursor-end?  cursor-type?
           cursor-collect-list  new-cursor-if-iterable
           )
     (only (chibi match) match)
-    (prefix (gypsum editor-impl) *impl/)
-    (only (gypsum elisp-eval parser)
+    (prefix (schemacs editor-impl) *impl/)
+    (only (schemacs elisp-eval parser)
           elisp-read  select-elisp-dialect!
           parse-state  =>parse-state-filepath*!
           elisp-form->list
@@ -48,7 +48,7 @@
           elisp-form-type?  elisp-function-ref-type?
           elisp-form-start-loc  elisp-function-get-ref
           )
-    (only (gypsum elisp-eval environment)
+    (only (schemacs elisp-eval environment)
           scheme->elisp  elisp->scheme  elisp-null?
           pure  pure*  pure*-typed  pure*-numbers  pure-raw
           new-empty-environment   elisp-environment-type?  env-alist-defines!
@@ -83,8 +83,8 @@
           env-get-stack-trace  write-elisp-eval-error
           print-stack-frame  print-all-stack-frames
           )
-    (only (gypsum elisp-eval format) format format-to-port)
-    (only (gypsum keymap)
+    (only (schemacs elisp-eval format) format format-to-port)
+    (only (schemacs keymap)
           keymap  keymap-type?  keymap-layer
           =>keymap-label!
           =>keymap-layer-index!
@@ -118,7 +118,7 @@
    elisp-eval!  elisp-load!  eval-iterate-forms
    =>elisp-symbol!
 
-   ;; Re-exporting symbols from (GYPSUM ELISP-EVAL ENVIRONMENT):
+   ;; Re-exporting symbols from (SCHEMACS ELISP-EVAL ENVIRONMENT):
    ;;------------------------------------------------------------
 
    ;; Converting data between Scheme and Elisp

@@ -1,11 +1,11 @@
-(define-library (gypsum lexer)
+(define-library (schemacs lexer)
   (import
     (scheme base)
     (scheme case-lambda)
     (only (scheme write) display write)
     (only (srfi 14) char-set? char-set-contains?)
     (only (scheme file) open-input-file)
-    (only (gypsum lens) record-unit-lens view update lens-set)
+    (only (schemacs lens) record-unit-lens view update lens-set)
     )
   (export
    lex-all  lex-part  lex-resume  run-lexer

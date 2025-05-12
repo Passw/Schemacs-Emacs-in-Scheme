@@ -1,9 +1,9 @@
 (import
   (scheme base)
-  (gypsum bit-stack)
+  (schemacs bit-stack)
   (srfi 64))
 
-(test-begin "gypsum_bitstack")
+(test-begin "schemacs_bitstack")
 
 (test-equal 0 (let ((stack (new-bit-stack))) (bit-stack-count stack)))
 (test-equal 0 (let ((stack (new-bit-stack 1))) (bit-stack-count stack)))
@@ -42,4 +42,4 @@
         ))
     ))
 
-(test-end "gypsum_bitstack")
+(test-end "schemacs_bitstack")

@@ -1,4 +1,4 @@
-(define-library (gypsum hash-table)
+(define-library (schemacs hash-table)
   ;; TODO: Remove this library some day, when SRFI-125 becomes more
   ;; ubiquitous, or perhaps just when Guile finally supports the
   ;; SRFI-125 API.

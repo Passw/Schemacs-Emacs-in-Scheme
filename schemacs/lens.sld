@@ -1,10 +1,10 @@
-(define-library (gypsum lens)
+(define-library (schemacs lens)
   (import
     (scheme base)
     (scheme write)
     (scheme case-lambda)
-    (only (gypsum vector) vector-fold)
-    (only (gypsum hash-table)
+    (only (schemacs vector) vector-fold)
+    (only (schemacs hash-table)
           hash-table-empty?  hash-table?  default-hash
           make-hash-table   alist->hash-table   hash-table->alist
           hash-table-size   hash-table-set!   hash-table-delete!
@@ -102,7 +102,7 @@
 
   (cond-expand
     (stklos
-     (include "./gypsum/lens.scm"))
+     (include "./schemacs/lens.scm"))
     (guile
      ;; Bug in Guile R7RS: the "else" statement below is not triggered
      ;; even though none of the other conditions in this "cond-expand"

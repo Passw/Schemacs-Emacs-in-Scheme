@@ -1,4 +1,4 @@
-(define-library (gypsum vector)
+(define-library (schemacs vector)
   ;; TODO: Remove this library some day, when SRFI-133 becomes more
   ;; ubiquitous, or perhaps just when Guile finally supports the
   ;; SRFI-133 API.

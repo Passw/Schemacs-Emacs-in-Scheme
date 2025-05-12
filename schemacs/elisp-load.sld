@@ -1,4 +1,4 @@
-(define-library (gypsum elisp-load)
+(define-library (schemacs elisp-load)
   (import
     (scheme base)
     (scheme case-lambda)
@@ -7,28 +7,28 @@
           write
           )
     (only (chibi match) match)
-    (only (gypsum pretty)
+    (only (schemacs pretty)
           print-to-port
           pretty   print  qstr   line-break
           )
-    (only (gypsum lens) view)
-    (only (gypsum lens vector)
+    (only (schemacs lens) view)
+    (only (schemacs lens vector)
           mutable-vector-type?
           new-mutable-vector
           mutable-vector-length
           mutable-vector-append!
           =>mvector-index!
           )
-    (only (gypsum elisp-eval pretty)
+    (only (schemacs elisp-eval pretty)
           elisp-print
           )
-    (only (gypsum elisp-eval environment)
+    (only (schemacs elisp-eval environment)
           new-empty-environment
           *elisp-input-port*
           *elisp-output-port*
           *elisp-error-port*
           )
-    (only (gypsum elisp-eval)
+    (only (schemacs elisp-eval)
           new-environment
           *the-environment*
           eval-iterate-forms

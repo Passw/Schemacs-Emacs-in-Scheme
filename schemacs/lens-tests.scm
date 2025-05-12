@@ -1,8 +1,8 @@
 (import
   (scheme base)
   (scheme cxr)
-  (gypsum lens)
-  (only (gypsum hash-table)
+  (schemacs lens)
+  (only (schemacs hash-table)
         hash-table?  default-hash  string-hash
         hash-table-set!
         make-hash-table
@@ -11,12 +11,12 @@
         hash-table->alist
         hash-table-walk
         )
-  (gypsum test)
+  (schemacs test)
   )
 
 ;; -------------------------------------------------------------------------------------------------
 
-(test-begin "gypsum_lens")
+(test-begin "schemacs_lens")
 
 (test-equal (cons 1 '()) (lens-set 1 #f =>car))
 (test-equal (cons '() 2) (lens-set 2 #f =>cdr))
@@ -316,12 +316,12 @@
 
         (setter ;; --------------------------------------------------------
          ;; We use the `DEFAULT-UNIT-LENS-SETTER` procedure that is
-         ;; provided by `(GYPSUM LENS)` to derive the setter automatically.
+         ;; provided by `(SCHEMACS LENS)` to derive the setter automatically.
          ;; The default setter uses the updater and discards the second of
          ;; the returned VALUES.
          (default-unit-lens-setter updater))
         )
-    ;; Use the `UNIT-LENS` procedure provided by `(GYPSUM LENS)` to
+    ;; Use the `UNIT-LENS` procedure provided by `(SCHEMACS LENS)` to
     ;; construct a lens. This constructs a data structure associating
     ;; a getter, setter, and updater procedure all together.
     (unit-lens getter setter updater `(=>depth-first-search ,select?))
@@ -519,5 +519,5 @@
 
 ;; -------------------------------------------------------------------------------------------------
 
-(test-end "gypsum_lens")
+(test-end "schemacs_lens")
 

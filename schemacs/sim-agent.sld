@@ -1,4 +1,4 @@
-(define-library (gypsum sim-agent)
+(define-library (schemacs sim-agent)
   ;; This library is mostly for creating GUI test stubs, but it might
   ;; be more generally useful for running agent simulations.
   (import
@@ -6,8 +6,8 @@
     (scheme write)
     (srfi srfi-64) ;; test suite
     (prefix (srfi srfi-28) basic:) ; basic format strings
-    (only (gypsum lens) record-unit-lens view update! lens-set!)
-    (only (gypsum lens vector)
+    (only (schemacs lens) record-unit-lens view update! lens-set!)
+    (only (schemacs lens vector)
           new-mutable-vector
           mutable-vector-append!
           mutable-vector-for-each)

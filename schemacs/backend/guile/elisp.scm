@@ -5,7 +5,7 @@
 ;; The Emacs Lisp compiler is extended by binding the values that are
 ;; defined in this module to various `defun` and `defvar` symbols in
 ;; the Emacs Lisp environment. It should be loaded automatically when
-;; the Emacs Lisp interpreter is initialized by Gypsum.
+;; the Emacs Lisp interpreter is initialized by Schemacs.
 ;;--------------------------------------------------------------------
 
 (define (new-elisp-env) (default-environment elisp))
@@ -28,6 +28,6 @@
      (eval-elisp expr (*the-elisp-environment*))
      )
     ((expr env)
-      ;; imported elisp language object from `(GYPSUM ELISP-EVAL SPEC)`, use it here
+      ;; imported elisp language object from `(SCHEMACS ELISP-EVAL SPEC)`, use it here
      (compile expr #:env env #:from elisp #:to 'value))
     ))

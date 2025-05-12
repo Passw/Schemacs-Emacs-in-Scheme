@@ -1,9 +1,9 @@
-(define-library (gypsum concurrent)
+(define-library (schemacs concurrent)
   (import
     (scheme base)
     (scheme case-lambda)
     (only (scheme write) display write)
-    (prefix (gypsum lens vector) vec:)
+    (prefix (schemacs lens vector) vec:)
     )
 
   (cond-expand

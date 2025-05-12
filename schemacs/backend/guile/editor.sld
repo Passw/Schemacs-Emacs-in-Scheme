@@ -1,12 +1,12 @@
-(define-library (gypsum backend guile editor)
+(define-library (schemacs backend guile editor)
   (import
     (scheme base)
-    (only (gypsum pretty) pretty print)
-    (only (gypsum editor)
+    (only (schemacs pretty) pretty print)
+    (only (schemacs editor)
           current-editor
           editor-messages
           insert)
-    (prefix (gypsum editor-impl) *impl/)
+    (prefix (schemacs editor-impl) *impl/)
    )
 
   (export

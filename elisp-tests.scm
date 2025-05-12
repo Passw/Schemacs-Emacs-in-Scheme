@@ -2,11 +2,11 @@
   (scheme base)
   (scheme case-lambda)
   (scheme write)
-  (only (gypsum elisp-eval environment)
+  (only (schemacs elisp-eval environment)
         elisp-eval-error-type?
         write-elisp-eval-error
         )
-  (only (gypsum elisp-eval)
+  (only (schemacs elisp-eval)
         elisp-load!
         elisp-eval!
         )

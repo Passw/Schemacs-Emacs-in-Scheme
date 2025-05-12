@@ -1,7 +1,7 @@
 ;; This library defines parameters that can be shared among various
 ;; back-end implementations. The API completely replaces the (scheme
 ;; eval) library with APIs that can all be parameterized to make it
-;; easier to control the behavior of `EVAL` used by the Gypsum
+;; easier to control the behavior of `EVAL` used by the Schemacs
 ;; interpreter.
 
 ;; (define (emacs-environment)
@@ -13,7 +13,7 @@
 ;;    '(scheme complex)
 ;;    '(scheme inexact)
 ;;    '(scheme cxr)
-;;    '(gypsum backend guile-gi gtk3)))
+;;    '(schemacs backend guile-gi gtk3)))
 
 (define *null-environment-procedure* (make-parameter scheme:null-environment))
 (define (null-environment version) ((*null-environment-procedure*) version))

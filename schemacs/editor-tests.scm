@@ -2,13 +2,13 @@
   (scheme base)
   (scheme lazy)
   (srfi srfi-64) ;; test suite
-  (gypsum sim-agent)
-  (only (gypsum editor command)
+  (schemacs sim-agent)
+  (only (schemacs editor command)
         new-command show-command command-procedure)
-  (only (gypsum lens) view)
-  (prefix (gypsum editor) ed:)
-  (prefix (gypsum keymap) km:)
-  (only (gypsum lens) view =>hash-key)
+  (only (schemacs lens) view)
+  (prefix (schemacs editor) ed:)
+  (prefix (schemacs keymap) km:)
+  (only (schemacs lens) view =>hash-key)
   )
 
 ;; Stub functions ----------------------------------------------------------------------------------
@@ -64,7 +64,7 @@
 
 ;; Tests -------------------------------------------------------------------------------------------
 
-(test-begin "gypsum_editor")
+(test-begin "schemacs_editor")
 
 (define (run-test proc . eds)
   (parameterize
@@ -143,4 +143,4 @@
   ;;
   )
 
-(test-end "gypsum_editor")
+(test-end "schemacs_editor")

@@ -1,11 +1,11 @@
-(define-library (gypsum bit-stack)
+(define-library (schemacs bit-stack)
   ;; A stack of bits packed into a bytevector. This is used by Emacs
   ;; Lisp Environment objects when tracking flags on stack frames.
   ;;------------------------------------------------------------------
   (import
     (scheme base)
     (scheme case-lambda)
-    (only (gypsum bitwise)
+    (only (schemacs bitwise)
           bit-set?
           bitwise-and  bitwise-ior  bitwise-xor
           arithmetic-shift

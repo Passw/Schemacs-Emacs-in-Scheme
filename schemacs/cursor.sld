@@ -1,12 +1,12 @@
-(define-library (gypsum cursor)
+(define-library (schemacs cursor)
   (import
     (scheme base)
     (scheme case-lambda)
-    (only (gypsum lens)
+    (only (schemacs lens)
           record-unit-lens view endo-set
           =>assoc-by =>bring =>find
           )
-    (only (gypsum hash-table) hash-table? hash-table->alist)
+    (only (schemacs hash-table) hash-table? hash-table->alist)
     )
   (export
    new-cursor  maybe-new-cursor  new-cursor-if-iterable
@@ -25,7 +25,7 @@
    )
 
   (cond-expand
-    (stklos (include "./gypsum/cursor.scm"))
+    (stklos (include "./schemacs/cursor.scm"))
     (guile (include "cursor.scm"))
     (else (include "cursor.scm"))
     ))

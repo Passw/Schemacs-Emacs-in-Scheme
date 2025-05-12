@@ -601,7 +601,7 @@
    #:default-height (* 6 6 5 4)
    #:hexpand #f
    #:vexpand #f
-   #:title "Gypsum-Shell"
+   #:title "Schemacs-Shell"
    #:child layout
    #:visible #t))
 
@@ -747,7 +747,7 @@
   ;; this function is `GTK3-ENVIRONMENT`, defined below, which takes
   ;; zero arguments and returns the current environment. This API is
   ;; exposed by way of the `THE-ENVIRONMENT` parameter defined in the
-  ;; `(GYPSUM EVAL)` library.
+  ;; `(SCHEMACS EVAL)` library.
   (let ((getenv (*gtk3-environment*)))
     (display "to getenv ")(write getenv)(display " apply args: ")(display args)(newline);;DEBUG
     (apply getenv args)))
@@ -794,8 +794,8 @@
        (*impl/exit-minibuffer*          gtk-exit-minibuffer)
        (*impl/select-window*            gtk-select-window)
        (*impl/is-graphical-display?*    #t)
-       (gypsum:*the-environment-procedure*  gtk3-environment)
-       (gypsum:*eval-string-procedure*  guile-eval-string)
+       (schemacs:*the-environment-procedure*  gtk3-environment)
+       (schemacs:*eval-string-procedure*  guile-eval-string)
        )
     (apply proc args)))
 
@@ -814,7 +814,7 @@
   ;; built-in library.
   (let*((app
          (gi:make <GtkApplication>
-          #:application-id "gypsum-shell.lambda-libre.org"))
+          #:application-id "schemacs-shell.lambda-libre.org"))
         (_ (display ";;application:register\n"))
         (success (application:register? app #f))
         (with-gtk3-backend
@@ -867,5 +867,5 @@
 ;;     (guile-eval-string) to make use of the interactive
 ;;     REPL procedures and environment.
 ;;
-;;  2. Implement the gypsum:*eval-procedure* to also use the
+;;  2. Implement the schemacs:*eval-procedure* to also use the
 ;;     interactive REPL procedures when no environment is given.

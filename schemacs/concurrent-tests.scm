@@ -2,7 +2,7 @@
   (only (srfi srfi-64)
         test-begin test-end test-assert))
 
-(test-begin "gypsum_concurrent")
+(test-begin "schemacs_concurrent")
 
 (test-assert
     (equal?
@@ -189,4 +189,4 @@
 
 ;; -------------------------------------------------------------------------------------------------
 
-(test-end "gypsum_concurrent")
+(test-end "schemacs_concurrent")

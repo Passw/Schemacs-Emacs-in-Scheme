@@ -1,6 +1,6 @@
 (import (srfi srfi-64))
 
-(test-begin "gypsum_sim-agent")
+(test-begin "schemacs_sim-agent")
 
 (define agent0 (new-sim-agent "test-agent" 0))
 
@@ -24,4 +24,4 @@
        (sim-agent->string agent0 #t)))
   )
 
-(test-end "gypsum_sim-agent")
+(test-end "schemacs_sim-agent")

@@ -1,4 +1,4 @@
-(define-library (gypsum test)
+(define-library (schemacs test)
   ;; Re-export APIs from SRFI-64 that are used in unit tests across
   ;; this project after importing them from the appropriate library
   ;; module depending on which Scheme implementation is being used to

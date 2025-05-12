@@ -1,16 +1,16 @@
-(define-library (gypsum lens bin-hash-table)
+(define-library (schemacs lens bin-hash-table)
   (import
     (scheme base)
     (scheme case-lambda)
     (scheme write)
     (only (scheme write) display)
-    (only (gypsum lens)
+    (only (schemacs lens)
           lens record-unit-lens view lens-set
           =>self =>hash-key! =>on-update
           =>canonical =>encapsulate)
-    (only (gypsum pretty)
+    (only (schemacs pretty)
            pretty print bracketed newline-indent line-break)
-    (only (gypsum hash-table) ; Standard hash tables
+    (only (schemacs hash-table) ; Standard hash tables
           hash-table-empty?
           default-hash make-hash-table alist->hash-table hash-table->alist
           hash-table-size hash-table-copy hash-table-walk

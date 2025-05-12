@@ -1,4 +1,4 @@
-(define-library (gypsum bitwise)
+(define-library (schemacs bitwise)
   (cond-expand
     ((or guile (library (srfi 60)))
      (import

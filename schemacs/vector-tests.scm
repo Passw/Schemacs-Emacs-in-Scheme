@@ -1,7 +1,7 @@
 (import
-  (gypsum vector))
+  (schemacs vector))
 
-(test-begin "gypsum_vector")
+(test-begin "schemacs_vector")
 
 (test-assert 6
   (vector-fold + 0 (vector 0 1 2 3)))
@@ -14,4 +14,4 @@
    (vector 0 0 0)
    ))
 
-(test-end "gypsum_vector")
+(test-end "schemacs_vector")

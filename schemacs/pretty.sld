@@ -1,4 +1,4 @@
-(define-library (gypsum pretty)
+(define-library (schemacs pretty)
   ;; A tiny monadic pretty printer. Example usage:
   ;;
   ;; #+BEGIN_SRC scheme
@@ -39,9 +39,9 @@
     (scheme base)
     (scheme write)
     (scheme case-lambda)
-    (only (gypsum lens)
+    (only (schemacs lens)
           record-unit-lens update)
-    (only (gypsum lens vector)
+    (only (schemacs lens vector)
           mutable-vector-type? new-mutable-vector
           mutable-vector-append! mutable-vector-fold/index)
     )

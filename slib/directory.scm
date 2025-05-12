@@ -22,7 +22,7 @@
 ;; Added pathname->dirname as a new function to replace pathname->vicinity
 ;; -- this removes the need for SRFI 59
 
-;; Modified for use in the "Gypsum" project
+;; Modified for use in the "Schemacs" project
 ;; by Ramin Honary, copyright 2025.
 ;;
 ;; This version of the "(SLIB DIRECTORY)" source code with

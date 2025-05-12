@@ -6,7 +6,7 @@ and instead use the R7RS "define-library" moduel system instead, then
 published on the [Snow-Fort website](https://snow-fort.org). All of
 these libraries were downloaded from the "Snow Fort" package
 repository. Further modifications to this source code have been made
-by Ramin Honary to adapt it for use in the Gypsum project.
+by Ramin Honary to adapt it for use in the Schemacs project.
 
 ### Rights licensed to users of this code
 

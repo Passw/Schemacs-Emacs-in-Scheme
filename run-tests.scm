@@ -22,18 +22,18 @@
 
 (define test-programs
   (list 
-   "./gypsum/lens-tests.scm"
-   "./gypsum/lens/vector-tests.scm"
-   "./gypsum/lens/bin-hash-table-tests.scm"
-   "./gypsum/pretty-tests.scm"
-   "./gypsum/keymap-tests.scm"
-   "./gypsum/concurrent-tests.scm"
-   "./gypsum/cursor-tests.scm"
-   "./gypsum/lexer-tests.scm"
-   "./gypsum/elisp-eval/environment-tests.scm"
-   "./gypsum/elisp-eval/format-tests.scm"
-   "./gypsum/elisp-eval/parser-tests.scm"
-   "./gypsum/elisp-eval-tests.scm"
+   "./schemacs/lens-tests.scm"
+   "./schemacs/lens/vector-tests.scm"
+   "./schemacs/lens/bin-hash-table-tests.scm"
+   "./schemacs/pretty-tests.scm"
+   "./schemacs/keymap-tests.scm"
+   "./schemacs/concurrent-tests.scm"
+   "./schemacs/cursor-tests.scm"
+   "./schemacs/lexer-tests.scm"
+   "./schemacs/elisp-eval/environment-tests.scm"
+   "./schemacs/elisp-eval/format-tests.scm"
+   "./schemacs/elisp-eval/parser-tests.scm"
+   "./schemacs/elisp-eval-tests.scm"
    ))
 
 (for-each

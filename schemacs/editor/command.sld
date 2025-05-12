@@ -1,9 +1,9 @@
-(define-library (gypsum editor command)
+(define-library (schemacs editor command)
   (import
     (scheme base)
     (scheme write)
     (scheme case-lambda)
-    (only (gypsum lens) record-unit-lens))
+    (only (schemacs lens) record-unit-lens))
   (export
    <command-type> command-type? make<command> new-command
    command-name command-procedure command-doc-string

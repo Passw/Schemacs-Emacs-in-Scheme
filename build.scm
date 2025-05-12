@@ -5,9 +5,9 @@
    (define loader load)
 
    (define (finish)
-     (disk-save "./gypsum-mitscheme.com")
+     (disk-save "./schemacs-mitscheme.com")
      (newline)
-     (display ";;; Now run the command `mit-scheme --band ./gypsum-mitscheme.com`")
+     (display ";;; Now run the command `mit-scheme --band ./schemacs-mitscheme.com`")
      (newline)
      #t)
    )
@@ -37,10 +37,10 @@
        "./rapid"
        "./chibi"
        "./match"
-       "./gypsum"
-       "./gypsum/lens"
-       "./gypsum/editor"
-       "./gypsum/elisp-eval"
+       "./schemacs"
+       "./schemacs/lens"
+       "./schemacs/editor"
+       "./schemacs/elisp-eval"
        )
      (filter
       (lambda (p) (not (string=? p ".")))
@@ -73,27 +73,27 @@
    "slib/common"
    "slib/filename"
    "slib/directory"
-   "gypsum/test"
-   "gypsum/bitwise"
-   "gypsum/string"
-   "gypsum/vector"
-   "gypsum/hash-table"
-   "gypsum/lens"
-   "gypsum/cursor"
-   "gypsum/lens/vector"
-   "gypsum/pretty"
-   "gypsum/lens/bin-hash-table"
-   "gypsum/lexer"
-   "gypsum/editor/command"
-   "gypsum/keymap"
-   "gypsum/bit-stack"
-   "gypsum/elisp-eval/pretty"
-   "gypsum/elisp-eval/parser"
-   "gypsum/elisp-eval/environment"
-   "gypsum/elisp-eval/format"
-   "gypsum/editor-impl"
-   "gypsum/elisp-eval"
-   "gypsum/elisp-load"))
+   "schemacs/test"
+   "schemacs/bitwise"
+   "schemacs/string"
+   "schemacs/vector"
+   "schemacs/hash-table"
+   "schemacs/lens"
+   "schemacs/cursor"
+   "schemacs/lens/vector"
+   "schemacs/pretty"
+   "schemacs/lens/bin-hash-table"
+   "schemacs/lexer"
+   "schemacs/editor/command"
+   "schemacs/keymap"
+   "schemacs/bit-stack"
+   "schemacs/elisp-eval/pretty"
+   "schemacs/elisp-eval/parser"
+   "schemacs/elisp-eval/environment"
+   "schemacs/elisp-eval/format"
+   "schemacs/editor-impl"
+   "schemacs/elisp-eval"
+   "schemacs/elisp-load"))
 
 (for-each
  (lambda (file) (loader file))

@@ -1,4 +1,4 @@
-(define-library (gypsum elisp-eval parser)
+(define-library (schemacs elisp-eval parser)
   (import
     (scheme base)
     (scheme write)
@@ -7,16 +7,16 @@
           char-numeric?  char-alphabetic?  digit-value
           )
     (only (scheme file) open-input-file)
-    (only (gypsum lens vector)
+    (only (schemacs lens vector)
           new-mutable-vector
           mutable-vector->vector
           mutable-vector-append!
           )
-    (only (gypsum lens)
+    (only (schemacs lens)
           record-unit-lens  lens  =>view-only-lens
           view  update  lens-set
           )
-    (only (gypsum lexer)
+    (only (schemacs lexer)
           run-lexer  lex-all
           any  char  take  eof
           alist->parse-table
@@ -38,7 +38,7 @@
           *unicode-max-code-point*
           =>lexer-filepath*!
           )
-    (only (gypsum hash-table)
+    (only (schemacs hash-table)
           make-hash-table
           hash-table-ref
           hash-table-set!
@@ -59,7 +59,7 @@
 
    ;;----------------
    ;; Selecting individual tokens
-   lexer-state ;; re-export gypsum lexer state constructor
+   lexer-state ;; re-export schemacs lexer state constructor
    run-elisp-tokenizer ;; lex the next token from a port
    whitespace?
 

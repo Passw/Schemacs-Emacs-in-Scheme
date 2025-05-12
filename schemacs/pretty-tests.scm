@@ -3,7 +3,7 @@
   (scheme case-lambda)
   (scheme write)
   (srfi srfi-64)
-  (gypsum pretty))
+  (schemacs pretty))
 
 (define test-mode
   ;; Choose one of 'print-mode or 'unit-test-mode.
@@ -23,7 +23,7 @@
   #f)
 
 (when (eq? test-mode 'unit-test-mode)
-  (test-begin "gypsum_pretty"))
+  (test-begin "schemacs_pretty"))
 
 ;; Testing different printing modes with simplest possible inputs.
 
@@ -288,4 +288,4 @@
   with-buffer-state-stats))
 
 (when (eq? test-mode 'unit-test-mode)
-  (test-end "gypsum_pretty"))
+  (test-end "schemacs_pretty"))

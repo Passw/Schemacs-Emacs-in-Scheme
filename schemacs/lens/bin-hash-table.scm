@@ -200,7 +200,7 @@
    (newline-indent)))
 
 (define bin-hash-table-print
-  ;; A (GYPSUM PRETTY) pretty-printer for the `<BIN-HASH-TABLE-TYPE>`.
+  ;; A (SCHEMACS PRETTY) pretty-printer for the `<BIN-HASH-TABLE-TYPE>`.
   ;; Takes a `PAIR-PRINT` argument to print each association in the
   ;; table.
   (case-lambda

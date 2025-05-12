@@ -1,7 +1,7 @@
-(define-library (gypsum backend guile-gi gtk3)
+(define-library (schemacs backend guile-gi gtk3)
   (import
     (scheme base)
-    (only (gypsum eval) eval interaction-environment)
-    (only (gypsum backend guile-gi gtk3-init) launch-gui))
+    (only (schemacs eval) eval interaction-environment)
+    (only (schemacs backend guile-gi gtk3-init) launch-gui))
   (export main)
   (include "gtk3.scm"))

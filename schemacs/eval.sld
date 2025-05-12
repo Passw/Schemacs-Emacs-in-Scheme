@@ -1,4 +1,4 @@
-(define-library (gypsum eval)
+(define-library (schemacs eval)
   (import
     (scheme base)
     (only (scheme case-lambda) case-lambda)
@@ -6,7 +6,7 @@
     (prefix (scheme eval) scheme:)
     (prefix (scheme repl) scheme:)
     (prefix (scheme r5rs) scheme:)
-    (prefix (gypsum concurrent) th:))
+    (prefix (schemacs concurrent) th:))
   (export
    eval eval-string environment
    null-environment

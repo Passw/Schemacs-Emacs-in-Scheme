@@ -1,16 +1,16 @@
 (import
   (scheme base)
   (scheme case-lambda)
-  (gypsum lens)
-  (gypsum lens bin-hash-table)
-  (only (gypsum lens) view)
-  (only (gypsum pretty)
+  (schemacs lens)
+  (schemacs lens bin-hash-table)
+  (only (schemacs lens) view)
+  (only (schemacs pretty)
          pretty print bracketed newline-indent line-break)
   (only (srfi 64)
         test-begin test-end test-assert test-equal)
   )
 
-(test-begin "gypsum_lens_bin-hash-table")
+(test-begin "schemacs_lens_bin-hash-table")
 
 (define empty-testbht (alist->bin-hash-table '()))
 
@@ -107,4 +107,4 @@
 (set! testbht-null (lens-set 1 testbht-null (=>bin-hash-key! "one")))
 (test-equal 1 (view testbht-null (=>bin-hash-key! "one")))
 
-(test-end "gypsum_lens_bin-hash-table")
+(test-end "schemacs_lens_bin-hash-table")
