@@ -100,8 +100,8 @@
 (define (canon-sym name =>lens label)
   (unit-lens
    (lambda (sym) (if sym (view sym =>lens) #f))
-   (lambda (sym val) (lens-set val (if sym sym (new-symbol name)) =>lens))
-   (lambda (upd sym) (update&view upd (if sym sym (new-symbol name)) =>lens))
+   (lambda (sym val) (lens-set val (or sym (new-symbol name)) =>lens))
+   (lambda (upd sym) (update&view upd (or sym (new-symbol name)) =>lens))
    label))
 
 (define (=>sym-value!    name) (canon-sym name =>sym-value*!    '=>sym-value!))

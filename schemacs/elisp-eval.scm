@@ -116,16 +116,17 @@
      (new-elisp-error-handler env halt-eval (current-output-port))
      )
     ((env halt-eval port)
-     (lambda (err-obj)
-       (when (elisp-eval-error-type? err-obj)
-         (update
-           (lambda (tr) (or tr (env-get-stack-trace env)))
-           err-obj =>elisp-eval-error-stack-trace
-           ))
-       (write-elisp-eval-error err-obj env port)
-       (env-reset-stack! env)
-       (halt-eval err-obj)
-       ))))
+     (let ((env (or env (*the-environment*))))
+       (lambda (err-obj)
+         (when (elisp-eval-error-type? err-obj)
+           (update
+            (lambda (tr) (or tr (env-get-stack-trace env)))
+            err-obj =>elisp-eval-error-stack-trace
+            ))
+         (write-elisp-eval-error err-obj env port)
+         (env-reset-stack! env)
+         (halt-eval err-obj)
+         )))))
 
 
 (define (%elisp-eval! expr env)
@@ -1384,10 +1385,15 @@
      (view obj (=>sym-plist! sym) (=>hash-key! prop)))))
 
 (define (eval-put st sym prop val)
-  (update-on-symbol st sym
-   (lambda (obj)
-     (let ((prop (ensure-string prop)))
-       (values (lens-set! val obj (=>sym-plist! sym) (=>hash-key! prop)) val)
+  (let ((prop (ensure-string prop)))
+    (update-on-symbol
+     st sym
+     (lambda (obj)
+       (values
+        (lens-set! val obj
+         (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
+         (=>hash-key! prop))
+        val)
        ))))
 
 (define (eval-boundp st sym)
@@ -1577,11 +1583,8 @@
 (define (elisp-put . args)
   (match args
     ((sym prop val)
-     (eval-put
-      (*the-environment*)
-      (symbol->string sym)
-      (symbol->string prop)
-      val))
+     (eval-put (*the-environment*) sym prop val)
+     )
     (args
      (eval-error
       "wrong number of arguments" "put"

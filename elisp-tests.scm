@@ -19,7 +19,8 @@
   ;; explicitly here until we get the "require" macro working
   ;; correctly.
   ;;------------------------------------------------------------------
-  '("./elisp/lisp/subr.el"
+  '("./elisp/lisp/emacs-lisp/byte-run.el"
+    "./elisp/lisp/subr.el"
     "./elisp/lisp/emacs-lisp/cl-lib.el"
     "./elisp/lisp/emacs-lisp/debug.el"
     "./elisp/lisp/emacs-lisp/backtrace.el"
