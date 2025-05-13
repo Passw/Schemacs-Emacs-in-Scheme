@@ -116,7 +116,10 @@
 
    ;; The interpreter
    elisp-eval!  elisp-load!  eval-iterate-forms
+
    =>elisp-symbol!
+     ;; ^ lens on a string that looks-up a sym-type object by name in
+     ;; *the-environment*, which is very useful for debugging.
 
    ;; Re-exporting symbols from (SCHEMACS ELISP-EVAL ENVIRONMENT):
    ;;------------------------------------------------------------

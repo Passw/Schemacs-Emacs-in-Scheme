@@ -531,13 +531,13 @@
 
 (define (eval-apply-proc func arg-exprs)
   ;; This is how built-in Scheme procedure are applied from within Emacs Lisp.
-  (let loop ((arg-exprs arg-exprs) (arg-vals '()))
-    (cond
-     ((null? arg-exprs) (apply func (reverse arg-vals)))
-     ((pair? arg-exprs)
-      (let ((result (eval-form (car arg-exprs))))
-        (loop (cdr arg-exprs) (cons result arg-vals))
-        )))))
+  (apply func
+   (let loop ((arg-exprs arg-exprs))
+     (cond
+      ((null? arg-exprs) '())
+      ((pair? arg-exprs)
+       (cons (eval-form (car arg-exprs)) (loop (cdr arg-exprs)))
+       )))))
 
 
 (define (eval-apply-lambda func args)
