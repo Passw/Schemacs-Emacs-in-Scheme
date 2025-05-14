@@ -3,4 +3,10 @@
 *.o
 *.o?
 *.ostk
-gypsum-mitscheme.com
+*.bci
+*.bcild
+*.bin
+*.binld
+*.com
+*.comld
+*.ext

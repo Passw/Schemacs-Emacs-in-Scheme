@@ -1,13 +1,11 @@
 (define-library (schemacs hash-table)
-  ;; TODO: Remove this library some day, when SRFI-125 becomes more
-  ;; ubiquitous, or perhaps just when Guile finally supports the
-  ;; SRFI-125 API.
-  ;;
-  ;; Because hash tables are so ubiquitous in computer programming
-  ;; these days, this library provides an implementation of SRFI-125,
-  ;; but tries to re-use as much as possible of whatever existing hash
-  ;; table implementation is provided by the Scheme implementations
-  ;; that run this code.
+
+  ;; This library exists to provide a uniform interface to common APIs
+  ;; that might be defined in different places depending on which
+  ;; Scheme implementation is running this code. APIs exported here
+  ;; can be imported exactly once per environment elsehwere in this
+  ;; program without having to write a `COND-EXPAND` statement
+  ;; everywhere one of these APIs are used.
 
   ;; IMPORTS
   (import

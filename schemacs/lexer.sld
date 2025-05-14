@@ -14,7 +14,7 @@
    lex  either  many  many1  lex-fold  lex-fold-count  lex-fmap
    lex/buffer  many/buffer  many1/buffer
    any  look  take  eof  char  lex-const
-   token  token/location  location  set-location!
+   location  set-location!
    lex-brackets  lex-first  lex-apply
    lex-trace  lex-error
 
@@ -51,7 +51,7 @@
    lexer-state  lexer-state-type?  lexer-look-ahead
    lexer-feed-string!  lexer-feed-file!
    =>lexer-line*!  =>lexer-column*!  =>lexer-filepath*!
-   =>lexer-port*!  =>lexer-continue*!
+   =>lexer-port*!  =>lexer-continuation*!
    lexer-state-get-location
    write-lexer-location
    with-lexer-location

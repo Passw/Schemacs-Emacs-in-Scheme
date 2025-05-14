@@ -164,7 +164,7 @@
   (record-unit-lens
    lexer-continue
    set!lexer-continue
-   '=>lexer-continue*!))
+   '=>lexer-continuation*!))
 
 ;;--------------------------------------------------------------------------------------------------
 
@@ -298,7 +298,7 @@
              )
          (put line     =>lexer-line*!)
          (put column   =>lexer-column*!)
-         (put cont     =>lexer-continue*!)
+         (put cont     =>lexer-continuation*!)
          (put filepath =>lexer-filepath*!)
          port
          ))

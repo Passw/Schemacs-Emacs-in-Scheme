@@ -89,7 +89,6 @@
    list->elisp-form ;; consruct an Elisp form from a Scheme list
    elisp-form->list
    elisp-form-equal? ;; compare Elisp form equality
-   *elisp-form-sym-equal-test* ;; parameter that sets equality test for symbol objects
    elisp-form-length ;; return number of elements in a Elisp form
    write-elisp-form ;; write an Elisp form to a port
 

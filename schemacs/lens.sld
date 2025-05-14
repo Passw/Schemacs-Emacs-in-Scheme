@@ -35,6 +35,7 @@
      (cond-expand
        ((library (srfi 28))
         (import (only (srfi 28) format)))
+       (mit)
        (else
         (import (only (rapid format) format)))
        )

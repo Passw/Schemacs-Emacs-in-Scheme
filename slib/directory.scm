@@ -109,6 +109,24 @@
       (define (list-directory-files dir)
         (filter file-regular? (read-directory dir)))))
 
+  (mit
+   (define current-directory pwd)
+   (define (directory-for-each . args)
+     (error "this is a placeholder that needs to be implemented later")
+     )
+   (define (pathname->dirname . args)
+     (error "this is a placeholder that needs to be implemented later")
+     )
+   )
+
+  (stklos
+   (define current-directory getcwd)
+   (define (directory-for-each . args)
+     (error "this is a placeholder that needs to be implemented later")
+     )
+   (define pathname->dirname dirname)
+   )
+
   (else
     (error "(slib directory) not supported for current R7RS Scheme implementation")))
 

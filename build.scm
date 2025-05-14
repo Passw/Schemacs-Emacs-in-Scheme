@@ -2,7 +2,10 @@
 
   (mit
 
-   (define loader load)
+   (define (loader file)
+     ;;(cf (string-append file ".sld"))
+     (load (string-append file ".sld"))
+     )
 
    (define (finish)
      (disk-save "./schemacs-mitscheme.com")
@@ -34,9 +37,8 @@
    (load-path
     (append
      '("."
-       "./rapid"
        "./chibi"
-       "./match"
+       "./slib"
        "./schemacs"
        "./schemacs/lens"
        "./schemacs/editor"
@@ -58,6 +60,11 @@
    (define (finish) #t)
    )
 
+  (chibi
+   (define (loader file) (load (string-append file ".sld")))
+   (define (finish) #t)
+   )
+
   (else
    (error "this Scheme implementation is not supported")
    ))
@@ -66,14 +73,10 @@
 
 (define file-list
   (list
-   "rapid/assume"
-   "rapid/format"
-   "rapid/test"
    "chibi/match"
    "slib/common"
    "slib/filename"
    "slib/directory"
-   "schemacs/test"
    "schemacs/bitwise"
    "schemacs/string"
    "schemacs/vector"

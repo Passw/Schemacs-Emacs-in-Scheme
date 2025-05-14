@@ -28,6 +28,13 @@
 
 (define *bin-hash-table-init-size* (make-parameter 11))
 
+(define bin-hash-table
+  (case-lambda
+    (() (bin-hash-table (*bin-hash-table-init-size*)))
+    ((init-size)
+     (make<bin-hash-table> init-size ((*default-make-hash-table*) init-size))
+     )))
+
 (define *default-key-hash*
   (make-parameter (lambda (key size) (modulo (default-hash key) size))))
 

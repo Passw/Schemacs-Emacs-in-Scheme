@@ -71,9 +71,6 @@
    env-setq-bind! ;; implements the ELisp `setq` macro
    env-alist-defines!
    env-reset-stack!
-   print-stack-frames
-   print-trace
-   show-trace ;; prints both trace and stack-frames to standard output port
    *default-obarray-size*
    *elisp-input-port*
    *elisp-output-port*
@@ -123,11 +120,7 @@
 
    ;;----------------------------------------
    ;; Stack frames
-   new-elstkfrm  stack-lookup =>elstkfrm*!
-   =>elstkfrm-lexstack-key*!
-   =>elstkfrm-dynstack-key*!
-   =>elstkfrm-lexstack*!
-   =>elstkfrm-dynstack*!
+   new-elstkfrm  stack-lookup
    elstkfrm-from-args
    elstkfrm-sym-intern!
 
@@ -135,7 +128,7 @@
    ;; Stack traces
    new-stack-trace-frame  stack-trace-frame-type?
    =>stack-trace-location*!  =>stack-trace-symbol*!
-   =>stack-trace-func!  =>stack-trace-frames*!
+   =>stack-trace-func*!  =>stack-trace-frames*!
    =>env-trace-location*!  =>env-trace-symbol*!
    =>env-trace-func*!  =>env-trace-frames*!
    write-stack-trace-frame
