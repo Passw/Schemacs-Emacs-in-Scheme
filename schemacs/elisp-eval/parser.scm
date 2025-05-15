@@ -215,6 +215,10 @@
            (sign-char (lexer-look-ahead st))
            (sign      (%tokenize-sign buffer st))
            )
+       (define (return-int sign coef e)
+         (close-port buffer)
+         (values token-int (sign (* coef (expt 10 e))))
+         )
        (cond
         ((run-lexer st skip-space-chars)
          (values token-symbol (string->symbol (make-string 1 sign-char)))
@@ -227,10 +231,6 @@
               ((exponent)       (%tokenize-exponent buffer st))
               ((symbol)         (run-lexer st (lex/buffer buffer lex-symbol)))
               )
-           (define (return-int sign coef e)
-             (close-port buffer)
-             (values token-int (sign (* coef (expt 10 e))))
-             )
            (cond
             (coefficient
              (cond

@@ -12,7 +12,6 @@
     (scheme cxr)
     (scheme case-lambda)
     (only (scheme write) display write)
-    (only (srfi 1) assq)
     (only (schemacs editor command) command-type? command-procedure)
     (only (schemacs bit-stack)
           new-bit-stack
@@ -47,7 +46,11 @@
           elisp-quote-scheme-type?
           write-parser-location
           )
-    (only (chibi match) match)
+    )
+  (cond-expand
+    (guile  (import (only (chibi match) match)))
+    (gambit (import (only (termite match) match)))
+    (else   (import (only (chibi match) match)))
     )
 
   (export

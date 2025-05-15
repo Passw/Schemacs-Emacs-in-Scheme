@@ -1,19 +1,25 @@
 
 (define library-directories
-  '(()
+  `(()
     (slib)
-    (chibi)
-    (schemacs)
+    ,@(cond-expand
+        (chibi '())
+        (else '((chibi)))
+        )
     (schemacs lens)
     (schemacs editor)
     (schemacs elisp-eval)
+    (schemacs)
     ))
 
 (define library-list
-  '((slib common)
+  `((slib common)
     (slib filename)
     (slib directory)
-    (chibi match)
+    ,@(cond-expand
+        (chibi '())
+        (else '((chibi match)))
+        )
     (schemacs bitwise)
     (schemacs string)
     (schemacs vector)
@@ -68,14 +74,24 @@
           )))
       ))))
 
+(define (make-loader ldproc)
+  (lambda (lib)
+    (ldproc (library-id->path lib ".sld"))
+    ))
+
+(define (make-verbose-loader msg ldproc)
+  (let ((file (library-id->path lib ".sld")))
+    (display "; ") (write-string msg) (write-char #\space) (write file) (newline)
+    (ldproc file)
+    ))
+
+;;--------------------------------------------------------------------
+
 (cond-expand
 
   (mit
 
-   (define (loader lib)
-     ;;(cf (library-id->path lib ".sld"))
-     (load (library-id->path lib ".sld"))
-     )
+   (define loader (make-loader load))
 
    (for-each loader library-list)
 
@@ -93,9 +109,7 @@
 
   (gauche
 
-   (define (loader lib)
-     (load (library-id->path lib ".sld"))
-     )
+   (define loader (make-loader load))
 
    (for-each loader library-list)
 
@@ -104,9 +118,9 @@
   (gambit
 
    (for-each module-search-order-add!
-    (map (lambda (lib) (library-id->path lib ".sld"))
-         library-directories
-         ))
+             (map (lambda (lib) (library-id->path lib ".sld"))
+                  library-directories
+                  ))
 
    (define (loader lib)
      (let ((src (library-id->path lib ".sld"))
@@ -155,9 +169,11 @@
            (obj (library-id->path lib ".ostk"))
            )
        (parameterize ((load-verbose #t))
-         (display "; compile ") (write src) (newline)
-         (compile-file src obj)
-         (load obj)
+         (display ";; Compile file ") (write src) (newline)
+         (and
+          (compile-file src obj)
+          (load obj)
+          #t)
          )))
 
    (for-each loader library-list)
@@ -166,9 +182,15 @@
 
   (chibi
 
-   (define (loader lib)
-     (load (library-id->path lib ".sld"))
-     )
+   (define (loader lib) (eval `(import ,lib)))
+
+   (for-each loader library-list)
+
+   )
+
+  (chez
+
+   (define loader (make-loader compile-file))
 
    (for-each loader library-list)
 

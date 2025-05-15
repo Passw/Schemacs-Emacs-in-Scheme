@@ -17,8 +17,7 @@
      (begin
        (define default-hash hash)
        ))
-    ((or stklos chibi) (import (srfi 125)))
-    (mit
+    ((or mit stklos chibi)
      (import (srfi 125))
      (import (only (srfi 128) default-hash))
      )

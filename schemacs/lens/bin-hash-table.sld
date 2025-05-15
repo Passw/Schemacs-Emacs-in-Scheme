@@ -19,16 +19,15 @@
           )
     )
   (cond-expand
-    (gauche
+    ((or guile gambit)
+     )
+    ((or gauche (library (srfi 128)))
+     (import (only (srfi 128) equal-comparator))
+     )
+    ((library (srfi 114))
      (import (only (srfi 114) equal-comparator))
      ))
-  (cond-expand
-    (guile-3
-     (import
-       (only (srfi 28) format)
-       (only (srfi srfi-9 gnu) set-record-type-printer!)))
-    (else)
-    )
+
   (export
    *bin-hash-table-init-size*
    *default-make-hash-table*

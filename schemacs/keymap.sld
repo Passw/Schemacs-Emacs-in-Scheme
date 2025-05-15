@@ -122,4 +122,5 @@
    modal-lookup-state-keymap
    modal-lookup-state-step!
    )
-  (include "keymap.scm"))
+  (include "keymap.scm")
+  )

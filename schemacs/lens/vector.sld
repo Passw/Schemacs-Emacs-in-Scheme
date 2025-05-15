@@ -41,7 +41,5 @@
    mutable-vector-delete-range!
    vector-copy-with)
 
-  (cond-expand
-    (stklos (include "./schemacs/lens/vector.scm"))
-    (guile (include "vector.scm"))
-    (else (include "vector.scm"))))
+  (include "vector.scm")
+  )

@@ -6,7 +6,6 @@
           display
           write
           )
-    (only (chibi match) match)
     (only (schemacs pretty)
           print-to-port
           pretty   print  qstr   line-break
@@ -35,6 +34,11 @@
           elisp-eval!
           elisp-load!
           )
+    )
+  (cond-expand
+    (guile  (import (only (chibi match) match)))
+    (gambit (import (only (termite match) match)))
+    (else   (import (only (chibi match) match)))
     )
   (export
    *verbose*

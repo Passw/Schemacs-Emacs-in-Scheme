@@ -1,5 +1,4 @@
 (define-library (schemacs string)
-
   ;; This library exists to provide a uniform interface to common APIs
   ;; that might be defined in different places depending on which
   ;; Scheme implementation is running this code. APIs exported here
@@ -7,12 +6,21 @@
   ;; program without having to write a `COND-EXPAND` statement
   ;; everywhere one of these APIs are used.
 
+  (import
+    (scheme base))
+
   (cond-expand
-    ((or guile (library (srfi 13)))
+    (guile
      (import (only (srfi 13) string-fold))
      )
     ((or mit (library (srfi 140)))
      (import (only (srfi 140) string-fold))
+     )
+    ((or chibi (library (srfi 130)))
+     (import (only (srfi 130) string-fold))
+     )
+    ((library (srfi 13))
+     (import (only (srfi 13) string-fold))
      )
     (else
      (begin

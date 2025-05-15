@@ -14,7 +14,6 @@
     (scheme case-lambda)
     (only (scheme file) open-input-file)
     (only (scheme write) display write)
-    (only (srfi 1) assq)
     (only (schemacs editor command) command-type? command-procedure)
     (only (schemacs hash-table) hash-table-empty? default-hash)
     (only (schemacs pretty) pretty print line-break)
@@ -33,7 +32,6 @@
           cursor-end?  cursor-type?
           cursor-collect-list  new-cursor-if-iterable
           )
-    (only (chibi match) match)
     (prefix (schemacs editor-impl) *impl/)
     (only (schemacs elisp-eval parser)
           elisp-read  select-elisp-dialect!
@@ -55,8 +53,8 @@
           env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!
           env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!
           elstkfrm-from-args   elstkfrm-sym-intern!
-          *default-obarray-size*
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
+          *default-obarray-size*
           =>env-obarray-key!   =>env-symbol!
           =>env-stack-trace*!  =>stack-trace-location*!
           =>env-lexstack*!  =>env-obarray*!  =>env-lexical-mode?!
@@ -91,6 +89,12 @@
           =>keymap-top-layer!
           )
     )
+  (cond-expand
+    (guile  (import (only (chibi match) match)))
+    (gambit (import (only (termite match) match)))
+    (else   (import (only (chibi match) match)))
+    )
+
 
   (cond-expand
     ((or guile-3 gambit stklos)
@@ -104,9 +108,8 @@
              hash-table-delete!
              hash-table-ref/default
              hash-table-walk
-             string-hash)
-       (only (srfi srfi-13)
-             string-hash)
+             string-hash
+             )
        ))
     (else))
 
@@ -132,7 +135,6 @@
    =>env-symbol!
 
    *the-environment*
-   *default-obarray-size*
    *elisp-init-env*
    *elisp-input-port*
    *elisp-output-port*

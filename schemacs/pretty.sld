@@ -40,10 +40,12 @@
     (scheme write)
     (scheme case-lambda)
     (only (schemacs lens)
-          record-unit-lens update)
+          record-unit-lens  update
+          )
     (only (schemacs lens vector)
-          mutable-vector-type? new-mutable-vector
-          mutable-vector-append! mutable-vector-fold/index)
+          mutable-vector-type?  new-mutable-vector
+          mutable-vector-append!  mutable-vector-fold/index
+          )
     )
   (export
    pp-type?

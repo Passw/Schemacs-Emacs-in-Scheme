@@ -23,9 +23,5 @@
    cursor-jumper
    declare-interface/cursor
    )
-
-  (cond-expand
-    (stklos (include "./schemacs/cursor.scm"))
-    (guile (include "cursor.scm"))
-    (else (include "cursor.scm"))
-    ))
+  (include "cursor.scm")
+  )

@@ -19,8 +19,7 @@
 
 ;; Packaged for R7RS Scheme by Peter Lane, 2017
 
-(define-library
-  (slib filename)
+(define-library (slib filename)
   (export filename:match??
           filename:match-ci??
           filename:substitute??
@@ -30,50 +29,51 @@
   (import (scheme base)
           (scheme char)
           (scheme file)
-          (slib common))
+          (slib common)
+          )
 
   (begin
 
     (define (glob:pattern->tokens pat)
       (cond
-        ((string? pat)
-         (let loop ((i 0)
-                    (toks '()))
-           (if (>= i (string-length pat))
-             (reverse toks)
-             (let ((pch (string-ref pat i)))
-               (case pch
-                 ((#\? #\*)
-                  (loop (+ i 1)
-                        (cons (string-copy pat i (+ i 1)) toks)))
-                 ((#\[)
-                  (let ((j
+       ((string? pat)
+        (let loop ((i 0)
+                   (toks '()))
+          (if (>= i (string-length pat))
+              (reverse toks)
+              (let ((pch (string-ref pat i)))
+                (case pch
+                  ((#\? #\*)
+                   (loop (+ i 1)
+                         (cons (string-copy pat i (+ i 1)) toks)))
+                  ((#\[)
+                   (let ((j
                           (let search ((j (+ i 2)))
                             (cond
-                              ((>= j (string-length pat))
-                               (error 'glob:make-matcher
-                                           "unmatched [" pat))
-                              ((char=? #\] (string-ref pat j))
-                               (if (and (< (+ j 1) (string-length pat))
-                                        (char=? #\] (string-ref pat (+ j 1))))
-                                 (+ j 1)
-                                 j))
-                              (else (search (+ j 1)))))))
-                    (loop (+ j 1) (cons (string-copy pat i (+ j 1)) toks))))
-                 (else
+                             ((>= j (string-length pat))
+                              (error 'glob:make-matcher
+                                     "unmatched [" pat))
+                             ((char=? #\] (string-ref pat j))
+                              (if (and (< (+ j 1) (string-length pat))
+                                       (char=? #\] (string-ref pat (+ j 1))))
+                                  (+ j 1)
+                                  j))
+                             (else (search (+ j 1)))))))
+                     (loop (+ j 1) (cons (string-copy pat i (+ j 1)) toks))))
+                  (else
                    (let search ((j (+ i 1)))
                      (cond ((= j (string-length pat))
                             (loop j (cons (string-copy pat i j) toks)))
                            ((memv (string-ref pat j) '(#\? #\* #\[))
                             (loop j (cons (string-copy pat i j) toks)))
                            (else (search (+ j 1)))))))))))
-        ((pair? pat)
-         (for-each (lambda (elt) (or (string? elt)
-                                     (error 'glob:pattern->tokens
-                                                 "bad pattern" pat)))
-                   pat)
-         pat)
-        (else (error 'glob:pattern->tokens "bad pattern" pat))))
+       ((pair? pat)
+        (for-each (lambda (elt) (or (string? elt)
+                               (error 'glob:pattern->tokens
+                                      "bad pattern" pat)))
+                  pat)
+        pat)
+       (else (error 'glob:pattern->tokens "bad pattern" pat))))
 
     (define (glob:make-matcher pat ch=? ch<=?)
       (define (match-end str k kmatch)
@@ -105,24 +105,24 @@
                               (ch<=? (string-ref chrs i) ch))
                          (nxt ch)))))
                 (else
-                  (let ((nxt (recur (+ i 1)))
-                        (chrsi (string-ref chrs i)))
-                    (lambda (ch)
-                      (or (ch=? chrsi ch) (nxt ch))))))))
+                 (let ((nxt (recur (+ i 1)))
+                       (chrsi (string-ref chrs i)))
+                   (lambda (ch)
+                     (or (ch=? chrsi ch) (nxt ch))))))))
       (define (match-set tok nxt)
         (let ((chrs (string-copy tok 1 (- (string-length tok) 1))))
           (if (and (positive? (string-length chrs))
                    (memv (string-ref chrs 0) '(#\^ #\!)))
-            (let ((pred (match-set1 (string-copy chrs 1 (string-length chrs)))))
-              (lambda (str k kmatch)
-                (and (< k (string-length str))
-                     (not (pred (string-ref str k)))
-                     (nxt str (+ k 1) (cons k kmatch)))))
-            (let ((pred (match-set1 chrs)))
-              (lambda (str k kmatch)
-                (and (< k (string-length str))
-                     (pred (string-ref str k))
-                     (nxt str (+ k 1) (cons k kmatch))))))))
+              (let ((pred (match-set1 (string-copy chrs 1 (string-length chrs)))))
+                (lambda (str k kmatch)
+                  (and (< k (string-length str))
+                       (not (pred (string-ref str k)))
+                       (nxt str (+ k 1) (cons k kmatch)))))
+              (let ((pred (match-set1 chrs)))
+                (lambda (str k kmatch)
+                  (and (< k (string-length str))
+                       (pred (string-ref str k))
+                       (nxt str (+ k 1) (cons k kmatch))))))))
       (define (match-* nxt)
         (lambda (str k kmatch)
           (let ((kmatch (cons k kmatch)))
@@ -132,16 +132,16 @@
                        (loop (- kk 1))))))))
 
       (let ((matcher
-              (let recur ((toks (glob:pattern->tokens pat)))
-                (if (null? toks)
-                  match-end
-                  (let ((pch (or (string=? (car toks) "")
-                                 (string-ref (car toks) 0))))
-                    (case pch
-                      ((#\?) (match-? (recur (cdr toks))))
-                      ((#\*) (match-* (recur (cdr toks))))
-                      ((#\[) (match-set (car toks) (recur (cdr toks))))
-                      (else (match-str (car toks) (recur (cdr toks))))))))))
+             (let recur ((toks (glob:pattern->tokens pat)))
+               (if (null? toks)
+                   match-end
+                   (let ((pch (or (string=? (car toks) "")
+                                  (string-ref (car toks) 0))))
+                     (case pch
+                       ((#\?) (match-? (recur (cdr toks))))
+                       ((#\*) (match-* (recur (cdr toks))))
+                       ((#\[) (match-set (car toks) (recur (cdr toks))))
+                       (else (match-str (car toks) (recur (cdr toks))))))))))
         (lambda (str) (matcher str 0 '()))))
 
     (define (glob:caller-with-matches pat proc ch=? ch<=?)
@@ -164,7 +164,7 @@
                          (cdr wild?)
                          (cons (string-copy str (car inds) (cadr inds)) res)))
                   (else
-                    (loop (cdr inds) (cdr wild?) res)))))))
+                   (loop (cdr inds) (cdr wild?) res)))))))
 
     (define (glob:make-substituter pattern template ch=? ch<=?)
       (define (wildcard? pat)
@@ -174,7 +174,7 @@
       (define (countq val lst)
         (do ((lst lst (cdr lst))
              (c 0 (if (eq? val (car lst)) (+ c 1) c)))
-          ((null? lst) c)))
+            ((null? lst) c)))
       (let ((tmpl-literals (map (lambda (tok)
                                   (if (wildcard? tok) #f tok))
                                 (glob:pattern->tokens template)))
@@ -182,7 +182,7 @@
             (matcher (glob:make-matcher pattern ch=? ch<=?)))
         (or (= (countq #t pat-wild?) (countq #f tmpl-literals))
             (error 'glob:make-substituter
-                        "number of wildcards doesn't match" pattern template))
+                   "number of wildcards doesn't match" pattern template))
         (lambda (str)
           (let ((indices (matcher str)))
             (and indices
@@ -191,18 +191,18 @@
                             (lits tmpl-literals)
                             (res '()))
                    (cond
-                     ((null? lits)
-                      (apply string-append (reverse res)))
-                     ((car lits)
-                      (loop inds wild? (cdr lits) (cons (car lits) res)))
-                     ((null? wild?)		;this should never happen.
-                      (loop '() '() lits res))
-                     ((car wild?)
-                      (loop (cdr inds) (cdr wild?) (cdr lits)
-                            (cons (string-copy str (car inds) (cadr inds))
-                                  res)))
-                     (else
-                       (loop (cdr inds) (cdr wild?) lits res)))))))))
+                    ((null? lits)
+                     (apply string-append (reverse res)))
+                    ((car lits)
+                     (loop inds wild? (cdr lits) (cons (car lits) res)))
+                    ((null? wild?)		;this should never happen.
+                     (loop '() '() lits res))
+                    ((car wild?)
+                     (loop (cdr inds) (cdr wild?) (cdr lits)
+                           (cons (string-copy str (car inds) (cadr inds))
+                                 res)))
+                    (else
+                     (loop (cdr inds) (cdr wild?) lits res)))))))))
 
     ;;@body
     ;;Returns a predicate which returns a non-false value if its string argument
@@ -258,14 +258,14 @@
             ((string? template)
              (glob:make-substituter pattern template char=? char<=?))
             (else
-              (error 'filename:substitute?? "bad second argument" template))))
+             (error 'filename:substitute?? "bad second argument" template))))
     (define (filename:substitute-ci?? pattern template)
       (cond ((procedure? template)
              (glob:caller-with-matches pattern template char-ci=? char-ci<=?))
             ((string? template)
              (glob:make-substituter pattern template char-ci=? char-ci<=?))
             (else
-              (error 'filename:substitute-ci?? "bad second argument" template))))
+             (error 'filename:substitute-ci?? "bad second argument" template))))
 
     ;;@example
     ;;((filename:substitute?? "scm_[0-9]*.html" "scm5c4_??.htm")
@@ -291,10 +291,10 @@
              (g (lambda (st)
                   (or (f st)
                       (error 'replace-suffix "suffix doesn't match:"
-                                  old st)))))
+                             old st)))))
         (if (pair? str)
-          (map g str)
-          (g str))))
+            (map g str)
+            (g str))))
 
     ;;@example
     ;;(replace-suffix "/usr/local/lib/slib/batch.scm" ".scm" ".c")
@@ -325,10 +325,12 @@
             ((and (= 1 (length suffi)) (number? (car suffi)))
              (do ((cnt (if (null? suffi) 0 (+ -1 (car suffi))) (+ -1 cnt))
                   (paths '() (cons (tmpnam) paths)))
-               ((negative? cnt)
-                (do-call paths))))
+                 ((negative? cnt)
+                  (do-call paths))))
             (else (do-call (map (lambda (suffix) (string-append (tmpnam) suffix))
                                 suffi)))))
 
     ))
+
+
 

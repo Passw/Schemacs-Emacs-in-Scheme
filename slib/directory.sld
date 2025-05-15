@@ -47,16 +47,37 @@
           (scheme case-lambda)
           (slib common)
           (slib filename))
+
   (cond-expand
     (guile
      (import
        (only (guile)
-             mkdir dirname getcwd opendir readdir closedir))
-     )
+             mkdir dirname getcwd opendir readdir closedir)))
+
     (gauche
-     (import (file util))
+     (import
+       (file util)))
+
+    (stklos
+     (import (srfi 170))
+     (begin
+       (define dirname dirname)
+       (define directory-files directory-files)
+       )
      )
+
+    ((library (chibi filesystem))
+     (import (chibi filesystem)
+             (chibi pathname))
+     (begin ; current-directory exported
+       (define make-directory create-directory*)
+       (define (pathname->dirname path)
+         (string-append (path-directory path) "/"))
+       (define list-directory-files directory-files)))
+
     (else)
+
     )
+
   (include "directory.scm")
   )

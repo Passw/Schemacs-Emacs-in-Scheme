@@ -1421,8 +1421,8 @@
 (define (eval-fmakunbound st sym)
   (view-on-symbol st sym (lambda (obj) (view st (=>env-obarray-key! sym)))))
 
-(define (1+ n) (+ n 1))
-(define (1- n) (- n 1))
+(define (|1+| n) (+ n 1))
+(define (|1-| n) (- n 1))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Built-in functions
@@ -1900,8 +1900,8 @@
      (equal  . ,(pure 2 "equal" equal?))
      (concat . ,(pure* string-append))
 
-     (1+ . ,(pure 1 "1+" 1+))
-     (1- . ,(pure 1 "1-" 1-))
+     (|1+| . ,(pure 1 "1+" |1+|))
+     (|1-| . ,(pure 1 "1-" |1-|))
      (+  . ,(pure*-numbers "+" +))
      (-  . ,(pure*-numbers "-" -))
      (*  . ,(pure*-numbers "*" *))

@@ -345,16 +345,16 @@
      (else c)
      )))
 
-(define (1+ line) (+ 1 line))
+(define (|1+| line) (+ 1 line))
 
 (define (%increment-line st c)
   (cond
    ((char=? #\newline c)
-    (update 1+ st =>lexer-line*!)
+    (update |1+| st =>lexer-line*!)
     (lens-set 1 st =>lexer-column*!)
     )
    (else
-    (update 1+ st =>lexer-column*!)
+    (update |1+| st =>lexer-column*!)
     )))
 
 (define (%step! st)

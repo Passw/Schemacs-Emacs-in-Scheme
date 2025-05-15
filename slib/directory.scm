@@ -37,24 +37,17 @@
 ;;--------------------------------------------------------------------
 
 ;; functions must be defined in platform specific ways
+
+
 (cond-expand
   (guile
-   (define current-directory getcwd)
-   (define make-directory mkdir)
-   (define opendir opendir)
-   (define closedir closedir)
-   (define readdir readdir)
-   )
-
-  ((library (chibi filesystem))
-   (import (chibi filesystem)
-           (chibi pathname))
    (begin
-     ; current-directory exported
-     (define make-directory create-directory*)
-     (define (pathname->dirname path)
-       (string-append (path-directory path) "/"))
-     (define list-directory-files directory-files)))
+     (define current-directory getcwd)
+     (define make-directory mkdir)
+     (define opendir opendir)
+     (define closedir closedir)
+     (define readdir readdir)
+     ))
 
   (gauche
     (begin
@@ -109,27 +102,23 @@
       (define (list-directory-files dir)
         (filter file-regular? (read-directory dir)))))
 
+
   (mit
-   (define current-directory pwd)
-   (define (directory-for-each . args)
-     (error "this is a placeholder that needs to be implemented later")
-     )
-   (define (pathname->dirname . args)
-     (error "this is a placeholder that needs to be implemented later")
-     )
-   )
+   (begin
+    (define current-directory pwd)
+    (define pathname->dirname pathname-directory)
+    (define list-directory-files directory-read)
+    ))
 
   (stklos
-   (define current-directory getcwd)
-   (define (directory-for-each . args)
-     (error "this is a placeholder that needs to be implemented later")
-     )
-   (define pathname->dirname dirname)
-   )
+   (begin
+     (define pathname->dirname dirname)
+     ))
+
+  (chibi)
 
   (else
     (error "(slib directory) not supported for current R7RS Scheme implementation")))
-
 
 (cond-expand
   (guile
@@ -140,19 +129,20 @@
    ;; directory is being used by this process while it iterates over
    ;; entries.
 
-   (define directory-for-each
-     (case-lambda
-       ((proc dirname) (directory-for-each proc dirname identity))
-       ((proc dirname pred)
-        (let ((stream (opendir dirname)))
-          (let loop ()
-            (let ((next (readdir stream)))
-              (cond
-               ((eof-object? next) (closedir stream) (values))
-               ((pred next) (proc next) (loop))
-               (else (loop))
-               ))))
-        )))
+   (begin
+     (define directory-for-each
+       (case-lambda
+         ((proc dirname) (directory-for-each proc dirname identity))
+         ((proc dirname pred)
+          (let ((stream (opendir dirname)))
+            (let loop ()
+              (let ((next (readdir stream)))
+                (cond
+                 ((eof-object? next) (closedir stream) (values))
+                 ((pred next) (proc next) (loop))
+                 (else (loop))
+                 ))))
+          ))))
    )
 
   (else
@@ -161,22 +151,24 @@
    ;; memory by the `LIST-DIRECTORY-FILES` procedure (which is not
    ;; exported).
 
-   (define directory-for-each
-     (case-lambda
-       ((proc dir) (directory-for-each proc dir identity))
-       ((proc dir given-selector)
-        (let ((selector (cond ((null? given-selector) identity)
-                              ((procedure? given-selector) given-selector)
-                              ((string? given-selector) (filename:match?? given-selector))
-                              (else (error "Invalid selector for directory-for-each")))))
-          (for-each (lambda (filename) (when (selector filename) (proc filename)))
-                    (list-directory-files dir))))))
+   (begin
+     (define directory-for-each
+       (case-lambda
+         ((proc dir) (directory-for-each proc dir identity))
+         ((proc dir given-selector)
+          (let ((selector (cond ((null? given-selector) identity)
+                                ((procedure? given-selector) given-selector)
+                                ((string? given-selector) (filename:match?? given-selector))
+                                (else (error "Invalid selector for directory-for-each")))))
+            (for-each (lambda (filename) (when (selector filename) (proc filename)))
+                      (list-directory-files dir)))))))
    ))
 
 
-(define (directory*-for-each proc path-glob)
-  (let* ((dir (pathname->dirname path-glob))
-         (glob (string-copy path-glob (string-length dir))))
-    (directory-for-each proc
-                        (if (equal? "" dir) "." dir)
-                        glob)))
+(begin
+  (define (directory*-for-each proc path-glob)
+    (let* ((dir (pathname->dirname path-glob))
+           (glob (string-copy path-glob (string-length dir))))
+      (directory-for-each proc
+                          (if (equal? "" dir) "." dir)
+                          glob))))

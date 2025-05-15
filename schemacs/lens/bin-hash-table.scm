@@ -8,24 +8,6 @@
   (store-size get-bin-hash-table-store-size set!bin-hash-table-store-size)
   (hash-table get-bin-hash-table-hash set!bin-hash-table-hash))
 
-(cond-expand
-  (guile-3
-   (set-record-type-printer!
-    <bin-hash-table-type>
-    (lambda (bht port)
-      (display
-       (format
-        "(bin-hash-table ~s ~s)"
-        (get-bin-hash-table-store-size bht)
-        (let ((ht (get-bin-hash-table-hash bht)))
-          (if (not ht) #f (hash-table->alist ht))))
-       port)))
-
-   (define (hash-table-empty? ht) (<= (hash-table-size ht) 0))
-      ;; Guile does not yet provide SRFI-125
-   )
-  (else))
-
 (define *bin-hash-table-init-size* (make-parameter 11))
 
 (define bin-hash-table

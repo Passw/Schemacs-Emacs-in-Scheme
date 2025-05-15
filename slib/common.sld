@@ -1,27 +1,26 @@
 ;; Features from Template, usually defined in init
 
-(define-library
-  (slib common)
+(define-library (slib common)
   (export
-    add-base-table-implementation
-    base-table-implementations
-    call-with-open-ports
-    char-code-limit
-    gentemp
-    identity
-    make-exchanger
-    most-positive-fixnum
-    open-file
-    output-port-height
-    output-port-width
-    provided?
-    slib:version
-    slib:warn
-    software-type
-    system
-    tmpnam
-    with-load-pathname
-    )
+   add-base-table-implementation
+   base-table-implementations
+   call-with-open-ports
+   char-code-limit
+   gentemp
+   identity
+   make-exchanger
+   most-positive-fixnum
+   open-file
+   output-port-height
+   output-port-width
+   provided?
+   slib:version
+   slib:warn
+   software-type
+   system
+   tmpnam
+   with-load-pathname
+   )
   (import (scheme base)
           (scheme file)
           (scheme write))
@@ -31,9 +30,9 @@
     (guile
      (import (only (guile) system)))
     (kawa
-      (import (kawa lib system)))
+     (import (kawa lib system)))
     (larceny
-      (import (primitives system)))
+     (import (primitives system)))
     ((library (chibi process))
      ;; chibi cannot use 'system' directly for redirecting to files (execvp)
      ;; hence calls out to bash  TODO: Clearly this is Linux specific
@@ -41,8 +40,8 @@
      (begin
        (define (system cmd)
          (guard (exc (else 1))
-                (let-values (((e s) (chibi:system "/bin/bash" "-c" cmd)))
-                            s)))))
+           (let-values (((e s) (chibi:system "/bin/bash" "-c" cmd)))
+             s)))))
     ((library (sagittarius process))
      ;; to avoid execvp errors, Sagittarius also calls out to bash  TODO: Clearly this is Linux specific
      (import (sagittarius process))
@@ -50,8 +49,8 @@
        (define (system cmd)
          (run "/bin/bash" "-c" cmd))))
     (else ; else, set system to return an 'unsupported' error
-      (begin
-        (define (system . args) (error "Implementation does not support 'system' calls")))))
+     (begin
+       (define (system . args) (error "Implementation does not support 'system' calls")))))
 
   (begin
 
@@ -72,7 +71,7 @@
                  (memv 'linux (features)))
              'unix)
             (else
-              'unknown)))
+             'unknown)))
 
     (define gentemp
       (let ((c 100))
@@ -93,11 +92,11 @@
     (define (open-file filename modes)
       (case modes
         ((r) (if (file-exists? filename)
-               (open-input-file filename)
-               #f))
+                 (open-input-file filename)
+                 #f))
         ((rb) (if (file-exists? filename)
-                (open-binary-input-file filename)
-                #f))
+                  (open-binary-input-file filename)
+                  #f))
         ((w) (open-output-file filename))
         ((wb) (open-binary-output-file filename))
         (else (error 'open-file "invalid mode" modes))))
@@ -126,9 +125,9 @@
         ((object-hash) #f)
         ((real) #t)  ;; ?? same as inexact?
         (else
-          (error "unknown feature " feature))))
+         (error "unknown feature " feature))))
 
-    ;@
+                                        ;@
     (define slib:warn
       (lambda args
         (let ((cep (current-error-port)))
@@ -138,16 +137,16 @@
 
     (define tmpnam (let ((cntr 100))
                      (lambda () (set! cntr (+ 1 cntr))
-                       (string-append "slib_" (number->string cntr)))))
+                        (string-append "slib_" (number->string cntr)))))
 
     (define *load-pathname* #f)
 
     (define with-load-pathname
       (let ((exchange
-              (lambda (new)
-                (let ((old *load-pathname*))
-                  (set! *load-pathname* new)
-                  old))))
+             (lambda (new)
+               (let ((old *load-pathname*))
+                 (set! *load-pathname* new)
+                 old))))
         (lambda (path thunk)
           (let ((old #f))
             (dynamic-wind
@@ -161,4 +160,3 @@
       (base-table-implementations (cons impl (base-table-implementations))))
 
     ))
-

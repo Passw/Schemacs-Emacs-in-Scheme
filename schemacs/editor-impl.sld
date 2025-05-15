@@ -16,7 +16,6 @@
     )
 
   (export
-   is-buffer-modified?*
    cell-factory*
    new-buffer-view*
    delete-char*
