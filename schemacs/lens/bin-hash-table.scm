@@ -163,7 +163,7 @@
        (let*((new-ht (hash-table-copy ht))
              (replace-w/copy
               (lambda (key val) (hash-table-set! new-ht key (copier val)))))
-         (hash-table-walk ht replace-w/copy)
+         (hash-table-for-each replace-w/copy ht)
          new-ht))
       (else
        (display ";; deep-copy hash-table FAILED, not a hash-table: ")(write ht)(newline);;DEBUG

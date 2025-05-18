@@ -13,7 +13,7 @@
     (only (schemacs hash-table) ; Standard hash tables
           hash-table-empty?
           default-hash make-hash-table alist->hash-table hash-table->alist
-          hash-table-size hash-table-copy hash-table-walk
+          hash-table-size hash-table-copy hash-table-for-each
           hash-table-update!/default hash-table-set!
           hash-table-fold hash-table?
           )

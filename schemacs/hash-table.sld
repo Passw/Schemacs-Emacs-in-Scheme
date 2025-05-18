@@ -13,10 +13,8 @@
     )
   (cond-expand
     ((or guile gambit)
-     (import (srfi  69))
-     (begin
-       (define default-hash hash)
-       ))
+     (import (srfi 69))
+     )
     ((or mit stklos chibi)
      (import (srfi 125))
      (import (only (srfi 128) default-hash))
@@ -28,6 +26,14 @@
        (except (srfi 125) alist->hash-table)
        (only (srfi 128) default-hash)
        )
+     )
+    (chez
+     (import
+       (srfi 125)
+       (only (srfi 128)
+             default-hash
+             string-hash
+             ))
      )
     (else
      (cond-expand
@@ -54,18 +60,29 @@
    hash-table-set!
    hash-table-size
    hash-table-update!/default
-   hash-table-walk
+   hash-table-for-each
    hash-table?
    make-hash-table
    default-hash  string-hash
    )
 
   (begin
+
     (cond-expand
-      ((or guile-3 gambit)
+
+      ((or guile gambit)
+
        (define (hash-table-empty? ht)
-         (= 0 (hash-table-size ht)))
+         (= 0 (hash-table-size ht))
+         )
+
+       (define default-hash hash)
+
+       (define (hash-table-for-each proc ht)
+         (hash-table-walk ht proc)
+         )
+
        )
 
-      (else)))
-  )
+     (else)
+     )))

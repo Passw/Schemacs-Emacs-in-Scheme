@@ -38,7 +38,7 @@
           string-hash alist->hash-table hash-table->alist
           hash-table? hash-table-size make-hash-table
           hash-table-fold hash-table-ref/default
-          hash-table-copy hash-table-walk hash-table-set!)
+          hash-table-copy hash-table-set!)
     )
 
   (cond-expand

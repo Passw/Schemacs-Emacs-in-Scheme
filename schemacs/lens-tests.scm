@@ -9,7 +9,7 @@
         hash-table-size
         alist->hash-table
         hash-table->alist
-        hash-table-walk
+        hash-table-for-each
         )
   (schemacs test)
   )
@@ -224,7 +224,7 @@
 
 ;; -------------------------------------------------------------------------------------------------
 
-(define (hash-table-for-each proc ht) (hash-table-walk ht proc))
+(define (hash-table-for-each proc ht) (hash-table-for-each proc ht))
 
 (define (=>depth-first-search select?)
   ;; This lens finds the first node in a tree for which the `SELECT?`

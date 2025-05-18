@@ -15,7 +15,19 @@
     (only (scheme file) open-input-file)
     (only (scheme write) display write)
     (only (schemacs editor command) command-type? command-procedure)
-    (only (schemacs hash-table) hash-table-empty? default-hash)
+    (only (schemacs hash-table)
+          hash-table?
+          hash-table-empty?
+          make-hash-table
+          alist->hash-table
+          hash-table->alist
+          hash-table-set!
+          hash-table-delete!
+          hash-table-ref/default
+          hash-table-for-each
+          default-hash
+          string-hash
+          )
     (only (schemacs pretty) pretty print line-break)
     (only (schemacs lens)
           unit-lens  record-unit-lens  lens
@@ -94,24 +106,6 @@
     (gambit (import (only (termite match) match)))
     (else   (import (only (chibi match) match)))
     )
-
-
-  (cond-expand
-    ((or guile-3 gambit stklos)
-     (import
-       (only (srfi 69)
-             hash-table?
-             make-hash-table
-             alist->hash-table
-             hash-table->alist
-             hash-table-set!
-             hash-table-delete!
-             hash-table-ref/default
-             hash-table-walk
-             string-hash
-             )
-       ))
-    (else))
 
   (export
    ;; Initializing environments

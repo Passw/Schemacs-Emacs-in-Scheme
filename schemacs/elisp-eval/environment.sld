@@ -27,7 +27,7 @@
           hash-table-set!
           hash-table-delete!
           hash-table-ref/default
-          hash-table-walk
+          hash-table-for-each
           string-hash
           )
     (only (schemacs lens)

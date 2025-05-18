@@ -1333,7 +1333,7 @@
      (let ((hash (view st =>env-obarray*!)))
        (cond
         ((hash-table? hash)
-         (hash-table-walk hash (lambda (_key obj) (func obj)))
+         (hash-table-for-each (lambda (_key obj) (func obj)) hash)
          #f)
         (else #f)
         )))))
