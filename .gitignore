@@ -1,4 +1,5 @@
 .guix-profile*
+.akku
 *.log
 *.o
 *.o?

@@ -36,14 +36,20 @@ SEARCH_PATHS := . \
 
 
 ######################################################################
+# building
 
-.PHONY: clean  clean-gambit  cleam-mit  schemacs-guile  schemacs-gambit
+.PHONY: all
+
+all:
+	@echo '###<--- BUILD PROFILE NOT SPECIFIED --->###'
 
 schemacs-mitscheme.com: build.scm $(SCHEME_LIBRARIES)
 	mit-scheme --eval '(let () (load "build.scm") (exit 0))';
 
 schemacs-guile: $(SCHEME_LIBRARIES)
-	guile -c '(let () (load "./build.scm") (exit 0))';
+	guile --r7rs  --fresh-auto-compile \
+	  -l $(PWD) \
+	  -c '(let () (load "./build.scm") (exit 0))';
 
 
 schemacs-gambit: $(SCHEME_LIBRARIES)
@@ -52,9 +58,25 @@ schemacs-gambit: $(SCHEME_LIBRARIES)
 schemacs-stklos: $(SCHEME_LIBRARIES)
 	stklos -l "./build.scm";
 
-######################################################################
+schemacs-chicken: $(SCHEME_LIBRARIES)
+	csc -R r7rs $(SCHEME_LIBRARIES)
 
-FIND_SKIP_GIT = find . -type d \( -name .git -o -name .akku \) -false -o
+schemacs-chez: $(SCHEME_LIBRARIES)
+	akku install && \
+	echo '(compile-file "./.akku/lib/schemacs/elisp-eval.sls")' | \
+	  chezscheme \
+	    --compile-imported-libraries \
+	    --libdirs ./.akku/lib \
+
+
+######################################################################
+# Cleaning
+
+FIND_SKIP_GIT = -type d \( -name .git -o -name .akku \) -false -o
+
+DEFAULT_FIND = find . $(FIND_SKIP_GIT)
+
+.PHONY: clean  clean-gambit  cleam-mit  schemacs-guile  schemacs-gambit  clean-all-chez
 
 clean: clean-mit clean-stklos clean-gambit
 
@@ -64,7 +86,7 @@ clean-stklos:
 
 
 clean-mit:
-	$(FIND_SKIP_GIT) \
+	$(DEFAULT_FIND) \
 	  -type f \
 	  \( -name '*.com' \
 	  -o -name '*.bin' \
@@ -77,9 +99,25 @@ clean-mit:
 
 
 clean-gambit:
-	$(FIND_SKIP_GIT) \
+	$(DEFAULT_FIND) \
 	  -type f \
 	  \( -name '*.o[0-9]' \
 	  -o -name '*.o[0-9][0-9]' \
 	  \) \
 	  -print -delete;
+
+clean-chez:
+	find ./.akku \
+	  -type d \
+	  \( -name srfi \
+	  -o -name scheme \
+	  -o -name akku \
+	  -o -name akku-r7rs \
+	  -o -name laesare \
+	  \) \
+	  -prune -false -o \
+	  -type f -name '*.so' \
+	  -print -delete
+
+clean-all-chez:
+	find ./.akku -type f -name '*.so' -print -delete

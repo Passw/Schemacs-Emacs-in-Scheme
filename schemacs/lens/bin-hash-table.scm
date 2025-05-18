@@ -26,12 +26,8 @@
 (define *default-make-hash-table*
   (make-parameter
    (lambda (size)
-     ;; TODO: make use of the `SIZE` parameter.
-     (cond-expand
-       (gauche
-        (make-hash-table equal-comparator))
-       (else
-        (make-hash-table equal? (*default-key-hash*))))
+     ;; TODO: make use of the `SIZE` parameter. Look into SRFI 162
+     (make-hash-table equal? (*default-key-hash*))
      )))
 
 (define empty-bin-hash-table 

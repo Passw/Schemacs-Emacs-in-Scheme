@@ -13,7 +13,7 @@
         mutable-vector-type? =>mvector-index!
         new-mutable-vector
         mutable-vector-length
-        mutable-vector-append!)
+        )
   (prefix (schemacs editor-impl) *impl/)
   (only (schemacs hash-table)
         hash-table-size

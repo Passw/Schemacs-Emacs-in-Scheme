@@ -12,6 +12,9 @@
      ;; do nothing: SRFI 60 APIs are built-in to Gambit,
      ;; but the library (srfi 60) is not provided.
      )
+    (chez
+     (import (srfi 151))
+     )
     ((or chibi stklos (library (srfi 151)))
      (import
        (only (srfi 151)

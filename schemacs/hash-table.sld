@@ -17,15 +17,21 @@
      )
     ((or mit stklos chibi)
      (import (srfi 125))
-     (import (only (srfi 128) default-hash))
+     (import
+       (only (srfi 128)
+             default-hash
+             string-hash
+             ))
      )
     (gauche
      (import
        (scheme case-lambda)
        (only (srfi 69) alist->hash-table)
        (except (srfi 125) alist->hash-table)
-       (only (srfi 128) default-hash)
-       )
+       (only (srfi 128)
+             default-hash
+             string-hash
+             ))
      )
     (chez
      (import
@@ -42,9 +48,12 @@
         ))
      (cond-expand
        ((library (srfi 128))
-        (import (only (srfi 128) default-hash))
-        ))
-     )
+        (import
+          (only (srfi 128)
+                default-hash
+                string-hash
+                ))
+        )))
     )
 
   ;; EXPORTS

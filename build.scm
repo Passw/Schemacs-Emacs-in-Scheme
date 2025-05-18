@@ -1,11 +1,20 @@
+(define chibi-matcher-libs
+  (cond-expand
+    (chibi '()) ;; use chibi's built-in matcher, not the copy in this source repo
+    (else '((chibi match)))
+    )
+  )
+
+(define chibi-matcher-libdirs
+  (cond-expand
+    (chibi '())
+    (else '((chibi)))
+    ))
 
 (define library-directories
   `(()
     (slib)
-    ,@(cond-expand
-        (chibi '())
-        (else '((chibi)))
-        )
+    ,@chibi-matcher-libdirs
     (schemacs lens)
     (schemacs editor)
     (schemacs elisp-eval)
@@ -16,10 +25,7 @@
   `((slib common)
     (slib filename)
     (slib directory)
-    ,@(cond-expand
-        (chibi '())
-        (else '((chibi match)))
-        )
+    ,@chibi-matcher-libs
     (schemacs bitwise)
     (schemacs string)
     (schemacs vector)
@@ -80,10 +86,11 @@
     ))
 
 (define (make-verbose-loader msg ldproc)
-  (let ((file (library-id->path lib ".sld")))
-    (display "; ") (write-string msg) (write-char #\space) (write file) (newline)
-    (ldproc file)
-    ))
+  (lambda (lib)
+    (let ((file (library-id->path lib ".sld")))
+      (display "; ") (write-string msg) (write-char #\space) (write file) (newline)
+      (ldproc file)
+      )))
 
 ;;--------------------------------------------------------------------
 
@@ -103,8 +110,13 @@
 
   (guile
 
-   (import (schemacs elisp-eval))
-
+   ;; Use the Guile REPL's "import" statement to do all the work.
+   (import
+     (scheme base)
+     (scheme load)
+     (scheme write)
+     (schemacs elisp-eval)
+     )
    )
 
   (gauche
@@ -190,9 +202,9 @@
 
   (chez
 
-   (define loader (make-loader compile-file))
-
-   (for-each loader library-list)
+   (compile-imported-libraries #t)
+   (generate-wpo-files #t)
+   (compile-library "./.akku/lib/elisp-eval.sld")
 
    )
 

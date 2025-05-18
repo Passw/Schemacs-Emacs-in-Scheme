@@ -13,14 +13,17 @@
     (guile
      (import (only (srfi 13) string-fold))
      )
-    ((or mit (library (srfi 140)))
-     (import (only (srfi 140) string-fold))
+    (chibi
+     (import (only (chibi string) string-fold))
      )
-    ((or chibi (library (srfi 130)))
-     (import (only (srfi 130) string-fold))
+    (mit 
+     (import (only (srfi 140) string-fold))
      )
     ((library (srfi 13))
      (import (only (srfi 13) string-fold))
+     )
+    ((library (srfi 140))
+     (import (only (srfi 140) string-fold))
      )
     (else
      (begin

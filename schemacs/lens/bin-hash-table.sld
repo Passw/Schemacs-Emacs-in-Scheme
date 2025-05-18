@@ -18,15 +18,6 @@
           hash-table-fold hash-table?
           )
     )
-  (cond-expand
-    ((or guile gambit)
-     )
-    ((or gauche (library (srfi 128)))
-     (import (only (srfi 128) equal-comparator))
-     )
-    ((library (srfi 114))
-     (import (only (srfi 114) equal-comparator))
-     ))
 
   (export
    *bin-hash-table-init-size*

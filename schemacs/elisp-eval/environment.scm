@@ -604,7 +604,7 @@
   )
 
 (define spaces
-  #("" " " "  " "   " "    " "     " "      " "       "))
+  '#("" " " "  " "   " "    " "     " "      " "       "))
 
 (define (count-digits-b10 n)
   (cond

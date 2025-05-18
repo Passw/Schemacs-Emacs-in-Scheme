@@ -501,7 +501,7 @@
      '(let ((sum 0) (i 0))
         (while (< i 10)
           (setq sum (+ sum i))
-          (setq i (1+ i)))
+          (setq i (|1+| i)))
         sum)))
 
 (test-assert

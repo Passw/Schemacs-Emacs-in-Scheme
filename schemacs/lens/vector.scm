@@ -6,6 +6,43 @@
   (min-index mutable-vector-min-index set!mutable-vector-min-index)
   (max-index mutable-vector-max-index set!mutable-vector-max-index))
 
+(define (resize-vector old-vec old-max-index old-store-size increase-by)
+  (cond
+   ((= 0 increase-by) old-vec)
+   (else
+    (let*((new-store-size ((*mutable-vector-grow*) old-store-size increase-by))
+          (new-vec (make-vector new-store-size)))
+      (vector-copy! new-vec 0 old-vec 0 old-max-index)
+      new-vec))
+   ))
+
+(define (mutable-vector-append! mvec . items)
+  (let*((list-len (length items))
+        (old-max-index (view mvec =>mutable-vector-max-index))
+        (new-max-index (+ old-max-index list-len))
+        (old-store-size (mutable-vector-store-size mvec))
+        (vec
+         (cond
+          ((> new-max-index old-store-size)
+           (let ((vec
+                  (resize-vector
+                   (view mvec =>mutable-vector!)
+                   old-max-index old-store-size list-len)))
+             (lens-set vec mvec =>mutable-vector!)
+             vec))
+          (else (view mvec =>mutable-vector!)))))
+    (let loop
+        ((i old-max-index)
+         (items items))
+      (cond
+       ((or (null? items) (not items)) (values))
+       (else
+        (vector-set! vec i (car items))
+        (loop (+ 1 i) (cdr items)))))
+    (lens-set new-max-index mvec =>mutable-vector-max-index)
+    new-max-index
+    ))
+
 (define (new-mutable-vector init-store-size . elems)
   (let ((mvec
          (make<mutable-vector>
@@ -107,16 +144,6 @@
      (list '=>mvector-index i))
     ))
 
-
-(declare-rule/index->lens 'integer mutable-vector-type? =>mvector-index!)
-
-(declare-interface/cursor mutable-vector-type?
- (make<cursor-interface>
-  (lambda (obj i) (>= i (mutable-vector-length obj)))
-  (lambda (obj i) (view obj (=>mvector-index! i)))
-  #f (lambda (obj i) (values))
-  ))
-
 (define =>mvector-index/default!
   ;; When viewing this lens, it will evaluates a function to produce a
   ;; default value when the given index `I` is not in bounds. On
@@ -156,17 +183,6 @@
     ))
 
 
-(define (resize-vector old-vec old-max-index old-store-size increase-by)
-  (cond
-   ((= 0 increase-by) old-vec)
-   (else
-    (let*((new-store-size ((*mutable-vector-grow*) old-store-size increase-by))
-          (new-vec (make-vector new-store-size)))
-      (vector-copy! new-vec 0 old-vec 0 old-max-index)
-      new-vec))
-   ))
-
-
 (define mutable-vector-shift! 
   ;; Remove a single element from the lowest index of the mutable
   ;; vector and return that element wrapped in a list. Elements in the
@@ -194,34 +210,6 @@
            )
        (set!mutable-vector-min-index mvec (min hi (max 0 (+ nelems lo))))
        returns))
-    ))
-
-
-(define (mutable-vector-append! mvec . items)
-  (let*((list-len (length items))
-        (old-max-index (view mvec =>mutable-vector-max-index))
-        (new-max-index (+ old-max-index list-len))
-        (old-store-size (mutable-vector-store-size mvec))
-        (vec
-         (cond
-          ((> new-max-index old-store-size)
-           (let ((vec
-                  (resize-vector
-                   (view mvec =>mutable-vector!)
-                   old-max-index old-store-size list-len)))
-             (lens-set vec mvec =>mutable-vector!)
-             vec))
-          (else (view mvec =>mutable-vector!)))))
-    (let loop
-        ((i old-max-index)
-         (items items))
-      (cond
-       ((or (null? items) (not items)) (values))
-       (else
-        (vector-set! vec i (car items))
-        (loop (+ 1 i) (cdr items)))))
-    (lens-set new-max-index mvec =>mutable-vector-max-index)
-    new-max-index
     ))
 
 
@@ -514,3 +502,14 @@
   ;; deep-copy a vector with a `COPIER` for deep-copying stored elements.
   ;;------------------------------------------------------------------
   (vector-map copier vec))
+
+;;--------------------------------------------------------------------
+
+(declare-rule/index->lens 'integer mutable-vector-type? =>mvector-index!)
+
+(declare-interface/cursor mutable-vector-type?
+ (make<cursor-interface>
+  (lambda (obj i) (>= i (mutable-vector-length obj)))
+  (lambda (obj i) (view obj (=>mvector-index! i)))
+  #f (lambda (obj i) (values))
+  ))
