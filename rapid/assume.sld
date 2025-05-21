@@ -15,9 +15,29 @@
 
 ;;> Assumptions compatible with SRFI 145.
 
+;;> \section{Syntax}
+
+;;> \macro{(assume <obj> <message> ...)}
+;;> Expression that evaluates to the value of \scheme{<obj>}
+;;> if \scheme{<obj>} evaluates to a true value.  It is an error
+;;> if \scheme{<obj>} evaluates to a false value.
+;;> The expressions \scheme{<message> ...} should document the
+;;> assumption.
+
+
 (define-library (rapid assume)
   (import (scheme base))
   (export assume)
-  (cond-expand
-    (stklos (include "rapid/assume.scm"))
-    (else (include "assume.scm"))))
+  (begin
+
+    (define-syntax assume
+      (syntax-rules ()
+        ((assume expression message ...)
+         (begin
+           (unless expression
+             (error "invalid assumption" 'expression `(,message ...)))
+           expression))
+        ((assume . _)
+         (syntax-error "invalid assume syntax"))))
+
+    ))
