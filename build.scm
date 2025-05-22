@@ -1,20 +1,20 @@
-(define chibi-matcher-libs
+(define matcher-libs
   (cond-expand
-    (chibi '()) ;; use chibi's built-in matcher, not the copy in this source repo
+    ((or chibi loko) '()) ;; use the built-in matcher, not the copy in this source repo
     (else '((chibi match)))
     )
   )
 
-(define chibi-matcher-libdirs
+(define matcher-libdirs
   (cond-expand
-    (chibi '())
+    ((or chibi loko) '())
     (else '((chibi)))
     ))
 
 (define library-directories
   `(()
     (slib)
-    ,@chibi-matcher-libdirs
+    ,@matcher-libdirs
     (schemacs lens)
     (schemacs editor)
     (schemacs elisp-eval)
@@ -25,7 +25,8 @@
   `((slib common)
     (slib filename)
     (slib directory)
-    ,@chibi-matcher-libs
+    ,@matcher-libs
+    (schemacs match)
     (schemacs bitwise)
     (schemacs string)
     (schemacs vector)

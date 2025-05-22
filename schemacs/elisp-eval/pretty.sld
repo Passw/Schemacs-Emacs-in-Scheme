@@ -11,11 +11,7 @@
           bracketed   form   join-by   join-lines
           )
     )
-  (cond-expand
-    (guile  (import (only (chibi match) match)))
-    (gambit (import (only (termite match) match)))
-    (else   (import (only (chibi match) match)))
-    )
+  (import (only (schemacs match) match))
   (export elisp-pretty elisp-print)
 
   (begin

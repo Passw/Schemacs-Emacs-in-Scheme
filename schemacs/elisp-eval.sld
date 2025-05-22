@@ -100,11 +100,7 @@
           =>keymap-layer-index!
           =>keymap-top-layer!
           )
-    )
-  (cond-expand
-    (guile  (import (only (chibi match) match)))
-    (gambit (import (only (termite match) match)))
-    (else   (import (only (chibi match) match)))
+    (only (schemacs match) match)
     )
 
   (export

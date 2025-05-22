@@ -34,12 +34,9 @@
           elisp-eval!
           elisp-load!
           )
+    (only (schemacs match) match)
     )
-  (cond-expand
-    (guile  (import (only (chibi match) match)))
-    (gambit (import (only (termite match) match)))
-    (else   (import (only (chibi match) match)))
-    )
+
   (export
    *verbose*
    elisp-form-buffer
