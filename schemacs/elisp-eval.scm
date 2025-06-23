@@ -110,6 +110,30 @@
         (halt-eval err-obj)
         )))))
 
+(define handle-scheme-exceptions*
+  ;; This is a parameter that can alter the behavior of the Elisp
+  ;; evaluator when an exception is raised by Scheme, not by Elisp. If
+  ;; this parameter is set to `#F` (the default), the Scheme exception
+  ;; is handled, the Elisp interpreter is set into a consistent state,
+  ;; and then the Scheme exception is re-raised -- when running in the
+  ;; REPL, this will trigger the Scheme REPL execption handler and
+  ;; (usually) allow you to inspect the backtrace and debug the
+  ;; interpreter. If you set this to `#t` the exception is handled but
+  ;; not re-raised (effectively, ignored in the REPL).
+  ;;
+  ;; If you set this parameter to hold a procedure, the procedure will
+  ;; be applied with two arguments when a Scheme exception occurs
+  ;; during Emacs Lisp evaluation:
+  ;;
+  ;;  1. the continuation that can optionally be applied a single
+  ;;     arbitrary argument (such as an error object) to signal that
+  ;;     the error condition has been handled, and
+  ;;
+  ;;  2. the Scheme error object that was caught by the Elisp
+  ;;     exception handler.
+  ;;------------------------------------------------------------------
+  (make-parameter #f))
+
 (define new-elisp-error-handler
   (case-lambda
     ((env halt-eval)
@@ -125,8 +149,12 @@
             ))
          (write-elisp-eval-error err-obj env port)
          (env-reset-stack! env)
-         (halt-eval err-obj)
-         )))))
+         (let ((user-handler (handle-scheme-exceptions*)))
+           (cond
+            ((boolean=? #t user-handler) (halt-eval err-obj))
+            ((procedure? user-handler) (user-handler halt-eval err-obj))
+            (else (values))
+            )))))))
 
 
 (define (%elisp-eval! expr env)
@@ -220,8 +248,8 @@
            )
        (define (setq-load-file-name val)
          (lens-set val env
-                   (=>env-obarray-key! name)
-                   (=>sym-value! name))
+          (=>env-obarray-key! name)
+          (=>sym-value! name))
          )
        (call-with-port port
          (lambda (port)
@@ -621,6 +649,9 @@
             loc head func st
             (lambda () (eval-apply-lambda func arg-exprs))
             )))
+        (('macro . func)
+         (eval-form (apply (eval-apply-as-proc func) arg-exprs))
+         )
         (any (eval-error "invalid function" func))
         ))
      (else (eval-error "invalid function" head))
@@ -1134,6 +1165,7 @@
             ((lambda-type? val) val)
             ((procedure? val) val)
             ((command-type? val) val)
+            ((pair? val) val)
             (else #f)
             )))
         )
@@ -1447,7 +1479,8 @@
 (define (elisp-apply . args) (eval-apply re-collect-args args))
 
 (define (eval-function-ref arg)
-  (let ((is-lambda? (lambda (o) (and (pair? o) (symbol? (car o)) (eq? 'lambda (car o)))))
+  (let*((arg (if (elisp-form-type? arg) (elisp-form->list arg) arg))
+        (is-lambda? (lambda (o) (and (pair? o) (symbol? (car o)) (eq? 'lambda (car o)))))
         (make-lambda (lambda (o) (apply (syntax-eval elisp-lambda) o)))
         )
     (cond

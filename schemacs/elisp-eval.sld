@@ -140,6 +140,7 @@
    make<macro>  macro-procedure
 
    ;; Error handling
+   handle-scheme-exceptions*
    elisp-eval-error-type?
    =>elisp-eval-error-message
    =>elisp-eval-error-irritants

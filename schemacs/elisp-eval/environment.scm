@@ -1026,7 +1026,7 @@
    ((pair? val)
     (cons
      (replace-head (car val))
-     (map replace-elem (cdr val))
+     (scheme->elisp (cdr val))
      ))
    (else val)
    ))
