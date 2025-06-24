@@ -128,35 +128,25 @@
 ;;--------------------------------------------------------------------
 ;; Built-in Macro types
 
-(define-record-type <macro-type>
-  ;; This defines a macro, which contains a procedure for which it's
-  ;; arguments are not evaluated, but passed as unevaluated
-  ;; expressions, and must return a form. The returned form is
-  ;; evaluated with a recursive call to `EVAL` to produce the result
-  ;; value of the macro evaluation. In the Emacs Lisp documentation,
-  ;; macros are documented as "Macros". Contrast this with
-  ;; "<syntax-type>" values (described below) which are documented as
-  ;; "Special Forms".
-  ;;------------------------------------------------------------------
-  (make<macro> proc)
-  macro-type?
-  (proc macro-procedure)
-  )
-
-
 (define-record-type <syntax-type>
-  ;; This defines a syntactic form, which contains a procedure for
+  ;; This defines a "syntactic form". In Emacs Lisp documentation,
+  ;; these syntactic forms are documented as "Special Forms". In
+  ;; Scheme these are referred to as "expressions". These are forms
+  ;; that could be expressed as macros but are used so often that it
+  ;; is usually more efficient to treat it as a special form. Examples
+  ;; of these syntactic forms include expressions such as "if",
+  ;; "cond", and "progn". This record type contains a procedure for
   ;; which it's arguments are not evaluated, like a macro, but unlike
   ;; a macro, returns a value that is not then applied to `EVAL`
-  ;; recursively. In the Emacs Lisp documentation, these syntactic
-  ;; forms are documented as "Special Forms". Contrast this with
-  ;; "<macro-type>" values (described above) which are documented as
-  ;; "Macros".
-  ;;------------------------------------------------------------------
+  ;; recursively.
+  ;; ------------------------------------------------------------------
   (make<syntax> proc)
   syntax-type?
   (proc syntax-eval)
   )
+
+(define elisp-void-syntax
+  (make<syntax> (lambda _ #f)))
 
 ;;--------------------------------------------------------------------
 ;; Lambdas of all kinds, including macros and built-ins
@@ -195,6 +185,10 @@
            (lambda-lexenv o)    
            (lambda-body o)      
            ))
+  )
+
+(define (macro-type? func)
+  (and (lambda-type? func) (eq? 'macro (lambda-kind func)))
   )
 
 (define new-lambda
@@ -1065,16 +1059,6 @@
        ))
      (else val)
      )))
-
-
-(define elisp-void-macro
-  ;; Some symbols like `DECLARE` and `INTERACTIVE` are specially
-  ;; handled by the evaluator, they are usually caught by the pattern
-  ;; matcher and evaluated during parsing. If an end user enters these
-  ;; symbols into a REPL, they would result in an "void variable"
-  ;; execption. To prevent exceptions of this nature, these symbols
-  ;; are bound to this void macro.
-  (make<macro> (lambda args '())))
 
 
 (define (pure* proc)

@@ -104,7 +104,7 @@
    ;; Macro objects
    make<macro>  macro-type?
    macro-procedure  elisp-void-macro
-   make<syntax> syntax-type? syntax-eval
+   make<syntax> syntax-type? syntax-eval elisp-void-syntax
 
    ;;----------------------------------------
    ;; Error objects

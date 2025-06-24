@@ -557,8 +557,9 @@
   (env-pop-elstkfrm! (*the-environment*)))
 
 
-(define (eval-apply-proc func arg-exprs)
-  ;; This is how built-in Scheme procedure are applied from within Emacs Lisp.
+(define (eval-args-apply-proc func arg-exprs)
+  ;; Evaluate each of the `ARG-EXPRS` and apply the list of results to
+  ;; the given `FUNC`.
   (apply func
    (let loop ((arg-exprs arg-exprs))
      (cond
@@ -568,34 +569,53 @@
        )))))
 
 
+(define (apply-unevald-args-to-lambda func args)
+  ;; This applies arguments to a `FUNC` which must be of type
+  ;; `LAMBDA-TYPE?`, without evaluating the arguments `ARGS`. It
+  ;; creates and pushes a stack frame with the `ARGS` as they are
+  ;; given.
+  (let ((elstkfrm (elstkfrm-from-args func args)))
+    (cond
+     ((not elstkfrm) (error "elstkfrm-from-args returned #f"))
+     ((elisp-eval-error-type? elstkfrm) (eval-raise elstkfrm))
+     (else
+      (let*((st (*the-environment*))
+            (old-stack (view st =>env-lexstack*!))
+            (st (lens-set (list elstkfrm) st =>env-lexstack*!))
+            (return (eval-progn-body (view func =>lambda-body*!))) ;; apply
+            )
+        (lens-set old-stack st =>env-lexstack*!)
+        return
+        )))))
+
+
 (define (eval-apply-lambda func args)
   ;; This is how Emacs Lisp-defined lambdas and functions are applied
-  ;; from within Emacs Lisp. This procedure *DOES NOT* do macro
-  ;; expansion regardless of the `LAMBDA-KIND` of the `FUNC` argument.
-  (eval-apply-proc
-   (lambda args
-     (let ((elstkfrm (elstkfrm-from-args func args)))
-       (cond
-        ((not elstkfrm) (error "elstkfrm-from-args returned #f"))
-        ((elisp-eval-error-type? elstkfrm) (eval-raise elstkfrm))
-        (else
-         (let*((st (*the-environment*))
-               (old-stack (view st =>env-lexstack*!))
-               (st (lens-set (list elstkfrm) st =>env-lexstack*!))
-               (return (eval-progn-body (view func =>lambda-body*!))) ;; apply
-               )
-           (lens-set old-stack st =>env-lexstack*!)
-           return
-           )))))
-   args
-   ))
+  ;; from within Emacs Lisp, it applies `EVAL-ARGS-APPLY-PROC` first,
+  ;; then passes the results to `APPLY-UNEVALD-ARGS-TO-LAMBDA`. This procedure *DOES
+  ;; NOT* do macro expansion regardless of the `LAMBDA-KIND` of the
+  ;; `FUNC` argument.
+  (eval-args-apply-proc
+   (lambda args (apply-unevald-args-to-lambda func args))
+   args))
 
 
-(define (eval-apply-as-proc func)
-  ;; Wraps a Elisp lambda application into a scheme procedure application
+(define (scheme-lambda->elisp-lambda func)
+  ;; Wraps a Scheme lambda function so that it can be used as a
+  ;; built-in function. If you apply an Elisp lambda as the `FUNC`
+  ;; argument, the returned lambda simply applies it's arguments to
+  ;; the `FUNC` using the `EVAL-APPLY-LAMBDA` procedure without any
+  ;; `elisp->scheme` value conversions.
   (lambda args
     (cond
-     ((lambda-type? func) (apply eval-apply-lambda func args))
+     ((lambda-type? func)
+      (cond
+       ((eq? 'macro (view func =>lambda-kind*!))
+        (apply-unevald-args-to-lambda func args)
+        )
+       (else
+        (apply eval-apply-lambda func args)
+        )))
      ((procedure? func)
       (scheme->elisp (apply func (map elisp->scheme args))))
      ((command-type? func)
@@ -618,7 +638,7 @@
      ((syntax-type?  func)
       (apply (syntax-eval func) head arg-exprs))
      ((macro-type?   func)
-      (eval-form (apply (macro-procedure func) head arg-exprs))
+      (eval-form (apply-unevald-args-to-lambda func arg-exprs))
       )
      ((lambda-type?  func)
       (let ((return
@@ -636,10 +656,10 @@
      ((command-type? func)
       (env-trace!
        loc head func st
-       (lambda () (eval-apply-proc (command-procedure func) arg-exprs))
+       (lambda () (eval-args-apply-proc (command-procedure func) arg-exprs))
        ))
      ((procedure?    func)
-      (eval-apply-proc func arg-exprs)
+      (eval-args-apply-proc func arg-exprs)
       )
      ((pair?         func)
       (match func
@@ -650,7 +670,15 @@
             (lambda () (eval-apply-lambda func arg-exprs))
             )))
         (('macro . func)
-         (eval-form (apply (eval-apply-as-proc func) arg-exprs))
+         ;;(display "; apply ") (write func) (newline);;DEBUG
+         ;;(display "; --args: ") (write arg-exprs) (newline);;DEBUG
+         (cond
+          ((lambda-type? func)
+           (apply-unevald-args-to-lambda func arg-exprs)
+           )
+          (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
+          )
+         (eval-form (eval-bracketed-form loc func arg-exprs))
          )
         (any (eval-error "invalid function" func))
         ))
@@ -1594,9 +1622,9 @@
 
 (define (elisp-mapatoms . args)
   (match args
-    ((func) (eval-mapatoms (eval-apply-as-proc func)))
+    ((func) (eval-mapatoms (scheme-lambda->elisp-lambda func)))
     ((func obarray)
-     (eval-mapatoms (eval-apply-as-proc func) obarray))
+     (eval-mapatoms (scheme-lambda->elisp-lambda func) obarray))
     ((any ...)
      (eval-error "wrong number of arguments" "mapatoms" (length any)))
     ))
@@ -1978,8 +2006,8 @@
      (fboundp          . ,elisp-fboundp)
      (fmakunbound      . ,elisp-fmakunbound)
      (fset             . ,elisp-fset)
-     (declare          . ,elisp-void-macro) ;; pattern matcher special symbol
-     (interactive      . ,elisp-void-macro) ;; pattern matcher special symbol
+     (declare          . ,elisp-void-syntax) ;; pattern matcher special symbol
+     (interactive      . ,elisp-void-syntax) ;; pattern matcher special symbol
 
      (format           . ,elisp-format)
      (message          . ,elisp-message)
