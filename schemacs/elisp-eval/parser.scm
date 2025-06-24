@@ -1162,20 +1162,24 @@
     (error "not a structure that contains a parser location" st)
     )))
 
-(define (get-location st)
+(define get-location
   ;; Get the parser/lexer location information from the applied
   ;; argument object. This could be a `SOURCE-FILE-LOCATION-TYPE?`, a
   ;; `LEXER-STATE-TYPE?`, a `ELISP-PARSE-STATE-TYPE?`, or an
   ;; `ELISP-FORM-TYPE?`.
   ;;------------------------------------------------------------------
-  (cond
-   ((source-file-location-type? st) st)
-   ((lexer-state-type? st) (lexer-state-get-location st))
-   ((elisp-parse-state-type? st) (parser-state-get-location st))
-   ((elisp-form-type? st) (elisp-form-start-loc st))
-   (else
-    (error "not a structure that contains a parser location" st)
-    )))
+  (case-lambda
+    ((st) (get-location st #f))
+    ((st chain)
+     (cond
+      ((source-file-location-type? st) st)
+      ((lexer-state-type? st) (lexer-state-get-location st))
+      ((elisp-parse-state-type? st) (parser-state-get-location st))
+      ((elisp-form-type? st) (elisp-form-start-loc st))
+      ((procedure? chain) (chain st))
+      (else
+       (error "not a structure that contains a parser location" st)
+       )))))
 
 (define write-parser-location
   ;; Apply any value for which `GET-LOCATION` returns a source file

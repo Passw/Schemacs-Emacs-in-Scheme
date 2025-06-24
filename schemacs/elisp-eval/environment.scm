@@ -585,6 +585,20 @@
         )
        #t))))
 
+
+(define env-get-location
+  (case-lambda
+    ((obj) (env-get-location obj #f))
+    ((obj chain)
+     (get-location obj
+      (lambda (obj)
+        (cond
+         ((lambda-type? obj) (lambda-location obj))
+         ((stack-trace-frame-type? obj) (stack-trace-location obj))
+         ((pair? obj) (env-get-location (car obj)))
+         ((procedure? chain) (chain obj))
+         (else #f)))))))
+
 ;;--------------------------------------------------------------------
 
 (define-record-type <elisp-stack-trace>

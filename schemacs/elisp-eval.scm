@@ -158,12 +158,7 @@
 
 
 (define (%elisp-eval! expr env)
-  (let*((run
-         (lambda ()
-           (eval-form expr
-            (and (elisp-form-type? expr)
-                 (elisp-form-start-loc expr)))
-           ))
+  (let*((run (lambda () (eval-form expr)))
         )
     (if (not env) (run)
         (parameterize ((*the-environment* env)) (run))
@@ -632,35 +627,37 @@
   ;; before a value is returned.
   (let*((st (*the-environment*))
         (func (env-resolve-function st head))
-        (func (if (elisp-form-type? func) (eval-form func) func))
+        (func (if (elisp-form-type? func)
+                  (eval-form func (env-get-location func))
+                  func
+                  ))
         )
     (cond
      ((syntax-type?  func)
       (apply (syntax-eval func) head arg-exprs))
-     ((macro-type?   func)
-      (eval-form (apply-unevald-args-to-lambda func arg-exprs))
-      )
      ((lambda-type?  func)
-      (let ((return
-             (lambda ()
-               (env-trace!
-                loc head func st
-                (lambda () (eval-apply-lambda func arg-exprs))
-                ))))
-        (cond ;; macro expand (if its a macro)
-         ((eq? 'macro (view func =>lambda-kind*!))
-          (eval-form (return))
-          )
-         (else (return))
-         )))
+      (env-trace!
+       loc head func st
+       (lambda ()
+         (cond
+          ((macro-type? func)
+           (eval-form
+            (apply-unevald-args-to-lambda func arg-exprs)
+            (env-get-location func)
+            ))
+          (else
+           (eval-apply-lambda func arg-exprs)
+           )))))
      ((command-type? func)
       (env-trace!
        loc head func st
        (lambda () (eval-args-apply-proc (command-procedure func) arg-exprs))
        ))
      ((procedure?    func)
-      (eval-args-apply-proc func arg-exprs)
-      )
+      (env-trace!
+       loc head func st
+       (lambda () (eval-args-apply-proc func arg-exprs))
+       ))
      ((pair?         func)
       (match func
         (('lambda (args-exprs ...) body ...)
@@ -674,12 +671,12 @@
          ;;(display "; --args: ") (write arg-exprs) (newline);;DEBUG
          (cond
           ((lambda-type? func)
-           (apply-unevald-args-to-lambda func arg-exprs)
-           )
+           (eval-form
+            (apply-unevald-args-to-lambda func arg-exprs)
+            (env-get-location func)
+            ))
           (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
-          )
-         (eval-form (eval-bracketed-form loc func arg-exprs))
-         )
+          ))
         (any (eval-error "invalid function" func))
         ))
      (else (eval-error "invalid function" head))
@@ -690,7 +687,7 @@
   ;; This is where evaluation begins. This is the actual `EVAL`
   ;; procedure for Emacs Lisp.
   (case-lambda
-    ((expr) (eval-form expr #f))
+    ((expr) (eval-form expr (env-get-location expr)))
     ((expr loc)
      (match expr
        (() '())
@@ -750,7 +747,10 @@
     (match exprs
       (() '())
       ((final) (eval-form final))
-      ((head more ...) (eval-form head) (loop more))
+      ((head more ...)
+       (eval-form head (env-get-location exprs))
+       (loop more)
+       )
       (exprs (error "no function body" exprs))
       )))
 
@@ -1014,35 +1014,40 @@
   (make<syntax>
    (lambda expr
      (let ((st (*the-environment*)))
-       (match (%unpack2 (cdr expr))
+       (match (%unpack (cdr expr))
          (() '())
-         (((bindings ...) progn-body ...)
-          (let loop ((unbound bindings) (bound '()) (size 0))
-            (match (%unpack2 unbound)
+         ((bindings-form progn-body ...)
+          (let loop
+              ((unbound-exprs (%unpack bindings-form))
+               (bound '())
+               (size 0)
+               )
+            (match unbound-exprs
               (()
                (env-push-new-elstkfrm! st size (reverse bound))
                (let ((result (eval-progn-body progn-body)))
                  (env-pop-elstkfrm! st)
                  result))
-              (((sym) more ...)
-               (loop more (cons (new-symbol sym '()) bound) (+ 1 size))
-               )
-              (((sym expr) more ...)
-               (let ((result (eval-form expr)))
-                 (loop more
-                       (cons (new-symbol (ensure-string sym) result) bound)
-                       (+ 1 size))
-                 ))
-              (((sym expr extra ...) ,more ...)
-               (eval-error "bindings can have only one value form" (car unbound))
-               )
-              ((sym more ...)
-               (loop more (cons (new-symbol sym '()) bound) (+ 1 size))
-               )
-              (otherwise
-               (eval-error "wrong type argument, expecting list" otherwise)
-               ))))
-         (,otherwise
+              ((binding-expr more ...)
+               (match (elisp-form->list binding-expr)
+                 (() (eval-error "empty bindings form" binding-expr))
+                 ((sym) (loop more (cons (new-symbol sym '()) bound) (+ 1 size)))
+                 ((sym expr)
+                  (let ((result (eval-form expr)))
+                    (loop more
+                      (cons (new-symbol (ensure-string sym) result) bound)
+                      (+ 1 size)
+                      )))
+                 ((sym expr extra ...)
+                  (eval-error "bindings can have only one value form" binding-expr)
+                  )
+                 ((? symbol? sym)
+                  (loop more (cons (new-symbol sym '()) bound) (+ 1 size))
+                  )
+                 (otherwise
+                  (eval-error "wrong type argument, expecting list" otherwise)
+                  ))))))
+         (otherwise
           (eval-error "wrong type argument, expecting list" otherwise)
           ))))))
 
@@ -1051,34 +1056,40 @@
   (make<syntax>
    (lambda expr
      (let ((st (*the-environment*)))
-       (match (%unpack2 (cdr expr))
+       (match (%unpack (cdr expr))
          (() '())
-         (((bindings ...) progn-body ...)
-          (let ((elstkfrm (env-push-new-elstkfrm! st (length bindings) '())))
-            (let loop ((unbound bindings))
-              (match (%unpack2 unbound)
+         ((bindings-form progn-body ...)
+          (let*((bindings (%unpack bindings-form))
+                (elstkfrm (env-push-new-elstkfrm! st (length bindings) '())))
+            (let loop ((unbound-exprs bindings))
+              (match unbound-exprs
                 (()
                  (let ((result (eval-progn-body progn-body)))
                    (env-pop-elstkfrm! st)
                    result))
-                (((sym) more ...)
-                 (elstkfrm-sym-intern! elstkfrm sym '())
+                ((binding-expr more ...)
+                 (match (elisp-form->list binding-expr)
+                   (() (eval-error "empty bindings form" binding-expr))
+                   ((sym) (elstkfrm-sym-intern! elstkfrm sym '()))
+                   ((sym expr)
+                    (elstkfrm-sym-intern! elstkfrm sym (eval-form expr))
+                    )
+                   ((sym expr extra ...)
+                    (eval-error "bindings can have only one value form" binding-expr)
+                    )
+                   ((? symbol? sym)
+                    (elstkfrm-sym-intern! elstkfrm sym '())
+                    )
+                   (otherwise
+                    (eval-error "wrong type argument, expecting list" otherwise))
+                   )
                  (loop more)
                  )
-                (((sym expr) more ...)
-                 (let ((result (eval-form expr)))
-                   (elstkfrm-sym-intern! elstkfrm sym result)
-                   (loop more)
-                   ))
-                (((sym expr extra ...) ,more ...)
-                 (eval-error "bindings can have only one value form" (car unbound))
-                 )
-                ((sym more ...)
+                ((? symbol? sym)
                  (elstkfrm-sym-intern! elstkfrm sym '())
-                 (loop more)
                  )
                 (otherwise
-                 (eval-error "wrong type argument, expecting list" otherwise)
+                 (eval-error "wrong type argument, expecting bindings" otherwise)
                  )))))
          (otherwise
           (eval-error "wrong type argument, expecting list" otherwise)
@@ -1088,11 +1099,11 @@
 (define elisp-lambda
   (make<syntax>
    (lambda expr
-     (let*((expr (%unpack2 (cdr expr)))
+     (let*((expr (%unpack (cdr expr)))
            (func
             (match expr
               (() (new-lambda))
-              (((args ...) body ...)
+              ((args body ...)
                (eval-defun-args-body 'lambda args body))
               (args (eval-error "invalid lambda" args))
               ))
@@ -1522,7 +1533,7 @@
          )))
      ((is-lambda? arg) (make-lambda arg))
      (else
-      (eval-error "wrong type argument" "function" arg)
+      (eval-error "wrong type argument" arg 'expecting "function")
       ))))
 
 (define elisp-function
@@ -1673,6 +1684,12 @@
    ((null? lst) '())
    ((pair? lst) (car lst))
    (else (eval-error "wrong type argument" "car" lst))
+   ))
+
+(define (elisp-car-safe lst)
+  (cond
+   ((pair? lst) (car lst))
+   (else '())
    ))
 
 (define (elisp-cdr lst)
@@ -1972,13 +1989,14 @@
      (>  . ,(pure*-numbers ">" >))
      (>= . ,(pure*-numbers ">=" >=))
 
-     (cons   . ,(pure 2 'cons cons))
-     (car    . ,(pure 1 'car car))
-     (cdr    . ,(pure 1 'cdr cdr))
-     (list   . ,elisp-list)
-     (null   . ,(pure 1 "null" elisp-null?))
-     (setcar . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
-     (setcdr . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
+     (cons     . ,(pure 2 'cons cons))
+     (car      . ,elisp-car)
+     (cdr      . ,elisp-cdr)
+     (car-safe . ,elisp-car-safe)
+     (list     . ,elisp-list)
+     (null     . ,(pure 1 "null" elisp-null?))
+     (setcar   . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
+     (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
 
      (quote     . ,elisp-quote)
      (backquote . ,elisp-backquote)

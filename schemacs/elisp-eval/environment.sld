@@ -45,6 +45,7 @@
     (only (schemacs elisp-eval parser)
           elisp-quote-scheme-type?
           write-parser-location
+          get-location
           )
     (only (schemacs match) match)
     )
@@ -139,6 +140,7 @@
    elisp-stack-trace->vector
    elisp-stack-trace-ref
    write-elisp-stack-trace
+   env-get-location
    )
 
   (include "environment.scm")

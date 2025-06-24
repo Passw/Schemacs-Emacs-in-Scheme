@@ -83,6 +83,7 @@
           =>lambda-declares*!  =>lambda-interactive*!
           =>lambda-body*!  =>lambda-kind*!
           =>lambda-docstring*!  =>lambda-location*!
+          env-get-location
           make<macro>  macro-type?  macro-procedure
           make<syntax> syntax-type? syntax-eval  elisp-void-syntax
           elisp-eval-error-type?  raise-error-impl*
