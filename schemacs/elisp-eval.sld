@@ -59,8 +59,11 @@
           elisp-form-start-loc  elisp-function-get-ref
           )
     (only (schemacs elisp-eval environment)
-          scheme->elisp  elisp->scheme  elisp-null?
           pure  pure*  pure*-typed  pure*-numbers  pure-raw
+          scheme->elisp  elisp->scheme
+          type-predicate    elisp-null?  elisp-pair?  elisp-list?
+          elisp-string?  elisp-number?  elisp-integer?  elisp-float?
+          elisp-procedure?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
           env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!
           env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!

@@ -52,8 +52,13 @@
 
   (export
    ;; Converting data between Scheme and Elisp
-   scheme->elisp  elisp->scheme  elisp-null?
+   scheme->elisp  elisp->scheme
    pure  pure*  pure*-typed  pure*-numbers  pure-raw
+
+   ;; Type predicates
+   type-predicate    elisp-null?  elisp-pair?  elisp-list?
+   elisp-string?  elisp-number?  elisp-integer?  elisp-float?
+   elisp-procedure?
 
    ;; Emacs Lisp constant symbols
    nil t

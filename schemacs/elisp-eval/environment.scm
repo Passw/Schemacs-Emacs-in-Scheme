@@ -1011,6 +1011,17 @@
 ;; Interface between Scheme and Elisp
 
 (define (elisp-null? val) (or (null? val) (not val)))
+(define elisp-pair? pair?)
+(define (elisp-list? val) (list? (elisp->scheme val)))
+(define elisp-string? string?)
+(define elisp-number? number?)
+(define elisp-integer? integer?)
+(define elisp-float? inexact?)
+(define (elisp-procedure? val)
+  (or (lambda-type? val)
+      (procedure? val)
+      (and (pair? val) (eq? 'lambda (car val)))
+      ))
 
 (define (scheme->elisp val)
   (define (replace-elem elem)
@@ -1121,3 +1132,8 @@
        ((< count n) (eval-error "too many arguments" sym n args))
        (else (apply proc args))
        ))))
+
+(define (type-predicate sym p)
+  (cons sym
+   (pure-raw 1 (symbol->string sym)
+    (lambda args (scheme->elisp (apply p args))))))
