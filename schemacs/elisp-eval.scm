@@ -1707,6 +1707,13 @@
    (else (eval-error "wrong type argument" "cdr" lst))
    ))
 
+(define (elisp-nth n lst)
+  (cond
+   ((null? lst) #f)
+   ((<= n 0) (car lst))
+   (else (elisp-nth (- n 1) (cdr lst)))
+   ))
+
 
 (define elisp-quote
   (make<syntax>
@@ -2003,6 +2010,7 @@
      (list     . ,elisp-list)
      (setcar   . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
      (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
+     (nth      . ,(pure 2 'nth elisp-nth))
 
      ,(type-predicate 'null      elisp-null?)
      ,(type-predicate 'consp     elisp-pair?)
@@ -2062,7 +2070,6 @@
      (run-hooks-with-args              . ,elisp-run-hooks-with-args)
      (run-hook-with-args-until-failure . ,elisp-run-hook-with-args-until-failure)
      (run-hook-with-args-until-success . ,elisp-run-hook-with-args-until-success)
-
      ;; ------- end of assocaition list -------
      )))
 
