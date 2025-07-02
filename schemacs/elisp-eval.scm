@@ -698,12 +698,18 @@
        (literal
         (cond
          ((symbol? literal)
-          (let ((return (view literal =>elisp-symbol!)))
+          (let ((str (symbol->string literal)))
             (cond
-             ((not return) (eval-error "void variable" literal))
-             ((sym-type? return) (view return =>sym-value*!))
-             (else return)
-             )))
+             ((and (> (string-length str) 0) (char=? #\: (string-ref str 0)))
+              literal ;; symbols starting with : are self-evaluating "keyword" symbols
+              )
+             (else
+              (let ((return (view literal =>elisp-symbol!)))
+                (cond
+                 ((not return) (eval-error "void variable" literal))
+                 ((sym-type? return) (view return =>sym-value*!))
+                 (else return)
+                 ))))))
          ((elisp-quote-scheme-type? literal)
           (cond
            ((elisp-backquoted-form? literal)
