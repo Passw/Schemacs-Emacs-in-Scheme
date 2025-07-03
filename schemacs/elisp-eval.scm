@@ -1714,6 +1714,30 @@
    (else (elisp-nth (- n 1) (cdr lst)))
    ))
 
+(define (elisp-nconc . args)
+  (cond
+   ((null? args) '())
+   (else
+    (let ((head (car args))
+          (tail (cdr args))
+          )
+      (cond
+       ((null? tail) head)
+       ((null? head) (apply elisp-nconc tail))
+       ((pair? head)
+        (let find-end ((back '()) (this head) (next (cdr head)))
+          (cond
+           ((memq this back) (eval-error "list contains a loop" head))
+           ((null? next)
+            (set-cdr! this (car tail))
+            (apply elisp-nconc tail)
+            )
+           (else
+            (find-end (cons back this) next (cdr next))
+            ))))
+       (else (eval-error "wrong type argument" head))
+       )))))
+
 
 (define elisp-quote
   (make<syntax>
@@ -2011,6 +2035,7 @@
      (setcar   . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
      (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
      (nth      . ,(pure 2 'nth elisp-nth))
+     (nconc    . ,elisp-nconc)
 
      ,(type-predicate 'null      elisp-null?)
      ,(type-predicate 'consp     elisp-pair?)
