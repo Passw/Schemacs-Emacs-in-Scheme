@@ -1682,6 +1682,44 @@
 (define elisp-fset
   (elisp-symbol-op2 "fset" symbol? eval-fset))
 
+(define elisp-make-hash-table
+  (scheme-lambda->elisp-lambda
+   (lambda args
+     (let loop ((testfunc #f) (weakness #f) (size #f) (args args))
+       (match args
+         (('|:test|     testfunc args ...) (loop testfunc weakness size args))
+         (('|:weakness| weakness args ...) (loop testfunc weakness size args))
+         (('|:size|     size     args ...) (loop testfunc weakness size args))
+         (()
+          ;; TODO: need to do something about the weakness settings,
+          ;; this is going to be difficult because not all Scheme
+          ;; implementations support hash tables with weak keys and/or
+          ;; values.
+          (case weakness
+            ((key value key-and-value key-or-value)
+             (write-string
+              "WARNING (ELisp): make-hash-table \":weakness\" argument is ignored\n"
+              (current-error-port)
+              ))
+            (else (values)))
+          (let ((key-compare
+                 (case testfunc
+                   ((eq) eq?)
+                   ((eql) eqv?)
+                   ((equal) equal?)
+                   (else #f)
+                   )))
+            (cond
+             (key-compare (make-hash-table key-compare))
+             (else
+              (eval-error "invalid hash table test" testfunc)
+              ))))
+         ((keyword val args ...)
+          (eval-error "invalid keyword argument" keyword)
+          )
+         (any (eval-error "odd number of arguments"))
+         )))))
+
 
 (define (elisp-list . args) (map scheme->elisp args))
 
@@ -1858,6 +1896,12 @@
 (define elisp-macroexpand-all
   (elisp-macroexpander #t *macroexpand-max-depth* #t))
 
+
+(define (elisp-error . args)
+  (cond
+   ((null? args) (eval-error "Elisp \"error\" occurred"))
+   (else (apply eval-error args))
+   ))
 
 (define (elisp-format . args)
   (match args
@@ -2074,12 +2118,14 @@
      (fset             . ,elisp-fset)
      (declare          . ,elisp-void-syntax) ;; pattern matcher special symbol
      (interactive      . ,elisp-void-syntax) ;; pattern matcher special symbol
+     (make-hash-table  . ,elisp-make-hash-table)
 
      (format           . ,elisp-format)
      (message          . ,elisp-message)
      (prin1            . ,elisp-prin1)
      (princ            . ,elisp-princ)
      (print            . ,elisp-print)
+     (error            . ,elisp-error)
 
      (load             . ,elisp-load)
      (provide          . ,elisp-provide)
