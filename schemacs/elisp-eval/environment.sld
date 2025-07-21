@@ -60,7 +60,7 @@
    ;; Type predicates
    type-predicate    elisp-null?  elisp-pair?  elisp-list?
    elisp-string?  elisp-number?  elisp-integer?  elisp-float?
-   elisp-procedure?
+   elisp-procedure?  elisp-symbol?
 
    ;; Emacs Lisp constant symbols
    nil t

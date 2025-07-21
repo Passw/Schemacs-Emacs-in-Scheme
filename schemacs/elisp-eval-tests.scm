@@ -885,5 +885,38 @@ top: glo = top
 (test-eq 'feature-A (test-elisp-eval! '(require 'feature-A)))
 
 ;;--------------------------------------------------------------------------------------------------
+;; Testing other built-in functions
+
+(test-equal '(one two three four)
+  (test-elisp-eval!
+   '(progn
+     (setq a '(zero zero zero one two three zero four zero))
+     (delq 'zero a)
+     )))
+
+(test-equal '(one two three four)
+  (test-elisp-eval!
+   '(progn
+     (setq a '(zero one two three zero four))
+     (delq 'zero a)
+     )))
+
+(test-equal '(one two three four)
+  (test-elisp-eval!
+   '(progn
+     (setq a '(one two three four))
+     (delq 'zero a)
+     )))
+
+(test-equal '(1 2 3)
+  (test-elisp-eval! '(mapcar (lambda (x) (+ x 1)) '(0 1 2))))
+
+(test-equal '(#t #t #t #t #t)
+  (test-elisp-eval! '(mapcar (function symbolp) '(zero one two three four))))
+
+(test-equal '()
+  (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four)))))
+
+;;--------------------------------------------------------------------------------------------------
 
 (test-end "schemacs_elisp_eval_tests")

@@ -1022,6 +1022,7 @@
       (procedure? val)
       (and (pair? val) (eq? 'lambda (car val)))
       ))
+(define (elisp-symbol? val) (or (symbol? val) (sym-type? val)))
 
 (define (scheme->elisp val)
   (define (replace-elem elem)

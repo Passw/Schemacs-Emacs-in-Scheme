@@ -52,8 +52,7 @@
                   (elisp-load! file)
                   )))
            (cond
-            ((or (not result)
-                 (error-object? result)
+            ((or (error-object? result)
                  (elisp-eval-error-type? result)
                  )
              (display "; halted after loading ")

@@ -585,9 +585,9 @@
 (define (eval-apply-lambda func args)
   ;; This is how Emacs Lisp-defined lambdas and functions are applied
   ;; from within Emacs Lisp, it applies `EVAL-ARGS-APPLY-PROC` first,
-  ;; then passes the results to `APPLY-UNEVALD-ARGS-TO-LAMBDA`. This procedure *DOES
-  ;; NOT* do macro expansion regardless of the `LAMBDA-KIND` of the
-  ;; `FUNC` argument.
+  ;; then passes the results to `APPLY-UNEVALD-ARGS-TO-LAMBDA`. This
+  ;; procedure *DOES NOT* do macro expansion regardless of the
+  ;; `LAMBDA-KIND` of the `FUNC` argument.
   (eval-args-apply-proc
    (lambda args (apply-unevald-args-to-lambda func args))
    args))
@@ -606,9 +606,8 @@
        ((eq? 'macro (view func =>lambda-kind*!))
         (apply-unevald-args-to-lambda func args)
         )
-       (else
-        (apply eval-apply-lambda func args)
-        )))
+       (else (eval-apply-lambda func args))
+       ))
      ((procedure? func)
       (scheme->elisp (apply func (map elisp->scheme args))))
      ((command-type? func)
@@ -1772,6 +1771,68 @@
        (else (eval-error "wrong type argument" head))
        )))))
 
+(define (drop-while compare on-fail elt lst)
+  (cond
+   ((null? lst) '())
+   ((pair? lst)
+    (cond
+     ((compare elt (car lst))
+      (drop-while compare on-fail elt (cdr lst))
+      )
+     (else lst)
+     ))
+   (else (on-fail))))
+
+(define (elisp-delq . args)
+  (match args
+    ((elt lst0)
+     (let ((on-fail
+            (lambda ()
+              (eval-error "wrong type argument" "delq" 'expected 'list lst0)
+              )))
+       (let loop ((anchor (drop-while eq? on-fail elt lst0)))
+         (cond
+          ((null? anchor) '())
+          ((pair? anchor)
+           (let loop ((this anchor) (next (cdr anchor)))
+             (cond
+              ((null? next) anchor)
+              (else
+               (let ((next (drop-while eq? on-fail elt next)))
+                 (set-cdr! this next)
+                 (cond
+                  ((null? next) anchor)
+                  (else (loop next (cdr next)))
+                  ))))))
+          ((elisp-form-type? lst0)
+           (loop (elisp-form->list lst0))
+           )
+          (else (on-fail))
+          ))))
+    (any (eval-error "wrong number of arguments" "delq" 'expected 2 any))
+    ))
+
+(define (elisp-mapcar . args)
+  (match args
+    ((func seq)
+     (let loop ((seq seq))
+       (cond
+        ((null? seq) '())
+        ((pair? seq)
+         (let loop ((seq seq))
+           (cond
+            ((null? seq) '())
+            ((pair? seq)
+             (cons ((scheme-lambda->elisp-lambda func) (car seq))
+                   (loop (cdr seq))))
+            (else (eval-error "wrong type argument" "mapcar" 'expected "listp" seq))
+            )))
+        ((elisp-form-type? seq) (loop (elisp-form->list seq)))
+        ((vector? seq) (seq (vector->list seq)))
+        (else (eval-error "wrong type argument" "mapcar" 'expected "listp" seq))
+        )))
+    (any (eval-error "wrong number of arguments" "mapcar" 'expected 2 any))
+    ))
 
 (define elisp-quote
   (make<syntax>
@@ -2076,6 +2137,8 @@
      (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
      (nth      . ,(pure 2 'nth elisp-nth))
      (nconc    . ,elisp-nconc)
+     (delq     . ,elisp-delq)
+     (mapcar   . ,elisp-mapcar)
 
      ,(type-predicate 'null      elisp-null?)
      ,(type-predicate 'consp     elisp-pair?)
@@ -2085,6 +2148,7 @@
      ,(type-predicate 'integerp  elisp-integer?)
      ,(type-predicate 'floatp    elisp-float?)
      ,(type-predicate 'functionp elisp-procedure?)
+     ,(type-predicate 'symbolp   elisp-symbol?)
 
      (quote     . ,elisp-quote)
      (backquote . ,elisp-backquote)

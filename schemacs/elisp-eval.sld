@@ -63,7 +63,7 @@
           scheme->elisp  elisp->scheme
           type-predicate    elisp-null?  elisp-pair?  elisp-list?
           elisp-string?  elisp-number?  elisp-integer?  elisp-float?
-          elisp-procedure?
+          elisp-procedure?  elisp-symbol?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
           env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!
           env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!
