@@ -46,6 +46,8 @@
           elisp-quote-scheme-type?
           write-parser-location
           get-location
+          elisp-form-type?
+          elisp-form->list
           )
     (only (schemacs match) match)
     )

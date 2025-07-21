@@ -216,12 +216,7 @@
         (cond
          ((eq? form #t) (loop result))
          ((or (not form) (eof-object? form)) result)
-         ((elisp-form-type? form)
-          (loop
-           (env-trace!
-            (elisp-form-start-loc form) #t elisp-load! env
-            (lambda () (use-form form))
-            )))
+         ((elisp-form-type? form) (loop (use-form form)))
          (else (loop (use-form form)))
          )))
     (cond
@@ -1063,7 +1058,8 @@
          (() '())
          ((bindings-form progn-body ...)
           (let*((bindings (%unpack bindings-form))
-                (elstkfrm (env-push-new-elstkfrm! st (length bindings) '())))
+                (elstkfrm (env-push-new-elstkfrm! st (length bindings) '()))
+                )
             (let loop ((unbound-exprs bindings))
               (match unbound-exprs
                 (()
@@ -1102,9 +1098,9 @@
 (define elisp-lambda
   (make<syntax>
    (lambda expr
-     (let*((expr (%unpack (cdr expr)))
+     (let*((expr (cdr expr))
            (func
-            (match expr
+            (match (%unpack expr)
               (() (new-lambda))
               ((args body ...)
                (eval-defun-args-body 'lambda args body))
@@ -1847,6 +1843,13 @@
      (let loop ((depth depth) (expr expr))
        (match expr
          (() '())
+         ((? elisp-form-type? expr)
+          (loop depth (elisp-form->list expr))
+          ;; -- ^ do NOT increment depth here. The depth counter is
+          ;; only for macro lookups and expansions, this recursion is
+          ;; used to unpack part of the AST which does not count
+          ;; against the depth limit.
+          )
          ((label args ...)
           (let ((args
                  (if all
@@ -1869,13 +1872,6 @@
                  )))
              (else (cons label args))
              )))
-         ((? elisp-form-type? expr)
-          (loop depth (elisp-form->list expr))
-          ;; -- ^ do NOT increment depth here. The depth counter is
-          ;; only for macro lookups and expansions, this recursion is
-          ;; used to unpack part of the AST which does not count
-          ;; against the depth limit.
-          )
          (any any)
          )))))
 

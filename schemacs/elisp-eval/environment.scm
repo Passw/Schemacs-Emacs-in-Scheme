@@ -506,7 +506,7 @@
          ))
        (else (bind-opts opts args count stack))
        ))
-    (bind-syms syms args 0 '())
+    (bind-syms syms (scheme->elisp args) 0 '())
     ))
 
 ;;--------------------------------------------------------------------
@@ -1012,7 +1012,7 @@
 
 (define (elisp-null? val) (or (null? val) (not val)))
 (define elisp-pair? pair?)
-(define (elisp-list? val) (list? (elisp->scheme val)))
+(define (elisp-list? val) (or (list? (elisp->scheme val)) (elisp-form-type? val)))
 (define elisp-string? string?)
 (define elisp-number? number?)
 (define elisp-integer? integer?)
@@ -1047,6 +1047,8 @@
      (replace-head (car val))
      (scheme->elisp (cdr val))
      ))
+   ((elisp-form-type? val)
+    (scheme->elisp (elisp-form->list val)))
    (else val)
    ))
 
