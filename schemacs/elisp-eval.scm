@@ -1677,6 +1677,8 @@
 (define elisp-fset
   (elisp-symbol-op2 "fset" symbol? eval-fset))
 
+(define elisp-sxhash-equal (pure 1 "sxhash-equal" default-hash))
+
 (define elisp-make-hash-table
   (scheme-lambda->elisp-lambda
    (lambda args
@@ -1834,6 +1836,122 @@
     (any (eval-error "wrong number of arguments" "mapcar" 'expected 2 any))
     ))
 
+;;--------------------------------------------------------------------------------------------------
+;; Formatting, output, and errors
+
+(define (elisp-error . args)
+  (cond
+   ((null? args) (eval-error "Elisp \"error\" occurred"))
+   (else (apply eval-error args))
+   ))
+
+(define (elisp-format . args)
+  (match args
+    ((fstr args ...)
+     (cond
+      ((string? fstr) (scheme->elisp (apply format fstr args)))
+      (else (eval-error "wrong type argument" fstr 'expecting "string"))
+      ))
+    ))
+
+(define (elisp-prin1 . args)
+  (match args
+    ((val) ((*impl/prin1*) val) val)
+    ((val port) ((*impl/prin1*) val port) val)
+    ((val port overrides) ((*impl/prin1*) val port overrides) val)
+    (any
+     (eval-error
+      "wrong number of arguments" "prin1"
+      (length any) 'min 1 'max 3))
+    ))
+
+(define (elisp-princ . args)
+  (match args
+    ((val) ((*impl/princ*) val) val)
+    ((val port) ((*impl/princ*) val port) val)
+    (any (eval-error "wrong number of arguments" "princ" 'min 1 'max 2))
+    ))
+
+(define eval-print
+  (case-lambda
+    ((val) (eval-print val *elisp-output-port*))
+    ((val port)
+     (newline port)
+     ((*impl/prin1*) val port)
+     (newline port))
+    ))
+
+(define (elisp-print . args)
+  (match args
+    ((val) (eval-print val))
+    ((val port) (eval-print val port))
+    (any (eval-error "wrong number of arguments" "print" 'min 1 'max 2))
+    ))
+
+(define (elisp-message . args)
+  (match args
+    (() (eval-error "wrong number of arguments" "message" 'min 1))
+    ((format-str args ...)
+     (let ((port (*elisp-error-port*)))
+       (apply format-to-port port format-str args)
+       (newline port)
+       '()
+       ))))
+
+
+(define (elisp-load . args)
+  (match args
+    ((filepath)
+     (cond
+      ((string? filepath) (elisp-load! filepath (*the-environment*)))
+      (else (eval-error "wrong type argument" filepath 'expecting "string"))
+      ))
+    (any
+     (eval-error "wrong number of arguments" "load"
+      (length any) 'min 1 'max 2))
+    ))
+
+;;--------------------------------------------------------------------------------------------------
+
+
+(define (elisp-make-keymap . args)
+  (match args
+    (() (keymap))
+    ((name)
+     (let ((km (keymap)))
+       (lens-set name km =>keymap-label!) km))
+    (any
+     (eval-error
+      "wrong number of arguments"
+      "make-keymap" 'min 0 'max 1))
+    ))
+
+
+(define (elisp-define-key . args)
+  (define (define-key keymap key binding remove)
+    (let ((binding (if binding binding nil))
+          (=>lens (lens =>keymap-top-layer! (=>keymap-layer-index! key)))
+          )
+      (cond
+       ((not (keymap-type? keymap))
+        (eval-error "wrong type argument" keymap 'expecting "keymapp"))
+       (remove (lens-set #f keymap =>lens))
+       (else (lens-set binding keymap =>lens)))
+      binding
+      ))
+  (match args
+    ((keymap key binding)
+     (define-key keymap key binding #f))
+    ((keymap key binding remove)
+     (define-key keymap key binding remove))
+    (any
+     (eval-error
+      "wrong number of arguments"
+      "define-key" 'min 3 'max 4))
+    ))
+
+;;--------------------------------------------------------------------------------------------------
+
 (define elisp-quote
   (make<syntax>
    (lambda args
@@ -1953,119 +2071,7 @@
 (define elisp-macroexpand-all
   (elisp-macroexpander #t *macroexpand-max-depth* #t))
 
-
-(define (elisp-error . args)
-  (cond
-   ((null? args) (eval-error "Elisp \"error\" occurred"))
-   (else (apply eval-error args))
-   ))
-
-(define (elisp-format . args)
-  (match args
-    ((fstr args ...)
-     (cond
-      ((string? fstr) (scheme->elisp (apply format fstr args)))
-      (else (eval-error "wrong type argument" fstr 'expecting "string"))
-      ))
-    ))
-
-(define (elisp-prin1 . args)
-  (match args
-    ((val) ((*impl/prin1*) val) val)
-    ((val port) ((*impl/prin1*) val port) val)
-    ((val port overrides) ((*impl/prin1*) val port overrides) val)
-    (any
-     (eval-error
-      "wrong number of arguments" "prin1"
-      (length any) 'min 1 'max 3))
-    ))
-
-(define (elisp-princ . args)
-  (match args
-    ((val) ((*impl/princ*) val) val)
-    ((val port) ((*impl/princ*) val port) val)
-    (any (eval-error "wrong number of arguments" "princ" 'min 1 'max 2))
-    ))
-
-(define eval-print
-  (case-lambda
-    ((val) (eval-print val *elisp-output-port*))
-    ((val port)
-     (newline port)
-     ((*impl/prin1*) val port)
-     (newline port))
-    ))
-
-(define (elisp-print . args)
-  (match args
-    ((val) (eval-print val))
-    ((val port) (eval-print val port))
-    (any (eval-error "wrong number of arguments" "print" 'min 1 'max 2))
-    ))
-
-(define (elisp-message . args)
-  (match args
-    (() (eval-error "wrong number of arguments" "message" 'min 1))
-    ((format-str args ...)
-     (let ((port (*elisp-error-port*)))
-       (apply format-to-port port format-str args)
-       (newline port)
-       '()
-       ))))
-
-
-(define (elisp-load . args)
-  (match args
-    ((filepath)
-     (cond
-      ((string? filepath) (elisp-load! filepath (*the-environment*)))
-      (else (eval-error "wrong type argument" filepath 'expecting "string"))
-      ))
-    (any
-     (eval-error "wrong number of arguments" "load"
-      (length any) 'min 1 'max 2))
-    ))
-
-
-(define elisp-sxhash-equal (pure 1 "sxhash-equal" default-hash))
-
-
-(define (elisp-make-keymap . args)
-  (match args
-    (() (keymap))
-    ((name)
-     (let ((km (keymap)))
-       (lens-set name km =>keymap-label!) km))
-    (any
-     (eval-error
-      "wrong number of arguments"
-      "make-keymap" 'min 0 'max 1))
-    ))
-
-
-(define (elisp-define-key . args)
-  (define (define-key keymap key binding remove)
-    (let ((binding (if binding binding nil))
-          (=>lens (lens =>keymap-top-layer! (=>keymap-layer-index! key)))
-          )
-      (cond
-       ((not (keymap-type? keymap))
-        (eval-error "wrong type argument" keymap 'expecting "keymapp"))
-       (remove (lens-set #f keymap =>lens))
-       (else (lens-set binding keymap =>lens)))
-      binding
-      ))
-  (match args
-    ((keymap key binding)
-     (define-key keymap key binding #f))
-    ((keymap key binding remove)
-     (define-key keymap key binding remove))
-    (any
-     (eval-error
-      "wrong number of arguments"
-      "define-key" 'min 3 'max 4))
-    ))
-
+;;--------------------------------------------------------------------------------------------------
 
 (define *elisp-init-env*
   ;; A parameter containing the default Emacs Lisp evaluation
