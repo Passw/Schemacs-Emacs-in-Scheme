@@ -90,6 +90,10 @@
 
 (test-assert (test-run eq? '() test-elisp-eval! '(eq nil t)))
 
+(test-assert (test-run eq? #t test-elisp-eval! '(eq nil '())))
+
+(test-assert (test-run eq? #t test-elisp-eval! '(eq '() nil)))
+
 (test-assert (test-run eq? #t test-elisp-eval! '(eq 5 5)))
 
 (test-assert (test-run eq? #t test-elisp-eval! '(= 5 5 5)))
@@ -916,6 +920,9 @@ top: glo = top
 
 (test-equal '()
   (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four)))))
+
+(test-assert (test-elisp-eval! '(memq 'b '(a b c))))
+(test-assert (test-elisp-eval! '(memv 'b '(a b c))))
 
 ;;--------------------------------------------------------------------------------------------------
 

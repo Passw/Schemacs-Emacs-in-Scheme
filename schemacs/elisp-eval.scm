@@ -1718,6 +1718,17 @@
          )))))
 
 
+(define (elisp-native-comp-function-p . args)
+  (match args
+    ((obj) #f)
+    (any
+     (eval-error
+      "wrong number of arguments"
+      "native-comp-function-p" 'expected 1 any)
+     )))
+
+;;--------------------------------------------------------------------------------------------------
+
 (define (elisp-list . args) (map scheme->elisp args))
 
 (define (elisp-car lst)
@@ -1835,6 +1846,46 @@
         )))
     (any (eval-error "wrong number of arguments" "mapcar" 'expected 2 any))
     ))
+
+
+(define (eval-eq a b)
+  (cond
+   ((or (null? a) (eq? a nil) (eq? a 'nil))
+    (or (null? b) (eq? b nil) (eq? b 'nil))
+    )
+   (else (eq? a b))
+   ))
+
+(define (eval-equal a b) (or (eval-eq a b) (equal? a b)))
+
+(define (%equality fname compare)
+  (lambda args
+    (match args
+      ((a b) (compare a b))
+      (any (eval-error  "wrong numbet of arguments" fname 'expected 2 any))
+      )))
+
+(define elisp-eq    (%equality "eq"    eval-eq))
+(define elisp-equal (%equality "equal" eval-equal))
+
+(define (eval-member fname compare)
+  (lambda args
+    (match args
+      ((elt lst)
+       (let ((lst
+              (cond
+               ((pair? lst) lst)
+               ((null? lst) lst)
+               ((elisp-form-type? lst) (elisp-form->list lst))
+               (else (eval-error "wrong type argument" 'expected "list" lst))
+               )))
+         (member elt lst compare)
+         ))
+      (any (eval-error "wrong number of arguments" fname 'expected 2 any))
+      )))
+
+(define elisp-memq   (eval-member "memq"   eval-eq))
+(define elisp-member (eval-member "member" eval-equal))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Formatting, output, and errors
@@ -2119,32 +2170,34 @@
      (dotimes  . ,elisp-dotimes)
      (dolist   . ,elisp-dolist)
 
-     (eq     . ,(pure 2 "eq" eq?))
-     (equal  . ,(pure 2 "equal" equal?))
-     (concat . ,(pure* string-append))
+     (eq       . ,(pure 2 "eq" elisp-eq))
+     (equal    . ,(pure 2 "equal" elisp-equal))
 
      (|1+| . ,(pure 1 "1+" |1+|))
      (|1-| . ,(pure 1 "1-" |1-|))
-     (+  . ,(pure*-numbers "+" +))
-     (-  . ,(pure*-numbers "-" -))
-     (*  . ,(pure*-numbers "*" *))
-     (=  . ,(pure*-numbers "=" =))
-     (<  . ,(pure*-numbers "<" <))
-     (<= . ,(pure*-numbers "<=" <=))
-     (>  . ,(pure*-numbers ">" >))
-     (>= . ,(pure*-numbers ">=" >=))
+     (+    . ,(pure*-numbers "+" +))
+     (-    . ,(pure*-numbers "-" -))
+     (*    . ,(pure*-numbers "*" *))
+     (=    . ,(pure*-numbers "=" =))
+     (<    . ,(pure*-numbers "<" <))
+     (<=   . ,(pure*-numbers "<=" <=))
+     (>    . ,(pure*-numbers ">" >))
+     (>=   . ,(pure*-numbers ">=" >=))
 
      (cons     . ,(pure 2 'cons cons))
      (car      . ,elisp-car)
      (cdr      . ,elisp-cdr)
      (car-safe . ,elisp-car-safe)
      (list     . ,elisp-list)
+     (concat   . ,(pure* string-append))
      (setcar   . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
      (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
      (nth      . ,(pure 2 'nth elisp-nth))
      (nconc    . ,elisp-nconc)
      (delq     . ,elisp-delq)
      (mapcar   . ,elisp-mapcar)
+     (memq     . ,elisp-memq)
+     (member   . ,elisp-member)
 
      ,(type-predicate 'null      elisp-null?)
      ,(type-predicate 'consp     elisp-pair?)
@@ -2202,6 +2255,9 @@
      (make-keymap        . ,elisp-make-keymap)
      (make-sparse-keymap . ,elisp-make-keymap)
      (define-key         . ,elisp-define-key)
+
+     (subr-native-elisp-p    . ,elisp-native-comp-function-p)
+     (native-comp-function-p . ,elisp-native-comp-function-p)
 
      (run-hooks                        . ,elisp-run-hooks)
      (run-hooks-with-args              . ,elisp-run-hooks-with-args)
