@@ -158,37 +158,49 @@
 
 
 (define (%elisp-eval! expr env)
-  (let*((run (lambda () (eval-form expr (env-get-location expr))))
-        )
-    (if (not env) (run)
-        (parameterize ((*the-environment* env)) (run))
-        )))
-
-(define elisp-eval!
-  ;; Evaluate an Emacs Lisp expression that has already been parsed
-  ;; from a string into a list or vector data structure. The result of
-  ;; evaluation is two values:
-  ;;
-  ;;  1. an `<MATCHER-STATE-TYPE>` with an `<ELISP-ENVIRONMENT-TYPE>`
-  ;;     in the `=>MATCHER-STATE-INPUT!` field, to extract the value
-  ;;     of the last evaluated Emacs Lisp sub-expression of the given
-  ;;     `EXPR` argument, use `ELISP-EVAL->SCHEME`.
-  ;;
-  ;;  2. The exception that occurred, or `#F` if there was no
-  ;;     exception.
-  ;;------------------------------------------------------------------
-  (case-lambda
-    ((expr) (elisp-eval! expr #f))
-    ((expr env)
-     (call/cc
+  (define (run)
+    (call/cc
       (lambda (halt-eval)
         (let ((handler (new-elisp-error-handler env halt-eval))
               (raise-impl (new-elisp-raise-impl env halt-eval))
               )
           (parameterize ((raise-error-impl* raise-impl))
             (with-exception-handler handler
-              (lambda () (%elisp-eval! expr env))
-              ))))))))
+              (lambda () (eval-form expr (env-get-location expr)))
+              ))))))
+  (define (run-with-mode new-lxmode)
+    (let*((env (*the-environment*))
+          (old-lxmode (view env =>env-lexical-mode?!))
+          )
+      (lens-set new-lxmode env =>env-lexical-mode?!)
+      (let ((result (run)))
+        (lens-set old-lxmode env =>env-lexical-mode?!)
+        result
+        )))
+  (cond
+   ((not env) (run-with-mode #f))
+   ((elisp-environment-type? env)
+    (parameterize ((*the-environment* env)) (run))
+    )
+   ((or (hash-table? env) (pair? env))
+    (let ((new-env (new-empty-environment)))
+      (env-push-new-elstkfrm! new-env #f env)
+      (parameterize ((*the-environment* new-env)) (run-with-mode #t))
+      ))
+   (else (run-with-mode #t))
+   ))
+
+(define elisp-eval!
+  ;; Evaluate an Emacs Lisp expression that has already been parsed
+  ;; from a string into a list or vector data structure. You can pass
+  ;; an optional environment object, or a hash table. Note that if a
+  ;; hash table is given, a new environment is created with the
+  ;; lexical scoping mode enabled. If no environment is given, the
+  ;; current environment is used.
+  ;;------------------------------------------------------------------
+  (case-lambda
+    ((expr) (elisp-eval! expr #f))
+    ((expr env) (%elisp-eval! expr env))))
 
 
 (define (eval-iterate-forms env port use-form)
@@ -2246,6 +2258,7 @@
      (print            . ,elisp-print)
      (error            . ,elisp-error)
 
+     (eval             . ,elisp-eval!)
      (load             . ,elisp-load)
      (provide          . ,elisp-provide)
      (featurep         . ,elisp-featurep)

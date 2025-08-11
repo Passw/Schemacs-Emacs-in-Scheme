@@ -831,12 +831,17 @@
   ;; empty stack frame that was pushed so it can be updated by the
   ;; calling procedure.
   (let ((lxmode (env-lxmode st))
-        (elstkfrm (new-elstkfrm size bindings)))
+        (elstkfrm
+         (cond
+          ((hash-table? bindings) bindings)
+          (else (new-elstkfrm size bindings))
+          )))
     (update (lambda (stack) (cons elstkfrm stack)) st =>env-lexstack*!)
     (unless lxmode
       (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!))
     (bit-stack-push! (env-stkflags st) lxmode)
-    elstkfrm))
+    elstkfrm
+    ))
 
 
 (define (env-dynstack-update updater st name newsym)
