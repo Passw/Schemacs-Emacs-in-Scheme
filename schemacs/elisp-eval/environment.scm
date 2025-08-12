@@ -122,6 +122,7 @@
   (cond
    ((string? name) name)
    ((symbol? name) (symbol->string name))
+   ((sym-type? name) (sym-name name))
    (else (error "not a symbol or string" name))
    ))
 

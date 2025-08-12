@@ -1360,8 +1360,7 @@
           (update&view updater st
            (=>env-obarray-key! (ensure-string name/sym)))))
       return
-      ))
-   ))
+      ))))
 
 
 (define (eval-ensure-interned sym)
@@ -1458,12 +1457,12 @@
   ;; TODO: check if `SYM` satisfies `SYMBOL?` or `SYM-TYPE?` and act accordingly.
   (update-on-symbol st sym
    (lambda (obj)
-     (values (lens-set val obj (=>sym-value! sym)) val))))
+     (values (lens-set val obj (=>sym-value! (ensure-string sym))) val))))
 
 (define (eval-get st sym prop)
   (view-on-symbol st sym
    (lambda (obj)
-     (view obj (=>sym-plist! sym) (=>hash-key! prop)))))
+     (view obj (=>sym-plist! (ensure-string sym)) (=>hash-key! prop)))))
 
 (define (eval-put st sym prop val)
   (let ((prop (ensure-string prop)))
