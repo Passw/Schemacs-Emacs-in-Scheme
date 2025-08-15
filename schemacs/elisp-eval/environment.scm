@@ -534,8 +534,12 @@
   ;;  3. an object of type `LAMBDA-TYPE?` containing the code being
   ;;     evaluated.
   ;;------------------------------------------------------------------
-  (make<stack-trace-frame> location symbol func '())
-  )
+  (cond
+   ((not (or (not symbol) (symbol? symbol) (sym-type? symbol)))
+    (error "not a symbol" symbol)
+    )
+   (else (make<stack-trace-frame> location symbol func '()))
+   ))
 
 (define =>stack-trace-location*!
   (record-unit-lens
@@ -1115,7 +1119,7 @@
           ((arg checking ...)
            (if (type-ok? arg)
                (loop checking)
-               (eval-error "wrong type argument" sym arg 'expecting type-sym))
+               (eval-error "wrong type argument" 'function sym 'got arg 'expecting type-sym))
            ))))))
 
 (define (pure*-numbers sym proc)
