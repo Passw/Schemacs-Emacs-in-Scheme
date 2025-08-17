@@ -112,7 +112,8 @@
    new-environment  elisp-reset-init-env!
 
    ;; The interpreter
-   elisp-eval!  elisp-load!  eval-iterate-forms
+   elisp-eval!  elisp-load!
+   eval-iterate-forms  elisp-eval-reset-stack!
 
    =>elisp-symbol!
      ;; ^ lens on a string that looks-up a sym-type object by name in

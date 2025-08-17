@@ -2,6 +2,11 @@
 (define *the-environment*
   (make-parameter (new-empty-environment *default-obarray-size*)))
 
+(define debug-print-eval #f)
+  ;; ^ WARNING: setting this to #t prints every single form that is
+  ;; evaluated, even long `PROGN` expressions hundreds of lines
+  ;; long. Be sure that when you set this to #t you are only going to
+  ;; execute a very small example.
 
 (define (elisp-show-stack-frames)
   (let ((st (*the-environment*)))
@@ -460,7 +465,7 @@
                )
            (cond
             (hook
-             (eval-apply-lambda func args-list))
+             (%elisp-apply func args-list))
             (else (eval-error "void variable" hook)))
            ))
        (define (second hook)
@@ -537,15 +542,11 @@
 ;; immediately executes each form or symbol. The entrypoint is
 ;; `EVAL-FORM`.
 
-(define (%unpack expr) (map elisp-form->list expr))
-(define (%unpack2 expr)
-  (map (lambda (expr)
-         (cond
-          ((pair? expr) (map elisp-form->list expr))
-          (else expr)
-          ))
-       (map elisp-form->list expr)
-       ))
+(define (%unpack expr)
+  (cond
+   ((elisp-form-type? expr) (elisp-form->list expr))
+   (else expr)
+   ))
 
 (define (eval-push-new-elstkfrm! size bindings)
   ;; Inspect the lexical binding mode and push a new stack frame on
@@ -559,26 +560,19 @@
   (env-pop-elstkfrm! (*the-environment*)))
 
 
-(define (eval-args-apply-proc func arg-exprs)
-  ;; Evaluate each of the `ARG-EXPRS` and apply the list of results to
-  ;; the given `FUNC`.
-  (apply func
-   (let loop ((arg-exprs arg-exprs))
-     (cond
-      ((null? arg-exprs) '())
-      ((pair? arg-exprs)
-       (let ((head (car arg-exprs)))
-         (cons
-          (eval-form head (env-get-location head))
-          (loop (cdr arg-exprs))
-          )))))))
+(define elisp-eval-reset-stack!
+  (case-lambda
+    (() (elisp-eval-reset-stack! (*the-environment*)))
+    ((env) (env-reset-stack! env))
+    ))
 
 
-(define (apply-unevald-args-to-lambda func args)
+(define (push-stack-frame-eval-body func args)
   ;; This applies arguments to a `FUNC` which must be of type
   ;; `LAMBDA-TYPE?`, without evaluating the arguments `ARGS`. It
   ;; creates and pushes a stack frame with the `ARGS` as they are
   ;; given.
+  ;;------------------------------------------------------------------
   (let ((elstkfrm (elstkfrm-from-args func args)))
     (cond
      ((not elstkfrm) (error "elstkfrm-from-args returned #f"))
@@ -594,31 +588,36 @@
         )))))
 
 
-(define (eval-apply-lambda func args)
-  ;; This is how Emacs Lisp-defined lambdas and functions are applied
-  ;; from within Emacs Lisp, it applies `EVAL-ARGS-APPLY-PROC` first,
-  ;; then passes the results to `APPLY-UNEVALD-ARGS-TO-LAMBDA`. This
-  ;; procedure *DOES NOT* do macro expansion regardless of the
-  ;; `LAMBDA-KIND` of the `FUNC` argument.
-  (eval-args-apply-proc
-   (lambda args (apply-unevald-args-to-lambda func args))
-   args))
-
-
 (define (scheme-lambda->elisp-lambda func)
-  ;; Wraps a Scheme lambda function so that it can be used as a
-  ;; built-in function. If you apply an Elisp lambda as the `FUNC`
-  ;; argument, the returned lambda simply applies it's arguments to
-  ;; the `FUNC` using the `EVAL-APPLY-LAMBDA` procedure without any
-  ;; `elisp->scheme` value conversions.
+  ;; Constructs a Scheme procedure that takes Elisp arguments and
+  ;; returns an Elisp result. This is useful for implementing
+  ;; higher-order Emacs Lisp functions such as `MAPCAR`.
+  ;;
+  ;; This may seem confusing because this procedure returns a Scheme
+  ;; procedure, not an Elisp Lambda (as in a data value that satisfies
+  ;; the `LAMBDA-TYPE?` predicate) although the name implies it
+  ;; returns an "elisp-lambda". It is helpful to instead think about
+  ;; the inputs and outputs of the procedure that is returned by this
+  ;; procedure -- what is returned is a procedure that takes Elisp
+  ;; values and returns Elisp values, as opposed to a Scheme lambda
+  ;; which takes Scheme values and returns Scheme values.
+  ;;
+  ;; Furthermore, if you apply an actual `LAMBDA-TYPE?` values as the
+  ;; `FUNC` argument, the returned Scheme procedure simply applies
+  ;; it's arguments to the `FUNC` using the `ELISP-APPLY procedure
+  ;; without any `elisp->scheme` value conversions. So regardless of
+  ;; the type of the `FUNC` argument that is applied (whether it be a
+  ;; Scheme procedure or an Elisp Lambda), the result is a procedure
+  ;; that takes Elisp values and returns Elisp values.
+  ;; ------------------------------------------------------------------
   (lambda args
     (cond
      ((lambda-type? func)
       (cond
        ((eq? 'macro (view func =>lambda-kind*!))
-        (apply-unevald-args-to-lambda func args)
+        (push-stack-frame-eval-body func args)
         )
-       (else (eval-apply-lambda func args))
+       (else (%elisp-apply func args))
        ))
      ((procedure? func)
       (scheme->elisp (apply func (map elisp->scheme args))))
@@ -628,73 +627,89 @@
      )))
 
 
-(define (eval-bracketed-form loc head arg-exprs)
+(define %elisp-apply
   ;; This is the actual `APPLY` procedure for Emacs Lisp. The `HEAD`
   ;; argument is resolved to a procedure, macro, command, or lambda.
   ;; If `HEAD` resolves to a lambda, and `LAMBDA-KIND` is `'MACRO`,
   ;; the macro is expanded by evaluating the result with `eval-form`
   ;; before a value is returned.
-  (let*((st (*the-environment*))
-        (func (env-resolve-function st head))
-        (func (if (elisp-form-type? func)
-                  (eval-form func (env-get-location func))
-                  func
+  (case-lambda
+    ((head arg-exprs) (%elisp-apply head arg-exprs #f))
+    ((head arg-exprs loc)
+     (when debug-print-eval
+       (display "; apply ") (write head) (newline)
+       (display "; - args: ") (write arg-exprs) (newline)
+       )
+     (let*((st (*the-environment*))
+           (func (env-resolve-function st head))
+           (func (cond
+                  ((pair? func) (eval-form func))
+                  ((elisp-form-type? func) (eval-form func (env-get-location func)))
+                  (else func)
                   ))
-        )
-    (env-trace!
-     loc head func st
-     (lambda ()
-       (cond
-        ((syntax-type?  func)
-         (apply (syntax-eval func) head arg-exprs))
-        ((lambda-type?  func)
-         (cond
-          ((macro-type? func)
-           (eval-form
-            (apply-unevald-args-to-lambda func arg-exprs)
-            (env-get-location func)
-            ))
-          (else
-           (eval-apply-lambda func arg-exprs)
-           )))
-        ((command-type? func)
-         (eval-args-apply-proc (command-procedure func) arg-exprs)
+           (sym  (if (lambda-type? head) 'lambda head))
+           (loc  (or loc (and (lambda-type? func) (view func =>lambda-location*!))))
+           )
+       (when debug-print-eval
+         (display "; - resolved function ") (write func) (newline)
          )
-        ((procedure?    func)
-         (eval-args-apply-proc func arg-exprs)
-         )
-        ((pair?         func)
-         (match func
-           (('lambda (args-exprs ...) body ...)
-            (let ((func (apply (syntax-eval elisp-lambda) func)))
-              (eval-apply-lambda func arg-exprs)
-              ))
-           (('macro . func)
-            ;;(display "; apply ") (write func) (newline);;DEBUG
-            ;;(display "; --args: ") (write arg-exprs) (newline);;DEBUG
+       (env-trace!
+        loc sym func st
+        (lambda ()
+          (cond
+           ((syntax-type?  func)
+            (apply (syntax-eval func) head arg-exprs))
+           ((lambda-type?  func)
             (cond
-             ((lambda-type? func)
+             ((macro-type? func)
               (eval-form
-               (apply-unevald-args-to-lambda func arg-exprs)
+               (push-stack-frame-eval-body func arg-exprs)
                (env-get-location func)
                ))
-             (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
-             ))
-           (any (eval-error "invalid function" func))
-           ))
-        (else (eval-error "invalid function" head))
-        )))))
+             (else
+              (push-stack-frame-eval-body func (eval-args-list arg-exprs))
+              )))
+           ((command-type? func)
+            (apply (command-procedure func) (eval-args-list arg-exprs))
+            )
+           ((procedure?    func)
+            (apply func (eval-args-list arg-exprs))
+            )
+           ((pair?         func)
+            (match func
+              (('lambda arg-exprs body ...)
+               (let ((func (apply (syntax-eval elisp-lambda) func)))
+                 (push-stack-frame-eval-body
+                  (defun-make-lambda 'lambda (%unpack arg-exprs) body)
+                  (eval-args-list arg-exprs))
+                 ))
+              (('macro . func)
+               (cond
+                ((lambda-type? func)
+                 (eval-form
+                  (push-stack-frame-eval-body func arg-exprs)
+                  (env-get-location func)
+                  ))
+                (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
+                ))
+              (any (eval-error "invalid function" func))
+              ))
+           (else (eval-error "invalid function" head))
+           )))))))
 
 
 (define eval-form
   ;; This is where evaluation begins. This is the actual `EVAL`
   ;; procedure for Emacs Lisp.
   (case-lambda
-    ((expr) (eval-form expr (env-get-location expr)))
+    ((expr) (eval-form expr #f))
     ((expr loc)
+     (when debug-print-eval
+       (display "; eval ") (write expr) (newline)
+       )
      (match expr
        (() '())
-       ((head args ...) (eval-bracketed-form loc head args))
+       ((head args ...) (%elisp-apply head args loc))
        (('quote expr) expr)
        (('quote exprs ...)
         (eval-error
@@ -731,28 +746,29 @@
          ((elisp-function-ref-type? literal)
           (eval-function-ref (elisp-function-get-ref literal))
           )
-         ((or (number? literal) (string? literal)
-              (char? literal) (symbol? literal)
-              )
-          literal
-          )
          (else literal)
          ))))))
 
 
 (define (eval-args-list arg-exprs)
-  (let loop ((exprs (%unpack arg-exprs)))
-    (match exprs
-      (() '())
-      ((expr more ...)
-       (let ((result (eval-form expr (env-get-location arg-exprs))))
-         (if (elisp-eval-error-type? result) result
-             (cons result (loop more)))
-         )))))
+  (let ((result
+         (let loop ((exprs arg-exprs))
+           (match exprs
+             (() '())
+             ((expr more ...)
+              (let ((result (eval-form expr (env-get-location arg-exprs))))
+                (if (elisp-eval-error-type? result) result
+                    (cons result (loop more)))
+                ))))))
+    (when debug-print-eval
+      (display "; - args-list ") (write result) (newline)
+      )
+    result
+    ))
 
 
 (define (eval-progn-body body-exprs)
-  (let loop ((exprs (%unpack body-exprs)))
+  (let loop ((exprs body-exprs))
     (match exprs
       (() '())
       ((final) (eval-form final (env-get-location body-exprs)))
@@ -774,12 +790,12 @@
 (define elisp-progn
   (make<syntax>
    (lambda expr
-     (eval-progn-body (%unpack (cdr expr))))))
+     (eval-progn-body (cdr expr)))))
 
 (define elisp-prog1
   (make<syntax>
    (lambda expr
-     (match (%unpack (cdr expr))
+     (match (cdr expr)
        (() (eval-error "wrong number of arguments" "prog1" 0))
        ((first more ...)
         (let ((return (eval-form first)))
@@ -792,7 +808,7 @@
    (lambda expr
      (define (fail-nargs n)
        (eval-error "wrong number of arguments" "prog2" n))
-     (match (%unpack (cdr expr))
+     (match (cdr expr)
        (() (fail-nargs 0))
        ((any) (fail-nargs 1))
        ((first second more ...)
@@ -806,7 +822,7 @@
 (define (elisp-logic conjunction)
   (make<syntax>
    (lambda exprs
-     (let loop ((exprs (%unpack (cdr exprs))))
+     (let loop ((exprs (cdr exprs)))
        (match exprs
          (() (if conjunction #t '()))
          ((final) (eval-form final))
@@ -824,7 +840,7 @@
 (define elisp-if
   (make<syntax>
    (lambda exprs
-     (match (%unpack exprs)
+     (match exprs
        (() (eval-error "wrong number of arguments" "if" 0))
        (('if cond-expr) (eval-error "wrong number of arguments" "if" 1))
        (('if cond-expr then-exprs else-exprs ...)
@@ -845,7 +861,7 @@
          (if (not (on-bool result)) #f
              (eval-progn-body body-expr))
          ))
-     (match (%unpack exprs)
+     (match exprs
        (() (eval-error "wrong number of arguments" "when or unless" 'min 1))
        (('when   cond-expr body-expr ...)
         (eval is   cond-expr body-expr))
@@ -863,7 +879,7 @@
          (if (not (elisp-null? result))
              (values #t (eval-progn-body body))
              (values #f #f))))
-     (let loop ((exprs (%unpack2 (cdr exprs))))
+     (let loop ((exprs (map %unpack (cdr exprs))))
        (match exprs
          (() '())
          ((() more ...) (loop more))
@@ -871,13 +887,15 @@
           (let-values
               (((success return) (eval-cond cond-expr body)))
             (if success return (loop more))
-            )))))))
+            ))
+         (any (eval-error "invalid cond branch expression" (car exprs)))
+         )))))
 
 
 (define elisp-while
   (make<syntax>
    (lambda exprs
-     (match (%unpack (cdr exprs))
+     (match (cdr exprs)
        (() (eval-error "wrong number of arguments" "while" 0))
        ((cond-expr body ...)
         (let loop ()
@@ -893,7 +911,7 @@
    (lambda exprs
      (define (fail-nargs n)
        (eval-error "wrong number of arguments" "dotimes" n))
-     (match (%unpack2 (cdr exprs))
+     (match (map %unpack (cdr exprs))
        (() (fail-nargs 0))
        ((any) (fail-nargs 1))
        ((() any ...) (eval-error "expecting variable name" "dotimes" '()))
@@ -938,7 +956,7 @@
        (define (final) (if result-expr (eval-form result-expr) '()))
        (cond
         ((symbol? var)
-         (let*((elems (eval-form list-expr)))
+         (let*((elems (%unpack (eval-form list-expr))))
            (cond
             ((or (null? elems)
                  (and (vector? elems)
@@ -965,11 +983,11 @@
                    (loop)
                    )))))
             (else
-             (eval-error "wrong type argument" "dotimes" elems 'expecting "list")
+             (eval-error "wrong type argument" "dolist" elems 'expecting "list")
              ))))
-        (else (eval-error "wrong type argument" "dotimes" var 'expecting "symbol")))
+        (else (eval-error "wrong type argument" "dolist" var 'expecting "symbol")))
        )
-     (match (%unpack2 (cdr exprs))
+     (match (map %unpack (cdr exprs))
        (((var list-expr) body ...)
         (run var list-expr #f body))
        (((var list-expr result-expr) body ...)
@@ -1003,7 +1021,7 @@
          )
         (else
          (let loop
-             ((args (%unpack (cdr args)))
+             ((args (cdr args))
               (argc 0)
               (last-bound '())
               )
@@ -1023,7 +1041,7 @@
   (make<syntax>
    (lambda expr
      (let ((st (*the-environment*)))
-       (match (%unpack (cdr expr))
+       (match (cdr expr)
          (() '())
          ((bindings-form progn-body ...)
           (let loop
@@ -1036,9 +1054,10 @@
                (env-push-new-elstkfrm! st size (reverse bound))
                (let ((result (eval-progn-body progn-body)))
                  (env-pop-elstkfrm! st)
-                 result))
+                 result
+                 ))
               ((binding-expr more ...)
-               (match (elisp-form->list binding-expr)
+               (match (%unpack binding-expr)
                  (() (eval-error "empty bindings form" binding-expr))
                  ((sym) (loop more (cons (new-symbol sym '()) bound) (+ 1 size)))
                  ((sym expr)
@@ -1065,7 +1084,7 @@
   (make<syntax>
    (lambda expr
      (let ((st (*the-environment*)))
-       (match (%unpack (cdr expr))
+       (match (cdr expr)
          (() '())
          ((bindings-form progn-body ...)
           (let*((bindings (%unpack bindings-form))
@@ -1109,24 +1128,13 @@
 (define elisp-lambda
   (make<syntax>
    (lambda expr
-     (let*((expr (cdr expr))
-           (func
-            (match (%unpack expr)
-              (() (new-lambda))
-              ((args body ...)
-               (eval-defun-args-body 'lambda args body))
-              (args (eval-error "invalid lambda" args))
-              ))
-           (trace (view (*the-environment*) =>env-stack-trace*!))
-           (loc (and (pair? trace) (car trace)))
-           )
-       (when (and (lambda-type? func) loc)
-         (lens-set
-          (view loc =>stack-trace-location*!)
-          func =>lambda-location*!
-          ))
-       func
-       ))))
+     (let*((expr (cdr expr)))
+       (match expr
+         (() (new-lambda))
+         ((args body ...)
+          (defun-make-lambda 'lambda (%unpack args) body))
+         (args (eval-error "invalid lambda" args))
+         )))))
 
 
 (define variable-documentation "variable-documentation")
@@ -1136,7 +1144,7 @@
   (make<syntax>
    (lambda expr
      (let ((def (car expr))
-           (expr (%unpack (cdr expr))))
+           (expr (cdr expr)))
        (define (defvar sym-expr val-expr docstr)
          (let*((sym (eval-ensure-interned sym-expr))
                (val (if val-expr (eval-form val-expr) #f))
@@ -1161,44 +1169,46 @@
   (make<syntax>
    (lambda expr
      (let ((def  (car expr))
-           (expr (%unpack2 (cdr expr)))
+           (expr (cdr expr))
            )
        (match expr
          (() (eval-error "wrong number of arguments" def '()))
          ((sym) (eval-error "wrong number of arguments" def sym))
-         ((sym (args ...) body ...)
-          (cond
-           ((symbol? sym)
-            (let*((func   (eval-defun-args-body def args body))
-                  (name   (symbol->string sym))
-                  (=>name (=>env-obarray-key! name))
-                  (st     (*the-environment*))
-                  (obj    (view st =>name))
-                  (obj    (if obj obj
-                              (let ((obj (new-symbol name)))
-                                (lens-set! obj st =>name)
-                                obj)))
+         ((sym args-list-expr body ...)
+          (match (%unpack args-list-expr)
+            ((args ...)
+             (cond
+              ((symbol? sym)
+               (let*((func   (defun-make-lambda def args body))
+                     (name   (symbol->string sym))
+                     (=>name (=>env-obarray-key! name))
+                     (st     (*the-environment*))
+                     (obj    (view st =>name))
+                     (obj    (if obj obj
+                                 (let ((obj (new-symbol name)))
+                                   (lens-set! obj st =>name)
+                                   obj)))
+                     )
+                 (cond
+                  ((or (eq? def 'defun) (eq? def 'defsubst)) func)
+                  ((eq? def 'defmacro) (lens-set 'macro func =>lambda-kind*!))
+                  (else (error "expecting function head to be 'defun or 'defmacro" def))
                   )
-              (cond
-               ((or (eq? def 'defun) (eq? def 'defsubst)) func)
-               ((eq? def 'defmacro) (lens-set 'macro func =>lambda-kind*!))
-               (else (error "expecting function head to be 'defun or 'defmacro" def))
-               )
-              (cond
-               ((sym-type? obj) ;; update and return the interned symbol object
-                (let ((old-func (view obj =>sym-function*!)))
-                  (cond
-                   ((lambda-type? old-func)
-                    (lambda-copy-into! old-func func))
-                   (else
-                    (lens-set func obj =>sym-function*!)))
-                  obj))
-               (else (eval-error "failed to intern symbol" sym obj)))
+                 (cond
+                  ((sym-type? obj) ;; update and return the interned symbol object
+                   (let ((old-func (view obj =>sym-function*!)))
+                     (cond
+                      ((lambda-type? old-func)
+                       (lambda-copy-into! old-func func))
+                      (else
+                       (lens-set func obj =>sym-function*!)))
+                     obj))
+                  (else (eval-error "failed to intern symbol" sym obj)))
+                 ))
+              (else (eval-error "wrong type argument" sym 'expecting "symbol"))
               ))
-           (else (eval-error "wrong type argument" sym 'expecting "symbol"))
-           ))
-         ((name args body ...) (eval-error "malformed arglist" args))
-         )))))
+            (args (eval-error "malformed arglist" args))
+            )))))))
 
 
 (define (eval-defalias sym-expr val-expr docstr)
@@ -1229,7 +1239,7 @@
 (define elisp-defalias
   (make<syntax>
    (lambda expr
-     (match (%unpack (cdr expr))
+     (match (cdr expr)
        ((sym-expr val-expr) (eval-defalias sym-expr val-expr #f))
        ((sym-expr val-expr docstr) (eval-defalias sym-expr val-expr docstr))
        (any
@@ -1244,7 +1254,7 @@
   ;; `FUNC` in place, and also removes them from the `BODY-EXPRS` so
   ;; that the evaluator never executes them directly.
   (define (filter body-exprs)
-    (match body-exprs
+    (match (%unpack body-exprs)
       (() '())
       ((('declare args ...) body-exprs ...)
        (let loop ((args args))
@@ -1270,14 +1280,14 @@
        (cons any-expr (filter body-exprs)))
       ))
   (lens-set
-   (filter (%unpack2 body-exprs))
+   (filter body-exprs)
    func =>lambda-body*!
    )
   func
   )
 
 
-(define (eval-defun-args-body kind arg-exprs body-expr)
+(define (defun-make-lambda kind arg-exprs body-expr)
   (define (non-symbol-error sym)
     (eval-error "invalid function, arguments declaration expect symbol" sym)
     )
@@ -1507,28 +1517,39 @@
 ;;--------------------------------------------------------------------------------------------------
 ;; Built-in functions
 
-(define (eval-apply collect args)
-  (match args
-    (() (eval-error "wrong number of arguments" args))
-    ((func args ...)
-     (eval-bracketed-form
-      (if (lambda-type? func) (view func =>lambda-location*!) #f)
-      func
-      (collect args)))
-    ))
-
 (define (re-collect-args args)
-  ;; Collect arguments to `APPLY` and `FUNCALL` into a list single.
-  (match (%unpack args)
-    (() args)
+  ;; The `APPLY` function can take any number of arguments, but it
+  ;; must take a list as the final argument. This procedure takes the
+  ;; final list argument and appends it to the list of preceeding
+  ;; arguments.
+  (match args
+    (() '())
     (((args ...)) args)
     ((arg (args ...)) (cons arg args))
     ((arg args ...) (cons arg (re-collect-args args)))
     ))
 
-(define (elisp-funcall . args) (eval-apply (lambda (id) id) args))
+(define (elisp-apply-or-funcall which collect args)
+  (match args
+    (() (eval-error "wrong number of arguments" which 'min 1 args))
+    ((head args ...)
+     ;; The `APPLY` or `FUNCALL` are themselves functions, and
+     ;; therefore all of the arguments passed to these functions
+     ;; have already been evaluated, so we should not call
+     ;; `%ELISP-APPLY` because that would evaluate all of the
+     ;; arguments again. Instead we call `PUSH-STACK-FRAME-EVAL-BODY`.
+     (let ((func (eval-function-ref head)))
+       (cond
+        ((lambda-type? func)
+         (push-stack-frame-eval-body func (collect (map %unpack args)))
+         )
+        ((procedure? func) (apply func (collect (map %unpack args))))
+        (else (error "internal error, eval-function-ref returned unexpected value" func))
+        )))))
 
-(define (elisp-apply . args) (eval-apply re-collect-args args))
+(define (elisp-funcall . args) (elisp-apply-or-funcall "funcall" (lambda (id) id) args))
+
+(define (elisp-apply . args) (elisp-apply-or-funcall "apply" re-collect-args args))
 
 (define (eval-function-ref arg)
   (let*((arg (if (elisp-form-type? arg) (elisp-form->list arg) arg))
@@ -1536,6 +1557,7 @@
         (make-lambda (lambda (o) (apply (syntax-eval elisp-lambda) o)))
         )
     (cond
+     ((lambda-type? arg) arg)
      ((symbol? arg)
       (let ((result (view arg =>elisp-symbol!)))
         (cond
@@ -2026,7 +2048,7 @@
 (define (eval-backquote . exprs)
   (match exprs
     ((exprs)
-     (let expr-loop ((exprs exprs))
+     (let expr-loop ((exprs (%unpack exprs)))
        (define (splice-loop elems resume)
          (cond
           ((null? elems) (expr-loop resume))
@@ -2040,10 +2062,10 @@
        (match exprs
          (() '())
          ((('|,| unq) exprs ...)
-          (cons (eval-form unq) (expr-loop exprs))
+          (cons (eval-form (expr-loop unq)) (expr-loop exprs))
           )
          ((('|,@| splice) exprs ...)
-          (splice-loop (eval-form splice) exprs)
+          (splice-loop (eval-form (expr-loop splice)) exprs)
           )
          (((sub-exprs ...) exprs ...)
           (cons (expr-loop sub-exprs) (expr-loop exprs))
@@ -2102,7 +2124,7 @@
                 (cond
                  ((and (lambda-type? func)
                        (eq? 'macro (view func =>lambda-kind*!)))
-                  (let ((result (eval-apply-lambda func args)))
+                  (let ((result (push-stack-frame-eval-body func args)))
                     (if (> depth 0)
                         (loop (- depth 1) result)
                         (if fail-depth

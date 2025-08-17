@@ -15,6 +15,8 @@
         *elisp-error-port*
         make<elisp-eval-error>
         elisp-eval-error-equal?
+        ; --- the rest are imported because they are useful in the REPL ---
+        write-elisp-eval-error
         )
   (schemacs elisp-eval)
   (schemacs lens)
@@ -527,56 +529,56 @@
 ;;--------------------------------------------------------------------------------------------------
 ;; Testing `&OPTIONAL` keyword in `DEFUN`
 
-(test-assert
-  (test-elisp-eval!
-   '(progn
-      (defun test-optargs (&optional x y)
-        (cond
-         ((and (null x) (null y)) '(17 23))
-         ((null x) (list y y))
-         ((null y) (list x x))
-         (t (list (+ x y) (* x y)))
-         ))
-      t
-      )))
+(define (defun-test-optargs . exprs)
+  `(progn
+     (defun test-optargs (&optional x y)
+       (cond
+        ((and (null x) (null y)) '(17 23))
+        ((null x) (list y y))
+        ((null y) (list x x))
+        (t (list (+ x y) (* x y)))
+        ))
+     (test-optargs ,@exprs)
+    ))
 
 (test-assert
     (test-run
      equal? '(17 23) test-elisp-eval!
-     '(test-optargs)
+     (defun-test-optargs)
      ))
 
 (test-assert
     (test-run
      equal? '(29 29) test-elisp-eval!
-     '(test-optargs 29)
+     (defun-test-optargs 29)
      ))
 
 (test-assert
     (test-run
      equal? '(31 31) test-elisp-eval!
-     '(test-optargs nil 31)
+     (defun-test-optargs 'nil 31)
      ))
 
 (test-assert
     (test-run
      equal? '(12 35) test-elisp-eval!
-     '(test-optargs 5 7)
+     (defun-test-optargs 5 7)
      ))
 
-
-(test-assert
-  (test-elisp-eval!
-   '(defun test-restargs (&optional x y &rest args)
+(define (defun-test-restargs . exprs)
+  `(progn
+    (defun test-restargs (&optional x y &rest args)
       (list (+ (if x x 0) (if y y 0)) (apply '+ args))
-      )))
+      )
+    (test-restargs ,@exprs)
+    ))
 
-(test-assert (test-run equal? '(0  0) test-elisp-eval! '(test-restargs)))
-(test-assert (test-run equal? '(3  0) test-elisp-eval! '(test-restargs 3)))
-(test-assert (test-run equal? '(8  0) test-elisp-eval! '(test-restargs 3 5)))
-(test-assert (test-run equal? '(8  8) test-elisp-eval! '(test-restargs 3 5 8)))
-(test-assert (test-run equal? '(8 21) test-elisp-eval! '(test-restargs 3 5 8 13)))
-(test-assert (test-run equal? '(8 42) test-elisp-eval! '(test-restargs 3 5 8 13 21)))
+(test-assert (test-run equal? '(0  0) test-elisp-eval! (defun-test-restargs)))
+(test-assert (test-run equal? '(3  0) test-elisp-eval! (defun-test-restargs 3)))
+(test-assert (test-run equal? '(8  0) test-elisp-eval! (defun-test-restargs 3 5)))
+(test-assert (test-run equal? '(8  8) test-elisp-eval! (defun-test-restargs 3 5 8)))
+(test-assert (test-run equal? '(8 21) test-elisp-eval! (defun-test-restargs 3 5 8 13)))
+(test-assert (test-run equal? '(8 42) test-elisp-eval! (defun-test-restargs 3 5 8 13 21)))
 
 
 (test-assert
@@ -915,11 +917,17 @@ top: glo = top
 (test-equal '(1 2 3)
   (test-elisp-eval! '(mapcar (lambda (x) (+ x 1)) '(0 1 2))))
 
+(test-equal '(16 9 4 1 0 1 4)
+  (test-elisp-eval!
+   '(let ((p (function (lambda (x) (+ (* x x) (* -2 x) 1)))))
+      (mapcar p '(-3 -2 -1 0 1 2 3)))))
+
 (test-equal '(#t #t #t #t #t)
   (test-elisp-eval! '(mapcar (function symbolp) '(zero one two three four))))
 
 (test-equal '()
   (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four)))))
+
 
 (test-assert (test-elisp-eval! '(memq 'b '(a b c))))
 (test-assert (test-elisp-eval! '(memv 'b '(a b c))))
