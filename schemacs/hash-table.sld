@@ -60,6 +60,8 @@
   (export
    alist->hash-table
    hash-table->alist
+   hash-table-keys
+   hash-table-values
    hash-table-copy
    hash-table-delete!
    hash-table-empty?

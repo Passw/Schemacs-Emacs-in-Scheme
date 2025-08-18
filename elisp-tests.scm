@@ -20,6 +20,7 @@
   ;; correctly.
   ;;------------------------------------------------------------------
   '("./elisp/lisp/emacs-lisp/byte-run.el"
+    "./elisp/lisp/emacs-lisp/macroexp.el"
     "./elisp/lisp/subr.el"
     "./elisp/lisp/emacs-lisp/cl-lib.el"
     "./elisp/lisp/emacs-lisp/debug.el"

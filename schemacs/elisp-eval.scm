@@ -8,7 +8,7 @@
   ;; long. Be sure that when you set this to #t you are only going to
   ;; execute a very small example.
 
-(define (elisp-show-stack-frames)
+(define (elisp-write-stack-frames)
   (let ((st (*the-environment*)))
     (pretty
      (print
@@ -1485,7 +1485,7 @@
      st sym
      (lambda (obj)
        (values
-        (lens-set! val obj
+        (lens-set val obj
          (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
          (=>hash-key! prop))
         val)
@@ -2329,5 +2329,42 @@
         (lambda (err) (display ";;Warning, not a declaration: ") (write err) (newline))
         errors)
        env))))
+
+
+(define elisp-debug-write-obarray
+  (case-lambda
+    (() (elisp-debug-write-obarray (*the-environment*)))
+    ((env) (elisp-debug-write-obarray env (current-output-port)))
+    ((env port)
+     (let ((i 0))
+       (hash-table-for-each
+        (lambda (key val)
+          (set! i (+ i 1))
+          (display
+           (cond
+            ((< i 10) "    ")
+            ((< i 100) "   ")
+            ((< i 1000) "  ")
+            ((< i 10000) " ")
+            (else ""))
+           port
+           )
+          (write i port)
+          (display ": " port)
+          (write key port)
+          (let*((func
+                 (and (sym-type? val)
+                      (lambda-type? (view val =>sym-value*!))
+                      ))
+                (loc (and func (view func =>lambda-location*!)))
+                )
+            (when func
+              (display "  ->  " port)
+              (write-parser-location loc port)
+              ))
+          (newline port))
+        (view env =>env-obarray*!)
+        )))))
+
 
 (elisp-reset-init-env!)

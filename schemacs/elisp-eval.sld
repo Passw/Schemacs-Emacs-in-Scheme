@@ -49,7 +49,7 @@
           elisp-read  select-elisp-dialect!
           parse-state  =>parse-state-filepath*!
           elisp-form->list  elisp-form->vector
-          write-elisp-form ;;DEBUG
+          write-parser-location  write-elisp-form
           elisp-parse-state-type?  elisp-function-ref-type?
           elisp-quote-scheme  elisp-unquote-scheme
           elisp-quote-scheme-type?  elisp-backquoted-form?
@@ -150,7 +150,8 @@
    =>elisp-eval-error-message
    =>elisp-eval-error-irritants
    new-elisp-raise-impl
-   elisp-show-stack-frames
+   elisp-write-stack-frames
+   elisp-debug-write-obarray
    )
 
   (include "elisp-eval.scm")
