@@ -776,9 +776,9 @@
   (let loop ((exprs body-exprs))
     (match exprs
       (() '())
-      ((final) (eval-form final (env-get-location body-exprs)))
+      ((final) (eval-form final (env-get-location final)))
       ((head more ...)
-       (eval-form head (env-get-location exprs))
+       (eval-form head (env-get-location head))
        (loop more)
        )
       (exprs (error "no function body" exprs))

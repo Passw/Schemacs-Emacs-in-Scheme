@@ -110,8 +110,7 @@
 
    ;;----------------------------------------
    ;; Macro objects
-   make<macro>  macro-type?
-   macro-procedure  elisp-void-macro
+   macro-type?  elisp-void-macro
    make<syntax> syntax-type? syntax-eval elisp-void-syntax
 
    ;;----------------------------------------

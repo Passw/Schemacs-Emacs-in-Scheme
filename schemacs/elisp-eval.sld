@@ -87,8 +87,8 @@
           =>lambda-body*!  =>lambda-kind*!
           =>lambda-docstring*!  =>lambda-location*!
           env-get-location
-          make<macro>  macro-type?  macro-procedure
-          make<syntax> syntax-type? syntax-eval  elisp-void-syntax
+          make<syntax>  syntax-type?  macro-type?
+          syntax-eval  elisp-void-syntax
           elisp-eval-error-type?  raise-error-impl*
           =>elisp-eval-error-message
           =>elisp-eval-error-irritants
