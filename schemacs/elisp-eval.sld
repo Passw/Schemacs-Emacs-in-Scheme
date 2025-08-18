@@ -48,14 +48,14 @@
     (only (schemacs elisp-eval parser)
           elisp-read  select-elisp-dialect!
           parse-state  =>parse-state-filepath*!
-          elisp-form->list
+          elisp-form->list  elisp-form->vector
           write-elisp-form ;;DEBUG
-          elisp-parse-state-type?
+          elisp-parse-state-type?  elisp-function-ref-type?
           elisp-quote-scheme  elisp-unquote-scheme
           elisp-quote-scheme-type?  elisp-backquoted-form?
           elisp-unquoted-form-type?  elisp-spliced-form?
           elisp-unquoted-get-form
-          elisp-form-type?  elisp-function-ref-type?
+          elisp-form-type?  square-bracketed-form?
           elisp-form-start-loc  elisp-function-get-ref
           )
     (only (schemacs elisp-eval environment)

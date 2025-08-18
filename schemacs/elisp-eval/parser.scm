@@ -1,4 +1,11 @@
 
+(define open-curly   #\{ )
+(define open-square  #\[ )
+(define open-round   #\( )
+(define close-round  #\) )
+(define close-square #\] )
+(define close-curly  #\} )
+
 (define-record-type <elisp-tokenizer-monad-type>
   ;; Every monadic procedure takes a single argument, the parser state
   ;; (which contains the tokenizer state), and returns 3 values:
@@ -375,9 +382,9 @@
 
 (define named-char-table
   (alist->parse-table
-   '(((#\! . #\~) . #t)
-     (#\{         . #f)
-     (#\}         . #f)
+   `(((#\! . #\~)  . #t)
+     (,open-curly  . #f)
+     (,close-curly . #f)
      )))
 
 (define hexdecode-string
@@ -408,7 +415,7 @@
 (define named-char
   (lex #\N
    (lex-brackets
-    #\{ #\}
+    open-curly close-curly
     (lex-apply
      (lambda (result)
        (cond
@@ -644,12 +651,12 @@
      (#\,                . ,tokenize-unquote)
      (#\;                . ,tokenize-comment)
      (#\#                . ,tokenize-special)
-     (#\(                . ,(tokenize-bracket token-open-bracket))
-     (#\[                . ,(tokenize-bracket token-open-bracket))
-     (#\{                . ,(tokenize-bracket token-open-bracket))
-     (#\}                . ,(tokenize-bracket token-close-bracket))
-     (#\]                . ,(tokenize-bracket token-close-bracket))
-     (#\)                . ,(tokenize-bracket token-close-bracket))
+     (,open-round        . ,(tokenize-bracket token-open-bracket))
+     (,open-square       . ,(tokenize-bracket token-open-bracket))
+     (,open-curly        . ,(tokenize-bracket token-open-bracket))
+     (,close-curly       . ,(tokenize-bracket token-close-bracket))
+     (,close-square      . ,(tokenize-bracket token-close-bracket))
+     (,close-round       . ,(tokenize-bracket token-close-bracket))
      )))
 
 
@@ -737,14 +744,20 @@
 ;;--------------------------------------------------------------------------------------------------
 
 (define-record-type <elisp-form-type>
-  (make<elisp-form> tokens dotted locations start-loc end-loc)
+  (make<elisp-form> tokens dotted delim locations start-loc end-loc)
   elisp-form-type?
   (tokens     elisp-form-tokens       set!elisp-form-tokens)
   (dotted     elisp-form-dot-element  set!elisp-form-dot-element)
+  (delim      elisp-form-delim        set!elisp-form-delim)
   (locations  elisp-form-locations    set!elisp-form-locations)
   (start-loc  elisp-form-start-loc    set!elisp-form-start-loc)
   (end-loc    elisp-form-end-loc      set!elisp-form-end-loc)
   )
+
+(define (square-bracketed-form? form)
+  (let ((c (elisp-form-delim form)))
+    (and (char? c) (char=? c close-square))
+    ))
 
 (define (elisp-form-length a)
   (+ (vector-length (elisp-form-tokens a))
@@ -786,12 +799,12 @@
                 ((null? elems)
                  (make<elisp-form>
                   (mutable-vector->vector buffer)
-                  #f #f #f #f
+                  #f #f #f #f #f
                   ))
                 (else
                  (make<elisp-form>
                   (mutable-vector->vector buffer)
-                  elems #f #f #f
+                  elems #f #f #f #f
                   ))))))
          (cond
           ((symbol? next)
@@ -902,6 +915,16 @@
                (else #f)
                ))))))
        )))))
+
+
+(define (elisp-form->vector form)
+  (let ((vec (elisp-form-tokens form)))
+    (cond
+     ((mutable-vector-type? vec)
+      (mutable-vector->vector vec)
+      )
+     (else vec)
+     )))
 
 ;;--------------------------------------------------------------------------------------------------
 
@@ -1079,11 +1102,13 @@
 (define elisp-form
   (case-lambda
     ((st) (elisp-form st #f))
-    ((st dot-value)
+    ((st dot-value) (elisp-form st dot-value #f))
+    ((st dot-value delim)
      (let ((frame (car (elisp-parse-stack st))))
        (make<elisp-form>
         (mutable-vector->vector (elisp-parse-token-buffer st))
         dot-value
+        (or delim close-round)
         (mutable-vector->vector (elisp-parse-location-buffer st))
         (elisp-parse-stack-frame-start-loc frame)
         (parser-state-get-location st)
@@ -1121,7 +1146,7 @@
        (parser-state-get-location st)
        ))
      (else
-      (let*((form  (elisp-form st dot-value))
+      (let*((form  (elisp-form st dot-value close-bracket))
             (frame (car stack))
             (expected-close-bracket (elisp-parse-close-bracket st))
             )
@@ -1408,7 +1433,7 @@
             ((char=? op #\=)
              (let*((pre-form
                     (parse-state-define-backref
-                     st datum (make<elisp-form> #f #f #f #f #f))
+                     st datum (make<elisp-form> #f #f #f #f #f #f))
                     )
                    (form (%elisp-read-loop st))
                    )
@@ -1799,7 +1824,7 @@
        )
      (cond
       ((elisp-form-type? form)
-       (write-char #\( port)
+       (write-char open-round port)
        (let*((vec (elisp-form-tokens form))
              (len (vector-length vec))
              )
@@ -1816,7 +1841,7 @@
          (display " . " port)
          (display-elem (elisp-form-dot-element form))
          )
-       (write-char #\) port)
+       (write-char close-round port)
        )
       (else
        (display-elem form)

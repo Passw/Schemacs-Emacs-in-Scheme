@@ -31,6 +31,7 @@
   (only (schemacs elisp-eval parser)
         list->elisp-form  elisp-form->list
         elisp-form-equal?  write-elisp-form
+        elisp-read
         )
   (only (schemacs hash-table)
         hash-table-size

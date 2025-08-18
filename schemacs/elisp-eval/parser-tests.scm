@@ -134,6 +134,11 @@
         (loop failed passed (cdr test-cases))
         )))))
 
+(define (compare-square-form result expected)
+  (and (equal? expected (elisp-form->list result))
+       (square-bracketed-form? result)
+       ))
+
 ;;--------------------------------------------------------------------------------------------------
 
 (define all-parser-test-cases
@@ -145,6 +150,8 @@
    (list "\"Hello, world!\\n\"" "Hello, world!\n" string=?)
    (list "(+ 1 2)" (list->elisp-form '(+ 1 2)) elisp-form-equal?)
    (list "(\"zero\" . .0e+0)" (list->elisp-form '("zero" . 0)) elisp-form-equal?)
+   (list "[]" '() compare-square-form)
+   (list "[1 2 3]" '(1 2 3) compare-square-form)
    (list "'(1 2 3)"
     (elisp-quote-scheme (list->elisp-form '(1 2 3)) #f)
     (elisp-quote-scheme-equal? elisp-form-equal?)

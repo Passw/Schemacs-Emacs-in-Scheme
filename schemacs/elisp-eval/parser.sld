@@ -8,6 +8,7 @@
           )
     (only (scheme file) open-input-file)
     (only (schemacs lens vector)
+          mutable-vector-type?
           new-mutable-vector
           mutable-vector->vector
           mutable-vector-append!
@@ -80,6 +81,7 @@
    ;;----------------------------------------
    ;; Forms
    elisp-form-type?
+   square-bracketed-form?
    elisp-form ;; construct an Elisp form
    elisp-form-tokens
    elisp-form-dot-element
@@ -88,6 +90,7 @@
    elisp-form-end-loc
    list->elisp-form ;; consruct an Elisp form from a Scheme list
    elisp-form->list
+   elisp-form->vector
    elisp-form-equal? ;; compare Elisp form equality
    elisp-form-length ;; return number of elements in a Elisp form
    write-elisp-form ;; write an Elisp form to a port
