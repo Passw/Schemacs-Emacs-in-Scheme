@@ -739,10 +739,15 @@
            (else (elisp-unquote-scheme literal))
            ))
          ((elisp-form-type? literal)
-          (eval-form
-           (elisp-form->list literal)
-           (elisp-form-start-loc literal)
-           ))
+          (cond
+           ((square-bracketed-form? literal)
+            (elisp-form->vector literal)
+            )
+           (else
+            (eval-form
+             (elisp-form->list literal)
+             (elisp-form-start-loc literal)
+             ))))
          ((elisp-function-ref-type? literal)
           (eval-function-ref (elisp-function-get-ref literal))
           )
