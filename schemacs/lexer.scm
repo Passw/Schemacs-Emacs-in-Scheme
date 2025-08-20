@@ -509,6 +509,19 @@
     )))
 
 
+(define (char-elem-of str)
+  ;; Constructs a predicate to be used with combinators like `CHAR` or
+  ;; `TAKE`, returns `#T` if the input character is an element of the
+  ;; given string `STR`.
+  (lambda (c)
+    (let ((len (string-length str)))
+      (let loop ((i 0))
+        (cond
+         ((>= i len) #f)
+         ((char=? c (string-ref str i)) i)
+         (else (loop (+ 1 i)))
+         )))))
+
 (define skip-to-next-line
   ;; Skip quickly to the next `#\NEWLINE` character. This operation is
   ;; common when parsing files with comments, and the algorithm in
@@ -597,7 +610,12 @@
    (lambda (st)
      (let loop ((results '()) (lexers lexers))
        (cond
-        ((null? lexers) (apply proc (reverse results)))
+        ((null? lexers)
+         (let loop ((result (apply proc (reverse results))))
+           (cond
+            ((lexer-monad-type? result) (loop (%run-lexer st result)))
+            (else result)
+            )))
         (else 
          (let ((result (%run-lexer st (car lexers))))
            (cond

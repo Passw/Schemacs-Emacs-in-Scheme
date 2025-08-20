@@ -13,7 +13,7 @@
    lexer-monad-type?
    lex  either  many  many1  lex-fold  lex-fold-count  lex-fmap
    lex/buffer  many/buffer  many1/buffer  with-buffer
-   any  look  take  eof  char  lex-const
+   any  look  take  eof  char  lex-const  char-elem-of
    location  set-location!
    lex-brackets  lex-first  lex-apply
    lex-trace  lex-error
