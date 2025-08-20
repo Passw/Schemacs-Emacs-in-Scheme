@@ -91,7 +91,7 @@
      (lex (many1 non-space)
           (many1 space)
           (many1 non-space)
-          (eof))))
+          (eof #t))))
 
 
 (test-assert

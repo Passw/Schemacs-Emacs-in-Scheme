@@ -464,7 +464,7 @@
       ))
 
 (define no-eof-in-char-literal
-  (eof (new-lexer-error "invalid character literal")))
+  (lex (eof) (lexer-error "invalid character literal")))
 
 (define ascii-carrat-control-char
   (lex #\^ (either  no-eof-in-char-literal  ascii-ctrl-char)))
@@ -497,17 +497,18 @@
   (make<elisp-tokenizer-monad>
    (lambda (st)
      (run-lexer st #\? ) ;; skip the question mark
-     (let ((c (run-lexer st (any))))
+     (let ((c (run-lexer st (either (eof) (any))))
+           )
        (cond
         ((eof-object? c) (values token-symbol '?))
         ((char=? c #\\)
          (let*((charval (%tokenize-escape-char st)))
            (cond
-            (charval (values token-char charval))
             ((eof-object? charval)
              (values (new-lexer-error "end of file during parsing"))
              )
             ((lexer-error-type? charval) (values charval #f))
+            (charval (values token-char charval))
             (else (error "unexpected condition during lexing" charval))
             )))
         ((char? c) (values token-char c))

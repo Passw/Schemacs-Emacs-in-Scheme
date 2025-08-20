@@ -29,7 +29,7 @@
           lex-brackets  lex-apply  lex-first
           scan-for-string  skip-to-next-line
           lex-trace
-          new-lexer-error
+          lexer-error  new-lexer-error
           lexer-error-type?
           lexer-state  lexer-state-type?  lexer-look-ahead
           source-file-location-type?

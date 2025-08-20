@@ -21,6 +21,7 @@
    scan-for-string
    skip-to-next-line
 
+   lexer-error
    new-lexer-error
    lexer-error-type?
    =>lexer-error-message*!

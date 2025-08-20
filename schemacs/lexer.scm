@@ -25,6 +25,7 @@
    ((string? lexer)
     (%run-lexer st
      (apply lex (map %take-char=? (string->list lexer)))))
+   ((lexer-error-type? lexer) lexer)
    ((parse-table-type? lexer)
     (%run-lexer st (lex-table lexer)))
    (else
@@ -433,6 +434,19 @@
   (make<lexer-monad> (lambda (st) return-val)))
 
 
+(define (lexer-error message . irritants)
+  ;; This combinator constructs a lexer error and automatically
+  ;; populates it with the file, line number, and column number
+  ;; location information. If this is evaluated, lexing is halted and
+  ;; the error is immediately returned.
+  ;;------------------------------------------------------------------
+  (make<lexer-monad>
+   (lambda (st)
+     (make<lexer-error>
+      (lexer-state-get-location st) message irritants
+      ))))
+
+
 (define look
   ;; Get the current character under the cursor and return it, or if
   ;; the optional argument `STEP` is applied, pass the character to
@@ -570,22 +584,38 @@
 
 
 (define (lex-apply proc . lexers)
-  ;; Similar to monaidc bind, evaluates the `LEXER` monad, then passes
-  ;; the returned value to the `WRAPPER` procedure, the value returned
-  ;; by `WRAPPER` is the value returned by this monad.
+  ;; Similar to monaidc bind, evaluates each of the given lexer monads
+  ;; collecting each result into a list, then applies the list of
+  ;; result values to the `PROC` procedure. If any of the `LEXERS`
+  ;; fails (by returning `#F`) these `#F` values are captured and
+  ;; applied, so unlike many other lexer combinators, this combinator
+  ;; does not halt lexing if one of the sub-lexers fail. If you want
+  ;; to pass only the last result from the last lexer to `PROC`, wrap
+  ;; all `LEXERS` in the `LEX` combinator.
   ;;------------------------------------------------------------------
-  (make<lexer-monad> (lambda (st) (proc (%run-lexer st (apply lex lexers))))))
+  (make<lexer-monad>
+   (lambda (st)
+     (let loop ((results '()) (lexers lexers))
+       (cond
+        ((null? lexers) (apply proc (reverse results)))
+        (else 
+         (let ((result (%run-lexer st (car lexers))))
+           (cond
+            ((lexer-error-type? result) result)
+            (else (loop (cons result results) (cdr lexers)))
+            ))))))))
 
 
 (define eof
-  ;; Returns `#T` if the cursor has gone past the end of the character
-  ;; stream. Supply one optional argument to this procedure which will
-  ;; be returned instead of `#T`.
-  ;;------------------------------------------------------------------
+  ;; Returns non-`#F` (actually returns an object that satisfies the
+  ;; `EOF-OBJECT?` predicate) if the cursor has gone past the end of
+  ;; the character stream. Supply one optional argument to this
+  ;; procedure which will be returned instead of `#T`.
+  ;; ------------------------------------------------------------------
   (case-lambda
     (()
      (make<lexer-monad>
-      (lambda (st) (eof-object? (%look st)))
+      (lambda (st) (let ((c (%look st))) (and (eof-object? c) c)))
       ))
     ((return)
      (make<lexer-monad>
@@ -648,7 +678,7 @@
      ((not     result) #f)
      ((char?   result) (write-char result buffer) #t)
      ((string? result) (write-string result buffer) #t)
-     (else #t)
+     (else     result)
      ))
   (define (run-lexers st buffer lexers)
     (let loop ((lexers lexers) (return #f))
@@ -659,10 +689,11 @@
               (more (cdr lexers))
               (result (%run-lexer st next-lex))
               )
-          (if (buffer-push buffer result)
-              (loop more #t)
-              (on-fail return)
-              ))))))
+          (cond
+           ((lexer-error-type?  result) result)
+           ((buffer-push buffer result) (loop more #t))
+           (else (on-fail return))
+           ))))))
   (cond
    ((null? lexers) #t)
    ((and (output-port? (car lexers)) (null? (cdr lexers))) #t)
@@ -709,8 +740,11 @@
         ((null? lexers) (on-success loop return))
         (else
          (let ((result (%run-lexer st (car lexers))))
-           (if result (loop (cdr lexers) result) (on-fail return))
-           )))))))
+           (cond
+            ((lexer-error-type? result) result)
+            (result (loop (cdr lexers) result))
+            (else (on-fail return))
+            ))))))))
 
 
 (define (lex/buffer . lexers)
@@ -892,6 +926,7 @@
           (else
            (let*((result (%run-lexer st (car lexers))))
              (cond
+              ((lexer-error-type? result) result)
               (result
                (let-values (((continue accum) (fold-proc accum count result)))
                  (if continue
@@ -934,6 +969,7 @@
           (else
            (let*((result (%run-lexer st (car lexers))))
              (cond
+              ((lexer-error-type? result) result)
               (result
                (let-values (((continue accum) (fold-proc accum result)))
                  (if continue (loop accum (cdr lexers)) accum)))
@@ -948,7 +984,12 @@
   ;; when `LEXER` evaluates. The name is inspired by the "Functor Map"
   ;; operator from Haskell.
   ;;------------------------------------------------------------------
-  (make<lexer-monad> (lambda (st) (proc (%run-lexer st lexer)))))
+  (make<lexer-monad>
+   (lambda (st)
+     (let ((result (%run-lexer st lexer)))
+       (cond
+        ((lexer-error-type? result) result)
+        (else (proc result)))))))
 
 ;;--------------------------------------------------------------------------------------------------
 
