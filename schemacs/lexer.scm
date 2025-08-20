@@ -42,7 +42,7 @@
   ;;  1. a lexer state, or an argument that can be applied to
   ;;     `LEXER-STATE` to construct a lexer state
   ;;
-  ;;  2. a lexer monad to be evaluated with the above statea.
+  ;;  2. a lexer monad to be evaluated with the above state.
   ;;------------------------------------------------------------------
   (%run-lexer (lexer-state st) lexer)
   )
@@ -415,10 +415,20 @@
 (define (lex-const return-val)
   ;; Return any value without advancing the cursor. This is useful as
   ;; the final lexer of a sequence constructed with `LEX`, it returns
-  ;; the value instead of a character or `#T` on success. If any other
-  ;; lexer runs after this one, the return value given to `LEX-CONST`
-  ;; is simply ignored and the return value from the next lexer is
-  ;; returned instead.
+  ;; the value instead of a character or `#T` on success. The
+  ;; `(lex-const #f)` monad always indicates that lexing failed, which
+  ;; may be desirable in some situations such as when it is used with
+  ;; `MANY` or `MANY1`.
+  ;;
+  ;; When used with buffering such as `LEX/BUFFER`, `MANY/BUFFER`, or
+  ;; `MANY1/BUFFER`, if `LEX-CONST` is given a string or character,
+  ;; that string or character will be buffered.
+  ;;
+  ;; Keep in mind that if any other lexer runs after a `LEX-CONST`
+  ;; monad which does not the return value given to `LEX-CONST` is
+  ;; simply ignored and the return value from the next lexer is
+  ;; returned instead. For example, `(lex (lex-const 5) (char #\c))`
+  ;; will behave exactly the same as `(char #\c)` alone.
   ;;------------------------------------------------------------------
   (make<lexer-monad> (lambda (st) return-val)))
 
@@ -797,6 +807,45 @@
   (%lex-loop lexers
    (lambda (loop return) (loop lexers return))
    (lambda (return) return)))
+
+
+(define with-buffer
+  ;; Takes a procedure `PROC` and constructs a lexer monad that runs
+  ;; the procedure `PROC`. After `PROC` is evaluated, this function
+  ;; behaves as `(lex-const #t)`, that is, it consumes no characters,
+  ;; has no other effect on the input port, column or line numbers
+  ;; counters, and never indicates failure so will not prevent other
+  ;; lexers from running.
+  ;;
+  ;; By default, the `PROC` procedure will not be called if no current
+  ;; buffer is defined (one is defined using `LEX/BUFFER`,
+  ;; `MANY/BUFFER`, or `MANY1/BUFFER`), but you may pass a second
+  ;; procedure `DEFAULT` to this cominator to be used in the event
+  ;; that there is no buffer available. You may pass `#T` as `DEFAULT`
+  ;; which indicates that the `PROC` should be ignored if there is no
+  ;; current buffer, you may pass `#F` as `DEFAULT` to indicate an
+  ;; error should be raised if there is no current buffer.
+  ;;------------------------------------------------------------------
+  (case-lambda
+    ((proc) (with-buffer proc #t))
+    ((proc default)
+     (let ((default
+             (cond
+              ((procedure? default) default)
+              ((not default)
+               (lambda ()
+                 (error "with-buffer evaluated in context where there is no buffer")
+                 ))
+              (else (lambda () default))
+              ))
+           )
+       (make<lexer-monad>
+        (lambda (st)
+          (let ((buf (lexer-buffer st)))
+            (cond
+             ((buf) (proc buf) #t)
+             (else (default))
+             ))))))))
 
 
 (define (lex-fold-count init-accum fold-proc final-proc . lexers-list)
@@ -1472,17 +1521,24 @@
   ;;
   ;;  1. is an arbitrary state value passed to the monad runner
   ;;  2. is the monad runner which takes three arguments:
-  ;;     A. the lexer state
-  ;;     B. the arbitrary state value, item (1) above
+  ;;     A. the arbitrary state value, item (1) above
+  ;;     B. the lexer state
   ;;     C. the monad to evaluate
   ;;  3. is the parse table
+  ;;
+  ;; The monad runner must return a lexer monad constructed by one of
+  ;; the combinators in this library which can be run by `RUN-LEXER`,
+  ;; therefore the combinators which produce functions of that monad
+  ;; must evaluate to lexer monadic functions, or to values which the
+  ;; monad runner can convert to lexer monadic functions using `LEX`
+  ;; or similar combinators.
   ;;------------------------------------------------------------------
   (case-lambda
     ((table)
-     (lex-table %run-lexer table)
+     (lex-table (lambda (st monad) monad) table)
      )
     ((parser-state run-monad table)
-     (lex-table (lambda (st monad) (run-monad st parser-state monad)) table)
+     (lex-table (lambda (st monad) (run-monad parser-state st monad)) table)
      )
     ((run-monad table)
      (make<lexer-monad>
@@ -1503,13 +1559,17 @@
                   (default (parse-table-default table))
                   (run-default
                    (if default
-                       (lambda () (%run-lexer st default))
+                       (lambda () (%run-lexer st (run-monad st default)))
                        (lambda () #f)
                        ))
                   )
               (cond
                ((< i  i0) (run-default))
-               ((< i top) (%run-lexer st (vector-ref vec (- i i0))))
+               ((< i top)
+                (%run-lexer st
+                 (run-monad st
+                  (vector-ref vec (- i i0))
+                  )))
                (else (run-default))
                ))))
           ))))))
