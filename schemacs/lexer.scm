@@ -469,8 +469,8 @@
      (let ((result (pred (%look st))))
        (cond
         (result (%step! st) result)
-        (else #f))
-       ))))
+        (else #f)
+        )))))
 
 
 (define (char pred)
@@ -974,12 +974,22 @@
   ;; behaves as `(lex-const #t)`, that is, it consumes no characters,
   ;; has no other effect on the input port, column or line numbers
   ;; counters, and never indicates failure so will not prevent other
-  ;; lexers from running.
+  ;; lexers from running. The return value of `PROC` can effect the
+  ;; behavior of the monad:
+  ;;
+  ;;  - return a lexer monad to have that monad evaluated when `PROC`
+  ;;    completes, it is also possible to evaluate `lexer-error` this
+  ;;    way.
+  ;;
+  ;;  - `#T` or `#F` to indicate the lexer succeeded failed.
+  ;;
+  ;;  - any other return value is ignoed and `#T` is returned in it's
+  ;;    place.
   ;;
   ;; By default, the `PROC` procedure will not be called if no current
   ;; buffer is defined (one is defined using `LEX/BUFFER`,
   ;; `MANY/BUFFER`, or `MANY1/BUFFER`), but you may pass a second
-  ;; procedure `DEFAULT` to this cominator to be used in the event
+  ;; procedure `DEFAULT` to this combinator to be used in the event
   ;; that there is no buffer available. You may pass `#T` as `DEFAULT`
   ;; which indicates that the `PROC` should be ignored if there is no
   ;; current buffer, you may pass `#F` as `DEFAULT` to indicate an
@@ -1000,10 +1010,20 @@
            )
        (make<lexer-monad>
         (lambda (st)
-          (let ((buf (lexer-buffer st)))
+          (let*((buf (lexer-buffer st))
+                (result
+                 (cond
+                  ((buf) (proc buf) #t)
+                  (else (default))
+                  )))
             (cond
-             ((buf) (proc buf) #t)
-             (else (default))
+             ((lexer-monad-type? result) (%run-lexer st result))
+             ((or (lexer-error-type? result)
+                  (eof-object? result)
+                  (boolean? result))
+              result
+              )
+             (else #t)
              ))))))))
 
 
@@ -1373,7 +1393,7 @@
           ))))))
 
 
-(define (parse-table-index-bounds table)
+(define (%parse-table-index-bounds table)
   ;; Get the lower and upper bounds of indicies that can be looked-up
   ;; in this table. Returns two values, the smallest index and the
   ;; largest index (inclusive) that can be referenced by
@@ -1384,6 +1404,32 @@
         )
     (values lo hi)
     ))
+
+
+(define parse-table-index-bounds
+  ;; Takes one or more table or alist values (if an alist, it must be
+  ;; formatted in such a way that it would be accepted by
+  ;; `ALIST->PARSE-TABLE`), and then returns two values: the maximum
+  ;; and minimum indicies that could contain all index-element
+  ;; associations.
+  ;;------------------------------------------------------------------
+  (case-lambda
+    ((table)
+     (cond
+      ((pair? table) (parse-table-alist-index-bounds table))
+      ((parse-table-type? table) (%parse-table-index-bounds table))
+      (else (error "neither a parse-table nor an alist type" table))
+      ))
+    ((table0 table1 . tail)
+     (let-values (((lo0 hi0) (parse-table-index-bounds table0)))
+       (let loop ((lo0 lo0) (hi0 hi0) (tail (cons table1 tail)))
+         (cond
+          ((pair? tail)
+           (let-values (((lo hi) (parse-table-index-bounds (car tail))))
+             (loop (min lo0 lo) (max hi0 hi) (cdr tail))
+             ))
+          (else (values lo0 hi0))
+          ))))))
 
 
 (define (parse-table-alist-index-bounds alist)
@@ -1414,8 +1460,7 @@
                    (((table-lo table-hi)
                      (parse-table-index-bounds table)))
                  (loop more (min lo table-lo) (max hi table-hi))
-                 )))
-            )
+                 ))))
         (cond
          ((pair? assoc)
           (let ((index  (car assoc))
@@ -1424,8 +1469,8 @@
             (cond
              ((pair? index)
               (next (ensure-int (car index))
-                    (ensure-int (cdr index)))
-              )
+                    (ensure-int (cdr index))
+                    ))
              ((char? index) (next (char->integer index)))
              ((integer? index) (next index))
              ((string? index)
@@ -1607,55 +1652,97 @@
        ))))
 
 
-(define (set!alist->parse-table table alist)
+(define (set!alist->parse-table table0 table1 . tail)
   ;; Update a lexer table `TABLE` with a new set of
   ;; character-to-action associations given by the `ALIST` association
   ;; list argument.
   ;;------------------------------------------------------------------
-  (let loop ((alist alist))
+  (define (merge table alist)
     (cond
-     ((null? alist) (values))
-     (else
-      (let ((assoc (car alist)))
+     ((parse-table-type? alist)
+      (parse-table-for-each
+       (lambda (i elem) (set!parse-table table i elem))
+       alist
+       ))
+     ((pair? alist)
+      (let loop ((alist alist))
         (cond
-         ((pair? assoc)
-          (let*((index  (car assoc))
-                (action (cdr assoc))
-                (alist  (cdr alist))
-                )
+         ((null? alist) (values))
+         (else
+          (let ((assoc (car alist)))
             (cond
-             ((pair? index)
-              (set!parse-table table (car index) (cdr index) action)
-              )
-             ((or (char? index) (integer? index))
-              (set!parse-table table index action)
-              )
-             ((string? index)
-              (string-for-each
-               (lambda (c) (set!parse-table table (char->integer c) action))
-               index
-               ))
-             ((and (parse-table-type? index) (procedure? action))
+             ((pair? assoc)
+              (let*((index  (car assoc))
+                    (action (cdr assoc))
+                    (alist  (cdr alist))
+                    )
+                (cond
+                 ((pair? index)
+                  (set!parse-table table (car index) (cdr index) action)
+                  )
+                 ((or (char? index) (integer? index))
+                  (set!parse-table table index action)
+                  )
+                 ((string? index)
+                  (string-for-each
+                   (lambda (c) (set!parse-table table (char->integer c) action))
+                   index
+                   ))
+                 ((and (parse-table-type? index) (procedure? action))
+                  (parse-table-for-each
+                   (lambda (i tokenizer)
+                     (set!parse-table table i
+                                      (action (%parse-table-ref table i) tokenizer)
+                                      ))
+                   index
+                   ))
+                 (else (error "not a valid table index type" index))
+                 )
+                (loop alist)
+                ))
+             ((parse-table-type? assoc)
               (parse-table-for-each
                (lambda (i tokenizer)
-                 (set!parse-table table i
-                  (action (%parse-table-ref table i) tokenizer)
-                  ))
-               index
-               ))
-             (else (error "not a valid table index type" index))
-             )
-            (loop alist)
-            ))
-         ((parse-table-type? assoc)
-          (parse-table-for-each
-           (lambda (i tokenizer)
-             (set!parse-table table i tokenizer))
-           assoc
-           )
-          (loop (cdr alist)))
-         (else (error "list contains non-pair element" assoc))
-         ))))))
+                 (set!parse-table table i tokenizer))
+               assoc
+               )
+              (loop (cdr alist)))
+             (else (error "list contains non-pair element" assoc))
+             ))))))))
+  (let*-values
+      (((lo0 hi0) (parse-table-index-bounds table0))
+       ((lo1 hi1) (apply parse-table-index-bounds table1 tail)
+        )
+       ((lo  hi ) (values (min lo0 lo1) (max hi0 hi1)))
+       ((old-default old-eof old-vec)
+        (cond
+         ((parse-table-type? table0)
+          (values
+           (parse-table-default table0)
+           (parse-table-on-eof  table0)
+           (parse-table-vector  table0)
+           ))
+         (else (values #f #f #f))
+         ))
+       ((table alists)
+        (cond
+         ((and old-vec (= lo lo0) (= hi hi0))
+          (values table0 (cons table1 tail))
+          )
+         (else
+          (values
+           (parse-table lo hi old-default old-eof)
+           (cons table0 (cons table1 tail))
+           ))
+         ))
+       )
+    (let loop ((alists alists))
+      (cond
+       ((null? alists) (values))
+       (else
+        (merge table (car alists))
+        (loop (cdr alists))
+        )))))
 
 
 (define lex-table

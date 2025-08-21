@@ -37,7 +37,6 @@
    set!parse-table
    =>parse-table-index
    set!alist->parse-table
-   parse-table-alist-index-bounds
    parse-table-for-each
    parse-table-min-index
    parse-table-index-bounds
