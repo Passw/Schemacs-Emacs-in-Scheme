@@ -251,6 +251,26 @@
      (skip-to-next-line 2)
      ))
 
+(define match-repeat-first2
+  (lex/buffer
+   (lex-join
+    (lex-apply
+     (lambda (a b) (lex-put a b (many/buffer a b)))
+     (any)
+     (any)
+     ))))
+
+(test-assert
+    (lex-all-test
+     1 9 "abababab" "abababab"
+     match-repeat-first2
+     ))
+
+(test-assert
+    (lex-all-test
+     1 6 "xyxyx" "xyxyx"
+     match-repeat-first2
+     ))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Tests for the grep-like algorithm `SCAN-FOR-STRING`.

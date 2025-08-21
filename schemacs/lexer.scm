@@ -522,6 +522,7 @@
          (else (loop (+ 1 i)))
          )))))
 
+
 (define skip-to-next-line
   ;; Skip quickly to the next `#\NEWLINE` character. This operation is
   ;; common when parsing files with comments, and the algorithm in
@@ -610,18 +611,124 @@
    (lambda (st)
      (let loop ((results '()) (lexers lexers))
        (cond
-        ((null? lexers)
-         (let loop ((result (apply proc (reverse results))))
-           (cond
-            ((lexer-monad-type? result) (loop (%run-lexer st result)))
-            (else result)
-            )))
+        ((null? lexers) (apply proc (reverse results)))
         (else 
          (let ((result (%run-lexer st (car lexers))))
            (cond
             ((lexer-error-type? result) result)
             (else (loop (cons result results) (cdr lexers)))
             ))))))))
+
+
+(define (lex-join monad)
+  ;; This monad is inspired by the Haskell monadic "join" function.
+  ;; What join does is takes another monad as it's argument and
+  ;; evaluates that monad within it's own evaluation context. This
+  ;; means if you have a lexer monad which returns another monad, you
+  ;; can use `LEX-JOIN` to evaluate that returned monad immediately.
+  ;; For example, suppose we want to lex any two characters (like "ab"
+  ;; or "xy"), and then repeatedly match those same two characters
+  ;; (matching "abababab" or "xyxyxyxy"). We might try to do this with
+  ;; the `LEX-APPLY` combinator, first evaluating `(any)` twice to get
+  ;; the first two characters, then applying each of those characters
+  ;; to `many` like so:
+  ;;
+  ;; ``` Scheme
+  ;;
+  ;;     (run-lexer
+  ;;       (lexer-state "abababab")
+  ;;       (lex/buffer
+  ;;         (lex-apply
+  ;;           (lambda (a b)
+  ;;             (lex-put a b (many/buffer a b)))
+  ;;           (any)
+  ;;           (any))))
+  ;; ```
+  ;;
+  ;; This will return the `(lex-put a b (many/buffer a b))` monad
+  ;; itself, but this monad will not be evaluated, and so nothing is
+  ;; buffered and an empty string is returned. But if you wrap the
+  ;; whole `lex-apply` expression in `lex-join`, the `many/buffer`
+  ;; monad will be evaluated and return the whole string as expected.
+  ;;
+  ;; ``` Scheme
+  ;;
+  ;;     (run-lexer
+  ;;       (lexer-state "abababab")
+  ;;       (lex/buffer
+  ;;         (lex-join
+  ;;           (lex-apply
+  ;;             (lambda (a b)
+  ;;               (lex-put a b (many/buffer a b)))
+  ;;             (any)
+  ;;             (any)))))
+  ;; ```
+  ;;------------------------------------------------------------------
+  (make<lexer-monad>
+   (lambda (st)
+     (let ((result (%run-lexer st monad)))
+       (if (lexer-monad-type? result)
+           ((lexer-monad-procedure result) st)
+           result
+           )))))
+
+
+(define (lex-put . args)
+  ;; This procedure inserts strings and characters directly into the
+  ;; output buffer without taking anything from the input buffer. You
+  ;; may pass strings, characters, or other lexer monads as arguments
+  ;; to this combinator, any other values raise an exception. Lexer
+  ;; monad arguments are evaluated with the same behavior as
+  ;; `LEX/BUFFER` except that if the monadic arguments evaluate to
+  ;; non-string values other than `#t`, `#f`, or some EOF object, an
+  ;; exception is raised.
+  ;;
+  ;; This combinator wraps itself in `LEX/BUFFER` to ensure there is
+  ;; already a buffer in place (which will not replace an existing
+  ;; buffer with a new one). See also `WITH-BUFFER-PORT`.
+  ;;------------------------------------------------------------------
+  (lex/buffer
+   (make<lexer-monad>
+    (lambda (st)
+      (let ((buf (lexer-buffer st)))
+        (let loop ((return #t) (args args))
+          (cond
+           ((null? args) return)
+           (else
+            (let ((head (car args))
+                  (tail (cdr args))
+                  )
+              (cond
+               ((string? head)
+                (write-string head buf)
+                (loop return tail)
+                )
+               ((char? head)
+                (write-char head buf)
+                (loop return tail)
+                )
+               ((lexer-monad-type? head)
+                (let ((result ((lexer-monad-procedure head) st)))
+                  (cond
+                   ((not result) #f)
+                   ((eq? #t result) (loop #t tail))
+                   ((string? result)
+                    (write-string result buf)
+                    (loop return tail)
+                    )
+                   ((char? result)
+                    (write-char result buf)
+                    (loop return tail)
+                    )
+                   ((eof-object? result) (loop result tail))
+                   ((lexer-error-type? result) result)
+                   (else
+                    (error
+                     "lexer argument to lex-put returned a non-string value"
+                     head result
+                     )))))
+               (else (error "not a string or character" head))
+               ))))))))))
 
 
 (define eof
@@ -696,7 +803,7 @@
      ((not     result) #f)
      ((char?   result) (write-char result buffer) #t)
      ((string? result) (write-string result buffer) #t)
-     (else     result)
+     (else             result)
      ))
   (define (run-lexers st buffer lexers)
     (let loop ((lexers lexers) (return #f))
@@ -861,7 +968,7 @@
    (lambda (return) return)))
 
 
-(define with-buffer
+(define with-buffer-port
   ;; Takes a procedure `PROC` and constructs a lexer monad that runs
   ;; the procedure `PROC`. After `PROC` is evaluated, this function
   ;; behaves as `(lex-const #t)`, that is, it consumes no characters,
@@ -879,14 +986,14 @@
   ;; error should be raised if there is no current buffer.
   ;;------------------------------------------------------------------
   (case-lambda
-    ((proc) (with-buffer proc #t))
+    ((proc) (with-buffer-port proc #t))
     ((proc default)
      (let ((default
              (cond
               ((procedure? default) default)
               ((not default)
                (lambda ()
-                 (error "with-buffer evaluated in context where there is no buffer")
+                 (error "with-buffer-port evaluated in context where there is no buffer")
                  ))
               (else (lambda () default))
               ))
