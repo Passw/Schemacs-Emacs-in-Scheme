@@ -90,12 +90,11 @@
 ;;--------------------------------------------------------------------------------------------------
 
 (define-record-type <lexer-state-type>
-  (make<lexer-state> line column buffer ahead1 path port cont)
+  (make<lexer-state> line column buffer path port cont)
   lexer-state-type?
   (line    lexer-line         set!lexer-line)
   (column  lexer-column       set!lexer-column)
   (buffer  lexer-buffer       set!lexer-buffer)
-  (ahead1  lexer-look-ahead   set!lexer-look-ahead)
   (path    lexer-filepath     set!lexer-filepath)
   (port    lexer-port         set!lexer-port)
   (cont    lexer-continue     set!lexer-continue)
@@ -118,12 +117,6 @@
    lexer-buffer
    set!lexer-buffer
    '=>lexer-buffer*!))
-
-(define =>lexer-look-ahead*!
-  (record-unit-lens
-   lexer-look-ahead
-   set!lexer-look-ahead
-   '=>lexer-look-ahead*!))
 
 (define =>lexer-filepath*!
   (record-unit-lens
@@ -183,6 +176,13 @@
    (lexer-line st)
    (lexer-column st)
    ))
+
+(define (location=? a b . more)
+  (and (equal? (source-file-path a) (source-file-path b))
+       (= (source-file-column a) (source-file-column b))
+       (= (source-file-line a) (source-file-line b))
+       (if (null? more) #t (apply location=? b (car more) (cdr more)))
+       ))
 
 (define write-lexer-location
   ;; Write to an output port (defaulting to `CURRENT-OUTPUT-PORT`) the given location.
@@ -284,7 +284,7 @@
       ((input-port? port)
        (cond
         ((input-port-open? port)
-         (let ((st (make<lexer-state> line column #f #f filepath port cont)))
+         (let ((st (make<lexer-state> line column #f filepath port cont)))
            (lens-set port st =>lexer-port*!)
            st))
         (else (error "cannot initialize lexer with closed input port" port))
@@ -336,15 +336,7 @@
         #t)))))
 
 
-(define (%look st)
-  (let ((c (lexer-look-ahead st)))
-    (cond
-     ((not c)
-      (let ((c (read-char (lexer-port st))))
-        (set!lexer-look-ahead st c)
-        c))
-     (else c)
-     )))
+(define (%look st) (peek-char (lexer-port st)))
 
 (define (|1+| line) (+ 1 line))
 
@@ -358,11 +350,18 @@
     (update |1+| st =>lexer-column*!)
     )))
 
+
 (define (%step! st)
-  (let ((c (lexer-look-ahead st)))
-    (%increment-line st c)
-    (set!lexer-look-ahead st (read-char (lexer-port st)))
-    #t))
+  (let ((c (read-char (lexer-port st))))
+    (when (char? c)
+      (cond
+       ((char=? c #\newline)
+        (set!lexer-line   st (+ 1 (lexer-line st)))
+        (set!lexer-column st 0)
+        )
+       (else (set!lexer-column st (+ 1 (lexer-column st))))
+       ))
+    c))
 
 
 (define any
@@ -455,7 +454,14 @@
   ;;------------------------------------------------------------------
   (case-lambda
     (() (make<lexer-monad> (lambda (st) (%look st))))
-    ((step) (make<lexer-monad> (lambda (st) (step (%look st)))))))
+    ((step)
+     (make<lexer-monad>
+      (lambda (st)
+        (let ((result (%look st)))
+          (cond
+           ((eof-object? result) #f)
+           (else (step result))
+           )))))))
 
 
 (define (take pred)
@@ -466,11 +472,17 @@
   ;;------------------------------------------------------------------
   (make<lexer-monad>
    (lambda (st)
-     (let ((result (pred (%look st))))
+     (let*((char/eof (%look st)))
        (cond
-        (result (%step! st) result)
-        (else #f)
-        )))))
+        ((eof-object? char/eof) #f)
+        (else
+         (let ((result (pred char/eof)))
+           (cond
+            ((eof-object? result) #f)
+            ((lexer-error-type? result) result)
+            (result (%step! st) result)
+            (else #f)
+            ))))))))
 
 
 (define (char pred)
@@ -548,7 +560,7 @@
               (let loop ()
                 (let ((c (read-char port)))
                   (cond
-                   ((eof-object? c) c)
+                   ((eof-object? c) #f)
                    ((char=? c #\newline)
                     (update (lambda (line) (+ 1 line)) st =>lexer-line*!)
                     (lens-set 1 st =>lexer-column*!)
@@ -760,24 +772,64 @@
 
 (define (lex-raise message . irritants)
   ;; Raises an lexer exception.
+  ;;------------------------------------------------------------------
   (make<lexer-monad>
    (lambda (st)
-     (raise (%run-lexer st (apply lex-error message irritants))))))
+     (raise (%run-lexer st (apply lex-error message irritants)))
+     )))
+
+
+(define (lex-require message . lexers)
+  ;; This combinator constructs a lexer monad that raises an error
+  ;; with `LEX-ERROR` if any of the given `LEXERS` fail. The first
+  ;; argument must be a string indicating what was required.
+  ;;------------------------------------------------------------------
+  (make<lexer-monad>
+   (lambda (st)
+     (let*((before (lexer-state-get-location st))
+           (result (%run-lexer st (apply lex lexers)))
+           (after  (lexer-state-get-location st))
+           )
+       (or result
+           (make<lexer-error>
+            after "failed to match required"
+            (cons message
+                  (if (location=? before after) '()
+                      (list 'from before)
+                      )))
+           )))))
 
 
 (define lex-trace
   (case-lambda
-    ((monad) (lex-trace monad #f))
-    ((monad port)
+    ((monad) (lex-trace monad #f #f))
+    ((msg monad)
+     (cond
+      ((and (lexer-monad-type? msg)
+            (output-port? monad))
+       (lex-trace #f msg monad)
+       )
+      (else (lex-trace msg monad #f))
+      ))
+    ((msg monad port)
      (make<lexer-monad>
       (lambda (st)
         (parameterize ((current-output-port (if port port (current-output-port))))
-          (write-string ";; ") (write (lexer-line st))
+          (write-string ";; ")
+          (when msg (write msg) (write-char #\space))
+          (write (lexer-line st))
           (write-char #\:) (write (lexer-column st)) (write-string ": ")
           (write (%look st)) (display " -> ") (write monad) (newline)
-          (%run-lexer st monad)
-          )))
-     )))
+          )
+        (let ((return (%run-lexer st monad)))
+          (parameterize ((current-output-port (if port port (current-output-port))))
+            (write-string ";; ")
+            (when msg (write msg) (write-char #\space))
+            (write-string "returned ") (write return) (newline)
+            return
+            ))
+        )))
+    ))
 
 
 (define location
@@ -793,7 +845,8 @@
   ;;------------------------------------------------------------------
   (case-lambda
     (() (make<lexer-monad> (lambda (st) (lexer-state-get-location st))))
-    ((proc) (make<lexer-monad> (with-lexer-location proc)))))
+    ((proc) (make<lexer-monad> (with-lexer-location proc)))
+    ))
 
 ;;--------------------------------------------------------------------------------------------------
 
@@ -816,6 +869,7 @@
               )
           (cond
            ((lexer-error-type?  result) result)
+           ((eof-object?        result) result)
            ((buffer-push buffer result) (loop more #t))
            (else (on-fail return))
            ))))))
@@ -834,8 +888,7 @@
             (output-port-open? new-buffer)
             )
            (set!lexer-buffer st new-buffer)
-           (let*((return (run-lexers st new-buffer (cdr lexers)))
-                 )
+           (let*((return (run-lexers st new-buffer (cdr lexers))))
              (set!lexer-buffer st buffer)
              return
              ))
@@ -867,16 +920,17 @@
          (let ((result (%run-lexer st (car lexers))))
            (cond
             ((lexer-error-type? result) result)
+            ((eof-object? result) result)
             (result (loop (cdr lexers) result))
             (else (on-fail return))
             ))))))))
 
 
 (define (lex/buffer . lexers)
-  ;; Like `LEX`, except that each `LEXER` monad that returns a
-  ;; character or string will push those character into a buffer. The
-  ;; content of the buffer is returned as a string if this monad
-  ;; succeeds.
+  ;; "Lex with a buffer", works like `LEX`, except that each `LEXER`
+  ;; monad that returns a character or string will push those
+  ;; character into a buffer. The content of the buffer is returned as
+  ;; a string if this monad succeeds.
   ;;
   ;; If the first argument to this procedure is of type `OUTPUT-PORT?`
   ;; then the given output port is used as the buffer, and it is not
@@ -1013,7 +1067,7 @@
           (let*((buf (lexer-buffer st))
                 (result
                  (cond
-                  ((buf) (proc buf) #t)
+                  (buf (proc buf) #t)
                   (else (default))
                   )))
             (cond
@@ -1154,11 +1208,7 @@
   ;;
   ;;  4. `#T` indicates that `STANDARD-INPUT-PORT` should be used.
   ;;
-  ;; The `LEX-ALL` procedure returns 2 values:
-  ;;
-  ;;  1. the return value of the final lexer in `LEXERS`,
-  ;;
-  ;;  2. the `<LEXER-STATE-TYPE>`.
+  ;; Returns the value of the final lexer in `LEXERS`.
   ;;------------------------------------------------------------------
   (%run-lexer (lexer-state input) (apply lex lexers))
   )
@@ -1319,7 +1369,6 @@
               ((not skip-count) ;; success
                (update (lambda (old-linenum) (+ line old-linenum)) st =>lexer-line*!)
                (lens-set column st =>lexer-column*!)
-               (set!lexer-look-ahead st #f)
                #t)
               (else
                (let-values
@@ -1349,10 +1398,10 @@
 (define-record-type <parse-table-type>
   (make<parse-table> min-index default on-eof vector)
   parse-table-type?
-  (min-index   parse-table-min-index)
-  (default     parse-table-default)
-  (on-eof      parse-table-on-eof)
-  (vector      parse-table-vector)
+  (min-index   parse-table-min-index  set!parse-table-min-index)
+  (default     parse-table-default    set!parse-table-default)
+  (on-eof      parse-table-on-eof     set!parse-table-on-eof)
+  (vector      parse-table-vector     set!parse-table-vector)
   )
 
 (define *unicode-max-code-point* (integer->char #x10FFFF))
@@ -1542,12 +1591,12 @@
          (((lo hi) (parse-table-alist-index-bounds alist))
           ((table) (parse-table lo hi default-action on-eof))
           )
-       (set!alist->parse-table table alist)
+       (parse-tables-merge-into! table alist)
        table
        ))))
 
 
-(define (%parse-table-ref table i)
+(define (parse-table-ref table i)
   (let-values
       (((i)     (ensure-int i))
        ((lo hi) (parse-table-index-bounds table))
@@ -1560,24 +1609,6 @@
        ))
      (else (parse-table-default table))
      )))
-
-
-(define (parse-table-ref table i)
-  ;; Lookup an element in the parse table `TABLE` at the integer index `I`.
-  (cond
-   ((eof-object? i) (parse-table-on-eof table))
-   ((pair? i)
-    (let ((lo (ensure-int (car i)))
-          (hi (ensure-int (cdr i))))
-      (let ((lo (min lo hi))
-            (hi (max lo hi)))
-        (define (iter i)
-          (if (> i hi) '() (cons i (iter (+ 1 i)))))
-        (map (lambda (i) (%parse-table-ref table i)) (iter lo))
-        )))
-   (else
-    (%parse-table-ref table (ensure-int i))
-    )))
 
 
 (define set!parse-table
@@ -1652,10 +1683,23 @@
        ))))
 
 
-(define (set!alist->parse-table table0 table1 . tail)
-  ;; Update a lexer table `TABLE` with a new set of
-  ;; character-to-action associations given by the `ALIST` association
-  ;; list argument.
+(define (parse-tables-merge-into! table0 table1 . tail)
+  ;; Update the lexer table of the first applied argument `TABLE0` by
+  ;; copying every parse table applied after it (`TABLE1`, `TABLE2`,
+  ;; ... `TABLEn`) into it index by index, merging all tables into
+  ;; `TABLE0`. The `TABLE0` object is updated in place and resized if
+  ;; necessary. Each table argument may be an actual
+  ;; `PARSE-TABLE-TYPE?` or may be an association list which is
+  ;; correctly formatted according to how the `ALIST->PARSE-TABLE`
+  ;; procedure constructs parse table objects.
+  ;;
+  ;; NOTE that the default actions are not merged, while `#f` values
+  ;; from a merging table do NOT overwrite existing values in
+  ;; `TABLE0`. This means what might cause a default value in `TABLE1`
+  ;; may not cause a default value after merging.
+  ;;
+  ;; NOTE also that the EOF actions of `TABLE0` is not changed in any
+  ;; way at all.
   ;;------------------------------------------------------------------
   (define (merge table alist)
     (cond
@@ -1691,9 +1735,10 @@
                  ((and (parse-table-type? index) (procedure? action))
                   (parse-table-for-each
                    (lambda (i tokenizer)
-                     (set!parse-table table i
-                                      (action (%parse-table-ref table i) tokenizer)
-                                      ))
+                     (set!parse-table
+                      table i
+                      (action (parse-table-ref table i) tokenizer)
+                      ))
                    index
                    ))
                  (else (error "not a valid table index type" index))
@@ -1711,9 +1756,7 @@
              ))))))))
   (let*-values
       (((lo0 hi0) (parse-table-index-bounds table0))
-       ((lo1 hi1) (apply parse-table-index-bounds table1 tail)
-        )
-       ((lo  hi ) (values (min lo0 lo1) (max hi0 hi1)))
+       ((lo  hi)  (apply parse-table-index-bounds table0 table1 tail))
        ((old-default old-eof old-vec)
         (cond
          ((parse-table-type? table0)
@@ -1724,25 +1767,30 @@
            ))
          (else (values #f #f #f))
          ))
-       ((table alists)
+       ((table in-place-update)
         (cond
          ((and old-vec (= lo lo0) (= hi hi0))
-          (values table0 (cons table1 tail))
+          (values table0 #f)
           )
          (else
-          (values
-           (parse-table lo hi old-default old-eof)
-           (cons table0 (cons table1 tail))
-           ))
-         ))
+          (let ((new-table (parse-table lo hi old-default old-eof)))
+            (merge new-table table0)
+            (values new-table #t)
+            ))))
        )
-    (let loop ((alists alists))
+    (let loop ((alists (cons table1 tail)))
       (cond
        ((null? alists) (values))
        (else
         (merge table (car alists))
         (loop (cdr alists))
-        )))))
+        )))
+    (when in-place-update
+      (set!parse-table-min-index table0 (parse-table-min-index table))
+      (set!parse-table-vector    table0 (parse-table-vector    table))
+      )
+    table0
+    ))
 
 
 (define lex-table
@@ -1772,8 +1820,8 @@
   ;;
   ;; If three arguments are applied to `LEX-TABLE`:
   ;;
-  ;;  1. is an arbitrary state value passed to the monad runner
-  ;;  2. is the monad runner which takes three arguments:
+  ;;  1. an arbitrary state value passed to the monad runner
+  ;;  2. the monad runner which takes three arguments:
   ;;     A. the arbitrary state value, item (1) above
   ;;     B. the lexer state
   ;;     C. the monad to evaluate

@@ -15,9 +15,9 @@
    lex/buffer  many/buffer  many1/buffer
    lex-put  with-buffer-port
    any  look  take  eof  char  lex-const  char-elem-of
-   location  set-location!
+   location  set-location!  location=?
    lex-brackets  lex-first  lex-apply  lex-join
-   lex-trace  lex-error
+   lex-trace  lex-error  lex-require
 
    scan-for-string
    skip-to-next-line
@@ -36,7 +36,7 @@
    parse-table-ref
    set!parse-table
    =>parse-table-index
-   set!alist->parse-table
+   parse-tables-merge-into!
    parse-table-for-each
    parse-table-min-index
    parse-table-index-bounds
@@ -49,7 +49,7 @@
    source-file-line
    source-file-column
 
-   lexer-state  lexer-state-type?  lexer-look-ahead
+   lexer-state  lexer-state-type?
    lexer-feed-string!  lexer-feed-file!
    =>lexer-line*!  =>lexer-column*!  =>lexer-filepath*!
    =>lexer-port*!  =>lexer-continuation*!

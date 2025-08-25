@@ -30,6 +30,7 @@
   (make<elisp-tokenizer-error> message irritants))
 
 (define (%run-elisp-tokenizer st proc)
+  (when (not proc) (error "no procedure"))
   ((elisp-tokenizer-procedure proc) st))
 
 (define (run-elisp-tokenizer st)
@@ -216,20 +217,22 @@
      ;; this behavior, we build the numerical literal as it is being
      ;; lexically analyzed, but we also buffer every character that
      ;; comprises the numerical literal. If any lexical errors occur,
-     ;; a symbol constructed from the buffered characters, and the
+     ;; a symbol is constructed from the buffered characters, and the
      ;; symbol string is returned rather than a numerical literal.
      (let*((buffer    (open-output-string))
-           (sign-char (lexer-look-ahead st))
+           (sign-char (run-lexer st (look)))
            (sign      (%tokenize-sign buffer st))
            )
        (define (return-int sign coef e)
          (close-port buffer)
          (values token-int (sign (* coef (expt 10 e))))
          )
+       (define (not-eof c) (if (eof-object? c) #f c))
        (cond
-        ((run-lexer st skip-space-chars)
-         (values token-symbol (string->symbol (make-string 1 sign-char)))
-         )
+        ((not-eof (run-lexer st skip-space-chars))
+         (if (eof-object? sign-char) #f
+             (values token-symbol (string->symbol (make-string 1 sign-char)))
+             ))
         (else
          (let*-values
              (((coefficient cn) (%tokenize-decimal-digits buffer st))
@@ -572,7 +575,8 @@
                           (char<=? c #\space))))))))
            )
        (cond
-        (result (%run-elisp-tokenizer st tokenize-comment))
+        (result
+         (%run-elisp-tokenizer st tokenize-comment))
         (else (values #f #f))
         )))))
 
@@ -666,10 +670,20 @@
    (lambda (st)
      (let ((step
             (run-lexer st
-             (look (lambda (c) (parse-table-ref elisp-tokenizer-table c)))))
-           )
-       (%run-elisp-tokenizer st step)
-       ))))
+             (either (eof)
+              (look
+               (lambda (c)
+                 (parse-table-ref elisp-tokenizer-table c)
+                 ))))))
+       (cond
+        ((eof-object? step) (values token-eof #f))
+        ((not step)
+         (values
+          token-error
+          (elisp-tokenizer-error "unknown character" step)
+          ))
+        (else (%run-elisp-tokenizer st step))
+        )))))
 
 ;;--------------------------------------------------------------------------------------------------
 

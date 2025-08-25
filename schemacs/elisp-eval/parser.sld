@@ -31,7 +31,7 @@
           lex-trace
           lexer-error  new-lexer-error
           lexer-error-type?
-          lexer-state  lexer-state-type?  lexer-look-ahead
+          lexer-state  lexer-state-type?
           source-file-location-type?
           lexer-state-get-location
           write-lexer-location

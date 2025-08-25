@@ -32,7 +32,11 @@
       (display ", instead got: ") (write end-col)
       (newline)
       )
-    (unless (equal? result expected-result)
+    (unless
+        (if (procedure? expected-result)
+            (expected-result result)
+            (equal? result expected-result)
+            )
       (set! success #f)
       (display "expected result: ") (write expected-result)
       (display ", instead got: ") (write result)
@@ -86,12 +90,14 @@
 
 (test-assert
     (lex-all-test
-     1 12 #t
+     1 12 eof-object?
      "hello world"
-     (lex (many1 non-space)
-          (many1 space)
-          (many1 non-space)
-          (eof #t))))
+     (lex
+      (many1 non-space)
+      (many1 space)
+      (many1 non-space)
+      (eof)
+      )))
 
 
 (test-assert
@@ -194,41 +200,6 @@
       (char char-numeric?)
       )))
 
-
-(define (merge-tables-test)
-  (let*((decimal     (alist->parse-table '(((#\0 . #\9) . "decimal"))))
-        (octal       (alist->parse-table '(((#\0 . #\7) . "octal"))))
-        (uppercase   (alist->parse-table '(((#\A . #\Z) . "uppercase"))))
-        (lowercase   (alist->parse-table '(((#\a . #\z) . "lowercase"))))
-        (hexadecimal
-         (alist->parse-table
-          '(((#\0 . #\9) . "hexadecimal")
-            ((#\A . #\F) . "hexadecimal")
-            ((#\a . #\f) . "hexadecimal"))))
-        (join
-         (lambda (a b)
-           (cond
-            ((not a) b)
-            ((not b) a)
-            (else (string-append a "||" b)))
-           ))
-        (table
-         (alist->parse-table
-          `(,decimal
-            ,uppercase
-            ,lowercase
-            (,octal . ,join)
-            (,hexadecimal . ,join)
-            )))
-        )
-    (list
-     (parse-table-ref table #\f)
-     (parse-table-ref table #\7)
-     )))
-
-(test-equal '("lowercase||hexadecimal" "decimal||octal||hexadecimal")
-  (merge-tables-test)
-  )
 
 (test-assert
   (lex-all-test
@@ -356,5 +327,80 @@
        (call-with-port (open-input-string "")
          (lambda (in-port)
            (write-lexer-location (lexer-state in-port) out-port))))))
+
+;;--------------------------------------------------------------------------------------------------
+;; Testing writing direct to output buffer
+
+(test-assert
+    (lex-all-test
+     1 1 "\"hello world\"" "ignored input string"
+     (lex/buffer (with-buffer-port (lambda (buf) (write "hello world" buf))))
+     ))
+
+
+;;--------------------------------------------------------------------------------------------------
+;; parse table tests
+
+(define (merge-tables-test)
+  (let*((decimal     (alist->parse-table '(((#\0 . #\9) . "decimal"))))
+        (octal       (alist->parse-table '(((#\0 . #\7) . "octal"))))
+        (uppercase   (alist->parse-table '(((#\A . #\Z) . "uppercase"))))
+        (lowercase   (alist->parse-table '(((#\a . #\z) . "lowercase"))))
+        (hexadecimal
+         (alist->parse-table
+          '(((#\0 . #\9) . "hexadecimal")
+            ((#\A . #\F) . "hexadecimal")
+            ((#\a . #\f) . "hexadecimal"))))
+        (join
+         (lambda (a b)
+           (cond
+            ((not a) b)
+            ((not b) a)
+            (else (string-append a "||" b)))
+           ))
+        (table
+         (alist->parse-table
+          `(,decimal
+            ,uppercase
+            ,lowercase
+            (,octal . ,join)
+            (,hexadecimal . ,join)
+            )))
+        )
+    (list
+     (parse-table-ref table #\f)
+     (parse-table-ref table #\7)
+     )))
+
+(test-equal '("lowercase||hexadecimal" "decimal||octal||hexadecimal")
+  (merge-tables-test)
+  )
+
+(define table-1 #f)
+(define table-2 #f)
+
+(test-assert
+    (begin
+      (set! table-1 (alist->parse-table '((#\0 . "zero") (#\1 . "one"))))
+      (set! table-2 (alist->parse-table '((#\1 . "ONE")  (#\2 . "two"))))
+      #t
+      ))
+
+(test-equal '("zero" "one" "ONE" "two")
+  (list
+   (parse-table-ref table-1 #\0)
+   (parse-table-ref table-1 #\1)
+   (parse-table-ref table-2 #\1)
+   (parse-table-ref table-2 #\2)
+   ))
+
+(test-equal '("zero" "ONE" "two")
+  (begin
+    (parse-tables-merge-into! table-1 table-2)
+    (list
+     (parse-table-ref table-1 #\0)
+     (parse-table-ref table-1 #\1)
+     (parse-table-ref table-1 #\2)
+     )))
 
 (test-end "schemacs_lexer")
