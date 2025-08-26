@@ -595,6 +595,7 @@
         (else #f)
         )))))
 
+
 (define (lex-first first second . rest)
   ;; Evaluate a lexer monad `FIRST` and keep it's result, then
   ;; evaluate all other monads after `FIRST`. If all succeed, then
@@ -758,6 +759,25 @@
      (make<lexer-monad>
       (lambda (st) (and (eof-object? (%look st)) return))
       ))))
+
+
+(define (first-of a b . more)
+  ;; Evaluate at least 2 lexers `A` and `B` (and `MORE` if necessary),
+  ;; return the value that was produced by the first lexer `A` only if
+  ;; all other lexers succeed.
+  (make<lexer-monad>
+   (lambda (st)
+     (let ((return (%run-lexer st a)))
+       (cond
+        ((not return) #f)
+        ((lexer-error-type? return) return)
+        (else
+         (let ((result (%run-lexer st (apply lex (cons b more)))))
+           (cond
+            ((not result) #f)
+            ((lexer-error-type? return) return)
+            (else return)
+            ))))))))
 
 
 (define (lex-error message . irritants)

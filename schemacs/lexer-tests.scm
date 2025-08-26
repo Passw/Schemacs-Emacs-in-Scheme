@@ -243,6 +243,12 @@
      match-repeat-first2
      ))
 
+(test-assert
+    (lex-all-test
+     1 3 #\a "abc"
+     (first-of #\a #\b)
+     ))
+
 ;;--------------------------------------------------------------------------------------------------
 ;; Tests for the grep-like algorithm `SCAN-FOR-STRING`.
 
