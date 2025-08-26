@@ -1210,6 +1210,30 @@
         ((lexer-error-type? result) result)
         (else (proc result)))))))
 
+
+(define lex-digits
+  ;; This lexer gathers zero or more characters satisfying the Scheme
+  ;; standard `char-numeric?` predicate from the `(scheme char)`
+  ;; library. It accumuluates these digits as a base-10 integer, or if
+  ;; a `BASE` argument is applied, an integer of that base. The base
+  ;; value (if given) must be in the range 2,10 inclusive.
+  ;;------------------------------------------------------------------
+  (case-lambda
+    (() (lex-digits 10))
+    ((base)
+     (unless (and (integer? base) (<= 2 base 10))
+       (error "lex-digits base must be between 1 and 10" base)
+       )
+     (lex-fold
+      0
+      (lambda (accum d)
+        (if (char-numeric? d)
+            (values #t (+ (* base accum) (digit-value d)))
+            (values #f accum)
+            ))
+      (char char-numeric?)
+      ))))
+
 ;;--------------------------------------------------------------------------------------------------
 
 (define (lex-all input . lexers)

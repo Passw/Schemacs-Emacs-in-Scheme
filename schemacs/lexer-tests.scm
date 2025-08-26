@@ -249,6 +249,18 @@
      (first-of #\a #\b)
      ))
 
+(test-assert
+    (lex-all-test
+     1 8 12345 "  12345--"
+     (lex (many #\space) (lex-digits))
+     ))
+
+(test-assert
+    (lex-all-test
+     1 8 5349 "  12345--"
+     (lex (many #\space) (lex-digits 8))
+     ))
+
 ;;--------------------------------------------------------------------------------------------------
 ;; Tests for the grep-like algorithm `SCAN-FOR-STRING`.
 

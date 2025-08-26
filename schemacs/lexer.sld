@@ -2,6 +2,7 @@
   (import
     (scheme base)
     (scheme case-lambda)
+    (only (scheme char) char-numeric? digit-value)
     (only (scheme write) display write)
     (only (srfi 14) char-set? char-set-contains?)
     (only (scheme file) open-input-file)
@@ -14,7 +15,7 @@
    lex  either  many  many1  lex-fold  lex-fold-count  lex-fmap
    lex/buffer  many/buffer  many1/buffer  first-of
    lex-put  with-buffer-port
-   any  look  take  eof  char  lex-const  char-elem-of
+   any  look  take  eof  char  lex-const  char-elem-of  lex-digits
    location  set-location!  location=?
    lex-brackets  lex-first  lex-apply  lex-join
    lex-trace  lex-error  lex-require
