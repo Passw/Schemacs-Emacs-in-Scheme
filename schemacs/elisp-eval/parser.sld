@@ -24,7 +24,7 @@
           lex-table  parse-table-ref
           lex  look  lex/buffer
           many1  many1/buffer  either
-          many   many/buffer   lex-const
+          many   many/buffer   lex-const  optional
           lex-fold  lex-fold-count    lex-fmap
           lex-brackets  lex-apply  lex-first
           scan-for-string  skip-to-next-line

@@ -596,18 +596,24 @@
         )))))
 
 
-(define (lex-first first second . rest)
+(define (lex-first first second . more)
   ;; Evaluate a lexer monad `FIRST` and keep it's result, then
   ;; evaluate all other monads after `FIRST`. If all succeed, then
   ;; return the result from the `FIRST` evaluated monad.
   ;;------------------------------------------------------------------
   (make<lexer-monad>
    (lambda (st)
-     (let ((result (%run-lexer st first)))
+     (let ((return (%run-lexer st first)))
        (cond
-        ((and result (apply lex second rest)) result)
-        (else #f)
-        )))))
+        ((not return) #f)
+        ((lexer-error-type? return) return)
+        (else
+         (let ((result (%run-lexer st (apply lex (cons second more)))))
+           (cond
+            ((not result) #f)
+            ((lexer-error-type? result) result)
+            (else return)
+            ))))))))
 
 
 (define (lex-apply proc . lexers)
@@ -686,6 +692,28 @@
            )))))
 
 
+(define optional
+  ;; This combinator constructs a lexer monad that runs the given
+  ;; `LEXER` argument, but if it fails returns `#t` instead. You may
+  ;; apply two arguments to `OPTIONAL`, if so the first argument
+  ;; `DEFAULT` will be returned only if the `LEXER` argument runs and
+  ;; fails. The `DEFAULT` argument is never evaluated as a lexer, it
+  ;; is applied to `LEX-CONST`.
+  ;;
+  ;; The result of this combinator is a monad equivalent to:
+  ;;
+  ;; ```
+  ;; (lambda (default lexer)
+  ;;     (either lexer (lex-const (or default #t))))
+  ;; ```
+  ;;------------------------------------------------------------------
+  (case-lambda
+    ((lexer) (optional #t lexer))
+    ((default lexer)
+     (either lexer (lex-const (or default #t)))
+     )))
+
+
 (define (lex-put . args)
   ;; This procedure inserts strings and characters directly into the
   ;; output buffer without taking anything from the input buffer. You
@@ -761,25 +789,6 @@
       ))))
 
 
-(define (first-of a b . more)
-  ;; Evaluate at least 2 lexers `A` and `B` (and `MORE` if necessary),
-  ;; return the value that was produced by the first lexer `A` only if
-  ;; all other lexers succeed.
-  (make<lexer-monad>
-   (lambda (st)
-     (let ((return (%run-lexer st a)))
-       (cond
-        ((not return) #f)
-        ((lexer-error-type? return) return)
-        (else
-         (let ((result (%run-lexer st (apply lex (cons b more)))))
-           (cond
-            ((not result) #f)
-            ((lexer-error-type? return) return)
-            (else return)
-            ))))))))
-
-
 (define (lex-error message . irritants)
   ;; This monad evaluates to an error but does not raise the error, it
   ;; returns an `<LEXER-ERROR>` value.
@@ -822,14 +831,14 @@
 
 (define lex-trace
   (case-lambda
-    ((monad) (lex-trace monad #f #f))
-    ((msg monad)
+    ((monad) (lex-trace #f monad (current-output-port)))
+    ((msg/monad monad/port)
      (cond
-      ((and (lexer-monad-type? msg)
-            (output-port? monad))
-       (lex-trace #f msg monad)
+      ((and (lexer-monad-type? msg/monad)
+            (output-port? monad/port))
+       (lex-trace #f msg/monad monad/port)
        )
-      (else (lex-trace msg monad #f))
+      (else (lex-trace msg/monad monad/port (current-output-port)))
       ))
     ((msg monad port)
      (make<lexer-monad>
@@ -1837,6 +1846,60 @@
     ))
 
 
+(define (%lex-table trace-enabled)
+  (case-lambda
+    ((table)
+     (lex-table (lambda (st monad) monad) table)
+     )
+    ((parser-state run-monad table)
+     (lex-table (lambda (st monad) (run-monad parser-state st monad)) table)
+     )
+    ((run-monad table)
+     (make<lexer-monad>
+      (lambda (st)
+        (let ((c (%look st)))
+          (cond
+           ((eof-object? c)
+            (let ((on-eof (parse-table-on-eof table)))
+              (cond
+               ((procedure? on-eof) (on-eof c))
+               (else #f)
+               )))
+           (else
+            (let*((i (char->integer c))
+                  (i0 (parse-table-min-index table))
+                  (vec (parse-table-vector table))
+                  (top (+ i0 (vector-length vec)))
+                  (default (parse-table-default table))
+                  (run-default
+                   (if default
+                       (lambda ()
+                         (when trace-enabled
+                           (display ";; default-action = ") (write default) (newline) ;;LOG
+                           )
+                         (%run-lexer st (run-monad st default))
+                         )
+                       (lambda () (when trace-enabled (display ";; default-action = #f\n")) #f)
+                       )))
+              (when trace-enabled
+                (display ";; lookup char ") (write c) (display " (") (write i) (display ") ") ;;LOG
+                (display "lo = ") (display i0) (display ", top = ") ;;LOG
+                (display ", i = ") (display (- i i0)) (newline) ;;LOG
+                )
+              (cond
+               ((< i  i0) (run-default))
+               ((< i top)
+                (let ((action (vector-ref vec (- i i0))))
+                  (when trace-enabled
+                    (display ";;  - action = ") (write action) (newline) ;;LOG
+                    )
+                  (%run-lexer st (run-monad st action))
+                  ))
+               (else (run-default))
+               ))))
+          ))))))
+
+
 (define lex-table
   ;; This procedure constructs a lexer monad that uses the given lexer
   ;; table as the set of rules to select the next characters in the
@@ -1878,43 +1941,10 @@
   ;; monad runner can convert to lexer monadic functions using `LEX`
   ;; or similar combinators.
   ;;------------------------------------------------------------------
-  (case-lambda
-    ((table)
-     (lex-table (lambda (st monad) monad) table)
-     )
-    ((parser-state run-monad table)
-     (lex-table (lambda (st monad) (run-monad parser-state st monad)) table)
-     )
-    ((run-monad table)
-     (make<lexer-monad>
-      (lambda (st)
-        (let ((c (%look st)))
-          (cond
-           ((eof-object? c)
-            (let ((on-eof (parse-table-on-eof table)))
-              (cond
-               ((procedure? on-eof) (on-eof c))
-               (else #f)
-               )))
-           (else
-            (let*((i (char->integer c))
-                  (i0 (parse-table-min-index table))
-                  (vec (parse-table-vector table))
-                  (top (+ i0 (vector-length vec)))
-                  (default (parse-table-default table))
-                  (run-default
-                   (if default
-                       (lambda () (%run-lexer st (run-monad st default)))
-                       (lambda () #f)
-                       ))
-                  )
-              (cond
-               ((< i  i0) (run-default))
-               ((< i top)
-                (%run-lexer st
-                 (run-monad st
-                  (vector-ref vec (- i i0))
-                  )))
-               (else (run-default))
-               ))))
-          ))))))
+  (%lex-table #f))
+
+(define lex-table-trace
+  ;; This is the tracing version of `lex-table`, it prints the
+  ;; character that looks-up the table entry.
+  ;;------------------------------------------------------------------
+  (%lex-table #t))

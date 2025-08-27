@@ -1666,7 +1666,7 @@
                     (run-lexer tokst
                      (lex-first
                       (scan-for-string 1 "-*-")
-                      (skip-to-next-line 1)))
+                      (optional (skip-to-next-line 1))))
                     #f))
                )
             (cond
