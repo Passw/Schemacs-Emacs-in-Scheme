@@ -464,25 +464,34 @@
            )))))))
 
 
-(define (take pred)
+(define take
   ;; Get the current character under the cursor and apply it to the
   ;; given procedure `PRED`. If `PRED` returns non-`#f` then consume
   ;; the character and advance the cursor, return the result that was
   ;; returned by `PRED`.
+  ;;
+  ;; Calling `TAKE` without arguments is similar to using the `ANY`
+  ;; combinator except that the character is not returned, only `#t`
+  ;; is returned. This is useful when using `MANY1/BUFFER` when you
+  ;; want to consume a character but not return it to be captured in
+  ;; the buffered output.
   ;;------------------------------------------------------------------
-  (make<lexer-monad>
-   (lambda (st)
-     (let*((char/eof (%look st)))
-       (cond
-        ((eof-object? char/eof) #f)
-        (else
-         (let ((result (pred char/eof)))
-           (cond
-            ((eof-object? result) #f)
-            ((lexer-error-type? result) result)
-            (result (%step! st) result)
-            (else #f)
-            ))))))))
+  (case-lambda
+    (() (take (lambda _ #t)))
+    ((pred)
+     (make<lexer-monad>
+      (lambda (st)
+        (let*((char/eof (%look st)))
+          (cond
+           ((eof-object? char/eof) #f)
+           (else
+            (let ((result (pred char/eof)))
+              (cond
+               ((eof-object? result) #f)
+               ((lexer-error-type? result) result)
+               (result (%step! st) result)
+               (else #f)
+               ))))))))))
 
 
 (define (char pred)
@@ -1226,6 +1235,18 @@
   ;; library. It accumuluates these digits as a base-10 integer, or if
   ;; a `BASE` argument is applied, an integer of that base. The base
   ;; value (if given) must be in the range 2,10 inclusive.
+  ;;
+  ;; NOTE that this tokenizer will return 0 even if the current
+  ;; character of the tokenizer state does not satisfy the
+  ;; `char-numeric?` predicate. If you need a lexer that returns `#f`
+  ;; when the current character is not a `char-numeric?`, evaluate
+  ;; `(lex (look char-numeric?) (lex-digits))`. The justification for
+  ;; this is that frequently `LEX-DIGITS` may be used in a lexer
+  ;; table, and the table will have already run a lexer monad similar
+  ;; to `(look char-numeric?)` and checking again would be
+  ;; redundant. So rather than have `lex-digits` always check the
+  ;; current character we let you (the software developer) decide when
+  ;; it is necessary to perform the initial `char-numeric?` check.
   ;;------------------------------------------------------------------
   (case-lambda
     (() (lex-digits 10))
@@ -1233,13 +1254,17 @@
      (unless (and (integer? base) (<= 2 base 10))
        (error "lex-digits base must be between 1 and 10" base)
        )
-     (lex-fold
-      0
+     (lex-fold 0
       (lambda (accum d)
-        (if (char-numeric? d)
-            (values #t (+ (* base accum) (digit-value d)))
-            (values #f accum)
-            ))
+        (cond
+         ((char-numeric? d)
+          (let ((x (digit-value d)))
+            (if (< x base)
+                (values #t (+ (* base accum) x))
+                (values #f accum)
+                )))
+         (else (values #f accum))
+         ))
       (char char-numeric?)
       ))))
 
@@ -1879,8 +1904,12 @@
                            )
                          (%run-lexer st (run-monad st default))
                          )
-                       (lambda () (when trace-enabled (display ";; default-action = #f\n")) #f)
-                       )))
+                       (lambda ()
+                         (when trace-enabled
+                           (display ";; default-action = #f\n")
+                           )
+                         #f
+                         ))))
               (when trace-enabled
                 (display ";; lookup char ") (write c) (display " (") (write i) (display ") ") ;;LOG
                 (display "lo = ") (display i0) (display ", top = ") ;;LOG
@@ -1934,7 +1963,15 @@
   ;;     C. the monad to evaluate
   ;;  3. is the parse table
   ;;
-  ;; The monad runner must return a lexer monad constructed by one of
+  ;; The monad runner must be prepared to have applied to it any value
+  ;; at all that is stored in the lexer table as the monad parameter,
+  ;; including possibly `#f` values (the default value is not
+  ;; evaluated on `#f`, only if a character is out-of-range for the
+  ;; table), if you want to ensure `#f` can never occur in your table,
+  ;; fill the table with the default action before setting other more
+  ;; specific values.
+  ;;
+  ;; The monad must must return a lexer monad constructed by one of
   ;; the combinators in this library which can be run by `RUN-LEXER`,
   ;; therefore the combinators which produce functions of that monad
   ;; must evaluate to lexer monadic functions, or to values which the

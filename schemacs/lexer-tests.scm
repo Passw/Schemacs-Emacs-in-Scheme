@@ -246,7 +246,7 @@
 (test-assert
     (lex-all-test
      1 3 #\a "abc"
-     (first-of #\a #\b)
+     (lex-first #\a #\b)
      ))
 
 (test-assert
@@ -420,5 +420,19 @@
      (parse-table-ref table-1 #\1)
      (parse-table-ref table-1 #\2)
      )))
+
+
+(define (consonant-vowel-action c)
+  (lex (any) (with-buffer-port (lambda (out-port) (write-char c out-port) #t))))
+
+
+(define consonant-vowel-table
+  (alist->parse-table
+   `(((#\a . #\z) . ,(consonant-vowel-action #\C))
+     ("aeiou" . ,(consonant-vowel-action #\V))
+     )))
+
+(test-equal "CVCCV" (lex-all "hello" (many/buffer (lex-table consonant-vowel-table))))
+
 
 (test-end "schemacs_lexer")
