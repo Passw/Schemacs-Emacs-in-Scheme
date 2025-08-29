@@ -433,6 +433,31 @@
   (make<lexer-monad> (lambda (st) return-val)))
 
 
+(define lex-fail
+  ;; The `#f` value cannot be used in a parse table to indicate
+  ;; "always fail" because `#f` values are ignored when merging
+  ;; tables. If you are constructing a parse table and you have some
+  ;; characters that must fail, associate those characters with this
+  ;; constant monad.
+  ;;
+  ;; NOTE that unlike `TAKE` or `ANY` which are combinators, and so
+  ;; you must apply them zero or one arguments, for example `(take)`
+  ;; or `(any)`, whereas `LEX-FAIL` is a monad constant, not a
+  ;; combinator, so you do not apply it. Use `LEX-FAIL` in a parse
+  ;; table like so:
+  ;;
+  ;; ```
+  ;;   (alist->parse-table
+  ;;     `(((#\0 . #\9) . lex-digits)
+  ;;       ((#\a . #\z) . my-symbol)
+  ;;       ((#\A . #\Z) . my-symbol)
+  ;;       (#\_         . my-symbol)
+  ;;       (#\space     . lex-fail)))
+  ;; ```
+  ;;------------------------------------------------------------------
+  (make<lexer-monad> (lambda _ #f)))
+
+
 (define (lexer-error message . irritants)
   ;; This combinator constructs a lexer error and automatically
   ;; populates it with the file, line number, and column number
@@ -1783,7 +1808,7 @@
     (cond
      ((parse-table-type? alist)
       (parse-table-for-each
-       (lambda (i elem) (set!parse-table table i elem))
+       (lambda (i elem) (when elem (set!parse-table table i elem)))
        alist
        ))
      ((pair? alist)
@@ -1799,6 +1824,7 @@
                     (alist  (cdr alist))
                     )
                 (cond
+                 ((not action) (values))
                  ((pair? index)
                   (set!parse-table table (car index) (cdr index) action)
                   )
@@ -1826,7 +1852,8 @@
              ((parse-table-type? assoc)
               (parse-table-for-each
                (lambda (i tokenizer)
-                 (set!parse-table table i tokenizer))
+                 (when tokenizer (set!parse-table table i tokenizer))
+                 )
                assoc
                )
               (loop (cdr alist)))
@@ -1912,7 +1939,7 @@
                          ))))
               (when trace-enabled
                 (display ";; lookup char ") (write c) (display " (") (write i) (display ") ") ;;LOG
-                (display "lo = ") (display i0) (display ", top = ") ;;LOG
+                (display "lo = ") (display i0) (display ", top = ") (write top) ;;LOG
                 (display ", i = ") (display (- i i0)) (newline) ;;LOG
                 )
               (cond

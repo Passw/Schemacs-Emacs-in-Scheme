@@ -15,7 +15,8 @@
    lex  either  many  many1  lex-fold  lex-fold-count  lex-fmap
    lex/buffer  many/buffer  many1/buffer
    lex-put  with-buffer-port
-   any  look  take  eof  char  optional  lex-const
+   any  look  take  eof  char  optional
+   lex-const  lex-fail
    char-elem-of  lex-digits
    location  set-location!  location=?
    lex-brackets  lex-first  lex-apply  lex-join

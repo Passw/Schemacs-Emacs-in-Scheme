@@ -86,11 +86,11 @@
   ;; well. Backslash symbols are special symbol characters and are
   ;; handled separately.
   (alist->parse-table  #t
-   `(((#\null . #\space) . #f)
+   `(((#\null . #\space) . ,lex-fail)
       ;; ^ the first 33 ASCII chars (control characters) are considered spaces, not symbol chars
-     (#\delete . #f)
+     (#\delete . ,lex-fail)
       ;; ^ the delete character (0x7F) is a control character and also not a symbol char
-     (,elisp-special-char . #f)
+     (,elisp-special-char . ,lex-fail)
       ;; ^ special non-symbol non-space characters are not symbol chars
      )))
 
@@ -386,8 +386,8 @@
 (define named-char-table
   (alist->parse-table
    `(((#\! . #\~)  . #t)
-     (,open-curly  . #f)
-     (,close-curly . #f)
+     (,open-curly  . ,lex-fail)
+     (,close-curly . ,lex-fail)
      )))
 
 (define hexdecode-string

@@ -23,8 +23,8 @@
           alist->parse-table
           lex-table  parse-table-ref
           lex  look  lex/buffer
-          many1  many1/buffer  either
-          many   many/buffer   lex-const  optional
+          many1  many1/buffer  either  optional
+          many   many/buffer   lex-const  lex-fail
           lex-fold  lex-fold-count    lex-fmap
           lex-brackets  lex-apply  lex-first
           scan-for-string  skip-to-next-line
