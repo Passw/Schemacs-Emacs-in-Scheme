@@ -88,6 +88,9 @@
    =>env-obarray*!
    =>env-lexical-mode?!
    =>env-stack-trace*!
+   =>env-trace-depth*!
+   =>env-trace-max*!
+   *max-lisp-eval-depth*
 
    ;;----------------------------------------
    ;; Symbol objects

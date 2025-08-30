@@ -668,13 +668,15 @@
   ;; This is the environment object used for the Emacs Lisp evaluator.
   ;; Use `NEW-ENVIRONMENT` to construct an object of this type.
   ;;------------------------------------------------------------------
-  (make<elisp-environment> env dyn lex flag trace mode)
+  (make<elisp-environment> env dyn lex flag trace depth trmax mode)
   elisp-environment-type?
   (env   env-obarray   set!env-obarray)  ;;environment (obarray)
   (dyn   env-dynstack  set!env-dynstack) ;;dynamically bound variable stack frames
   (lex   env-lexstack  set!env-lexstack) ;;lexically bound variable stack frames
   (flag  env-stkflags  set!env-stkflags) ;;bits indicating stack frame type
   (trace env-trace     set!env-trace)    ;;stack trace
+  (depth env-tr-depth  set!env-tr-depth) ;;stack trace depth
+  (trmax env-tr-max    set!env-tr-max)   ;;stack trace max depth
   (mode  env-lxmode    set!env-lxmode)   ;;lexical binding mode
   )
 
@@ -701,25 +703,42 @@
 (define =>env-stack-trace*!
   (record-unit-lens env-trace set!env-trace '=>env-stack-trace*!))
 
+(define =>env-trace-depth*!
+  (record-unit-lens env-tr-depth set!env-tr-depth '=>env-trace-depth*!))
 
-(define (env-push-trace! st loc sym func)
-  (update
-   (lambda (stack) (cons (new-stack-trace-frame loc sym func) stack))
-   st =>env-stack-trace*!))
+(define =>env-trace-max*!
+  (record-unit-lens env-tr-max set!env-tr-max '=>env-trace-max*!))
 
+;;--------------------------------------------------------------------------------------------------
+
+(define (env-push-trace! st loc sym on-err func)
+  (let ((now-depth (view st =>env-trace-depth*!))
+        (max-depth (view st =>env-trace-max*!))
+        )
+    (cond
+     ((< now-depth max-depth)
+      (update (lambda (i) (+ 1 i)) st =>env-trace-depth*!)
+      (update
+       (lambda (stack) (cons (new-stack-trace-frame loc sym func) stack))
+       st =>env-stack-trace*!
+       ))
+     (else
+      (on-err "Lisp nesting exceeds 'max-lisp-eval-depth'")
+      ))))
 
 (define (env-pop-trace! st)
-  (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!))
+  (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!)
+  (update (lambda (i) (- i 1)) st =>env-trace-depth*!)
+  )
 
-
-(define (env-trace! loc sym func st run)
+(define (env-trace! loc sym func st on-err run)
   ;; Takes the same three arguments as `NEW-STACK-TRACE-FRAME`, a 4th
   ;; thunk procedure that performs evaluation of some Emacs Lisp code
   ;; and returns the resulting Emacs Lisp data. Also optionally takes
   ;; a 5th argument, the Emacs Lisp environment object, defaulting to
   ;; the content of `*THE-ENVIRONMENT*`.
   ;;------------------------------------------------------------------
-  (env-push-trace! st loc sym func)
+  (env-push-trace! st loc sym on-err func)
   (let ((result (run)))
     (env-pop-trace! st)
     result
@@ -965,12 +984,18 @@
     ))
 
 
+(define *max-lisp-eval-depth* (make-parameter 1600))
+
+
 (define new-empty-environment
   (case-lambda
     (() (new-empty-environment *default-obarray-size*))
     ((size)
      (make<elisp-environment>
-      (new-empty-obarray size) '() '() (new-bit-stack) '() #t))))
+      (new-empty-obarray size) '() '()
+      (new-bit-stack) '() 0 (*max-lisp-eval-depth*)
+      #t
+      ))))
 
 
 (define (env-alist-defines! env init-env)

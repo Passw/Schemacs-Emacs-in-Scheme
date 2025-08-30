@@ -65,12 +65,12 @@
           elisp-string?  elisp-number?  elisp-integer?  elisp-float?
           elisp-procedure?  elisp-symbol?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
-          env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!
+          env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!  
           env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!
           elstkfrm-from-args   elstkfrm-sym-intern!
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
-          *default-obarray-size*
-          =>env-obarray-key!   =>env-symbol!
+          *default-obarray-size*  *max-lisp-eval-depth*
+          =>env-obarray-key!   =>env-symbol!  =>env-trace-max*!
           =>env-stack-trace*!  =>stack-trace-location*!
           =>env-lexstack*!  =>env-obarray*!  =>env-lexical-mode?!
           sym-type?  sym-name  new-symbol  new-symbol-value

@@ -176,7 +176,11 @@
   (define (run-with-mode new-lxmode)
     (let*((env (*the-environment*))
           (old-lxmode (view env =>env-lexical-mode?!))
+          (trace-max (view env (=>env-symbol! "max-lisp-eval-depth")))
           )
+      (when trace-max
+        (lens-set (max 100 trace-max) env =>env-trace-max*!)
+        )
       (lens-set new-lxmode env =>env-lexical-mode?!)
       (let ((result (run)))
         (lens-set old-lxmode env =>env-lexical-mode?!)
@@ -654,7 +658,7 @@
          (display "; - resolved function ") (write func) (newline)
          )
        (env-trace!
-        loc sym func st
+        loc sym func st eval-error
         (lambda ()
           (cond
            ((syntax-type?  func)
@@ -2181,6 +2185,7 @@
      ,(new-symbol "noninteractive" #t)
      ,(new-symbol "after-load-functions" '())
      ,(new-symbol "features" '())
+     ,(new-symbol "max-lisp-eval-depth" (*max-lisp-eval-depth*))
 
      (lambda    . ,elisp-lambda)
      (apply    . ,elisp-apply)
@@ -2279,6 +2284,7 @@
 
      (format           . ,elisp-format)
      (message          . ,elisp-message)
+     (format-message   . ,elisp-format)
      (prin1            . ,elisp-prin1)
      (princ            . ,elisp-princ)
      (print            . ,elisp-print)
