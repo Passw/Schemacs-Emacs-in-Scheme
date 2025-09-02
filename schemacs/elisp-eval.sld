@@ -71,7 +71,7 @@
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
           *default-obarray-size*  *max-lisp-eval-depth*
           =>env-obarray-key!   =>env-symbol!  =>env-trace-max*!
-          =>env-stack-trace*!  =>stack-trace-location*!
+          =>env-stack-trace*!  =>stack-trace-location*!  =>env-trace-depth*!
           =>env-lexstack*!  =>env-obarray*!  =>env-lexical-mode?!
           sym-type?  sym-name  new-symbol  new-symbol-value
           =>sym-name  =>sym-value*!  =>sym-function*!  =>sym-plist*!
@@ -152,6 +152,18 @@
    new-elisp-raise-impl
    elisp-write-stack-frames
    elisp-debug-write-obarray
+
+   ;; Debugging
+   elisp-debug-eval  debugger-state-type?
+   elisp-debug-step!  elisp-debug-step-value!
+   elisp-debug-continue!  elisp-debug-skip! ;; <- FIXME: these two don't work correctly yet
+   elisp-debug-show-form  elisp-debug-show-result
+   elisp-debug-set-break!
+   elisp-debug-clear-break!
+   elisp-debug-show-breaks
+   =>debugger-breakpoints*!
+   =>debugger-current-form*!
+   =>debugger-last-value*!
    )
 
   (include "elisp-eval.scm")

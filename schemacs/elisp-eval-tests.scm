@@ -500,6 +500,142 @@
 
 
 ;;--------------------------------------------------------------------------------------------------
+;; Testing the debugger
+
+(define (capture-debug-step dbg writer)
+  (let*((outport (open-output-string))
+        (more    (writer dbg outport))
+        )
+    (values (get-output-string outport) more)
+    ))
+
+
+(define (capture-debug-eval form)
+  ;; This runs the stepper and captures every output and every
+  ;; intermediate result into a list. The result is a list of "result
+  ;; lists" where each result list consists of:
+  ;; 
+  ;;  1. the evaluation step number
+  ;;
+  ;;  2. the current form being evaluated
+  ;;
+  ;;  3. the form result value
+  ;;
+  ;;  4. a string containing any output to the current-output-port
+  ;;     (this is ignored if there is no output string).
+  ;;------------------------------------------------------------------
+  (let ((log '())
+        (dbg (if (debugger-state-type? form) form
+                 (elisp-debug-eval form)
+                 )))
+    (let loop ((step 0))
+      (let*-values
+          (((form-str _t)
+            (capture-debug-step dbg
+             (lambda (dbg port) (elisp-debug-show-form dbg port) #t)
+             ))
+           ((outstr more)
+            (capture-debug-step dbg
+             (lambda (dbg _port) (elisp-debug-step! dbg))
+             ))
+           ((result) (view dbg =>debugger-last-value*!))
+           ((log-item)
+            `( ,step ,form-str ,result
+               ,@(if (string=? "" outstr) '() (list outstr))
+               ))
+           )
+        (cond
+         ((not more) (reverse log))
+         (else
+           ;; FIXME: logging doesn't work consistently due to use of
+           ;; continuations.
+          (set! log (cons log-item log))
+          (loop (+ 1 step))
+          ))))))
+
+
+(define (compare-debug-eval form . expected)
+  (define (write-remaining elems)
+    (cond
+     ((null? elems) #f)
+     (else
+      (write (car elems)) (newline)
+      (write-remaining (cdr elems))
+      )))
+  (let loop
+      ((results (capture-debug-eval form))
+       (expected expected)
+       )
+    (cond
+     ((null? expected)
+      (cond
+       ((null? results) #t)
+       (else
+        (display "Debugger test stopped prematurely.") (newline)
+        (display "The following outputs were expected but not produced:") (newline)
+        (write-remaining results)
+        )))
+     (else
+      (cond
+       ((null? results)
+        (display "Debugger test stopped prematurely.") (newline)
+        (display "The following outputs were expected but not produced:") (newline)
+        (write-remaining expected)
+        )
+       ((equal? (car results) (car expected))
+        (loop (cdr results) (cdr expected))
+        )
+       (else
+        (display "Unexpected debugger output.") (newline)
+        (display "  expected: ") (write (car expected)) (newline)
+        (display "    actual: ") (write (car results)) (newline)
+        ))))))
+
+
+(define debugger-test-form
+  '(let ((a 3) (b 6))
+     (+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)
+     ))
+
+(test-equal
+    (capture-debug-eval debugger-test-form)
+  '((0 "(let ((a 3) (b 6)) (+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11))\n" #f)
+    (1 "3\n" 3)
+    (2 "6\n" 6)
+    (3 "(+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)\n" 6)
+    (4 "1\n" 1)
+    (5 "2\n" 2)
+    (6 "(+ a 4)\n" 2)
+    (7 "a\n" 3)
+    (8 "4\n" 7)
+    (9 "(+ 5 b (* 7 8))\n" 7)
+    (10 "5\n" 5)
+    (11 "b\n" 6)
+    (12 "(* 7 8)\n" 6)
+    (13 "7\n" 7)
+    (14 "8\n" 67)
+    (15 "(* 9 10)\n" 67)
+    (16 "9\n" 9)
+    (17 "10\n" 90)
+    ))
+
+(test-equal 178
+  (let ((dbg (elisp-debug-eval debugger-test-form)))
+    (elisp-debug-continue! dbg)
+    (view dbg =>debugger-last-value*!)
+    ))
+
+(test-equal 178
+  (let ((dbg (elisp-debug-eval debugger-test-form)))
+    (elisp-debug-set-break! dbg 'b)
+    (elisp-debug-set-break! dbg 'a)
+    (elisp-debug-clear-break! dbg 'b)
+    (elisp-debug-continue! dbg)
+    (elisp-debug-continue! dbg)
+    (view dbg =>debugger-last-value*!)
+    ))
+
+;;--------------------------------------------------------------------------------------------------
 ;; Testing `WHILE`, `DOTIMES`, and `DOLIST`
 
 (test-assert

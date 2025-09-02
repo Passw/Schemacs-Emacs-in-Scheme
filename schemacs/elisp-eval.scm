@@ -2,12 +2,6 @@
 (define *the-environment*
   (make-parameter (new-empty-environment *default-obarray-size*)))
 
-(define debug-print-eval #f)
-  ;; ^ WARNING: setting this to #t prints every single form that is
-  ;; evaluated, even long `PROGN` expressions hundreds of lines
-  ;; long. Be sure that when you set this to #t you are only going to
-  ;; execute a very small example.
-
 (define (elisp-write-stack-frames)
   (let ((st (*the-environment*)))
     (pretty
@@ -176,11 +170,14 @@
   (define (run-with-mode new-lxmode)
     (let*((env (*the-environment*))
           (old-lxmode (view env =>env-lexical-mode?!))
-          (trace-max (view env (=>env-symbol! "max-lisp-eval-depth")))
+          (sym-name "max-lisp-eval-depth")
+          (trace-max (view env (=>env-symbol! sym-name) (=>sym-value! sym-name)))
           )
       (when trace-max
-        (lens-set (max 100 trace-max) env =>env-trace-max*!)
-        )
+        (lens-set
+         (max 100 (or trace-max (*max-lisp-eval-depth*)))
+         env =>env-trace-max*!
+         ))
       (lens-set new-lxmode env =>env-lexical-mode?!)
       (let ((result (run)))
         (lens-set old-lxmode env =>env-lexical-mode?!)
@@ -469,7 +466,7 @@
                )
            (cond
             (hook
-             (%elisp-apply func args-list))
+             (%elisp-apply func args-list (view func =>lambda-location*!)))
             (else (eval-error "void variable" hook)))
            ))
        (define (second hook)
@@ -600,28 +597,30 @@
     ))
 
 
-(define (push-stack-frame-eval-body func args)
+(define (i-push-stack-frame-eval-body interp)
   ;; This applies arguments to a `FUNC` which must be of type
   ;; `LAMBDA-TYPE?`, without evaluating the arguments `ARGS`. It
   ;; creates and pushes a stack frame with the `ARGS` as they are
-  ;; given.
+  ;; given. Because function arguments are always lexical, only the
+  ;; lexical stack is modified.
   ;;------------------------------------------------------------------
-  (let ((elstkfrm (elstkfrm-from-args func args)))
-    (cond
-     ((not elstkfrm) (error "elstkfrm-from-args returned #f"))
-     ((elisp-eval-error-type? elstkfrm) (eval-raise elstkfrm))
-     (else
-      (let*((st (*the-environment*))
-            (old-stack (view st =>env-lexstack*!))
-            (st (lens-set (list elstkfrm) st =>env-lexstack*!))
-            (return (eval-progn-body (view func =>lambda-body*!))) ;; apply
-            )
-        (lens-set old-stack st =>env-lexstack*!)
-        return
-        )))))
+  (lambda (func args)
+    (let ((elstkfrm (elstkfrm-from-args func args)))
+      (cond
+       ((not elstkfrm) (error "elstkfrm-from-args returned #f"))
+       ((elisp-eval-error-type? elstkfrm) (eval-raise elstkfrm))
+       (else
+        (let*((st (*the-environment*))
+              (old-stack (view st =>env-lexstack*!))
+              (st (lens-set (list elstkfrm) st =>env-lexstack*!))
+              (return ((interpret-body interp) (view func =>lambda-body*!))) ;; apply
+              )
+          (lens-set old-stack st =>env-lexstack*!)
+          return
+          ))))))
 
 
-(define (scheme-lambda->elisp-lambda func)
+(define (i-scheme-lambda->elisp-lambda interp)
   ;; Constructs a Scheme procedure that takes Elisp arguments and
   ;; returns an Elisp result. This is useful for implementing
   ;; higher-order Emacs Lisp functions such as `MAPCAR`.
@@ -643,9 +642,8 @@
   ;; Scheme procedure or an Elisp Lambda), the result is a procedure
   ;; that takes Elisp values and returns Elisp values.
   ;; ------------------------------------------------------------------
-  (lambda args
-    (cond
-     ((lambda-type? func)
+  (lambda (func)
+    (lambda args
       (cond
        ((lambda-type? func)
         (cond
@@ -659,17 +657,15 @@
        ((procedure? func)
         (scheme->elisp (apply func (map elisp->scheme args)))
         )
-       (else (%elisp-apply func args))
-       ))
-     ((procedure? func)
-      (scheme->elisp (apply func (map elisp->scheme args))))
-     ((command-type? func)
-      (scheme->elisp (apply (command-procedure func) (map elisp->scheme args))))
-     (else (eval-error "wrong type argument" func 'expecting "function"))
-     )))
+       ((command-type? func)
+        (scheme->elisp
+         (apply (command-procedure func) (map elisp->scheme args))
+         ))
+       (else (eval-error "wrong type argument" func 'expecting "function"))
+       ))))
 
 
-(define %elisp-apply
+(define (i-%elisp-apply interp)
   ;; This is the actual `APPLY` procedure for Emacs Lisp. The `HEAD`
   ;; argument is resolved to a procedure, macro, command, or lambda.
   ;; If `HEAD` resolves to a lambda, and `LAMBDA-KIND` is `'MACRO`,
@@ -798,9 +794,6 @@
                   (if (elisp-eval-error-type? result) result
                       (cons result (loop more)))
                   ))))))
-      (when debug-print-eval
-        (display "; - args-list ") (write result) (newline)
-        )
       result
       )))
 
@@ -877,16 +870,26 @@
    '=>debugger-last-value*!
    ))
 
-(define (elisp-debug-show-form debug-state)
-  (write-elisp-form (debugger-current-form debug-state))
-  (newline)
-  )
+(define elisp-debug-show-form
+  (case-lambda
+    ((debug-state)
+     (elisp-debug-show-form debug-state (current-output-port))
+     )
+    ((debug-state port)
+     (write-elisp-form (debugger-current-form debug-state) port)
+     (newline port)
+     )))
 
 
-(define (elisp-debug-show-result debug-state)
-  (write-elisp-form (debugger-last-value debug-state))
-  (newline)
-  )
+(define elisp-debug-show-result
+  (case-lambda
+    ((debug-state)
+     (elisp-debug-show-result debug-state (current-output-port))
+     )
+    ((debug-state port)
+     (write-elisp-form (debugger-last-value debug-state) port)
+     (newline port)
+     )))
 
 
 (define (new-debugger-state interp)
@@ -919,7 +922,7 @@
                   (set!debugger-last-value debug-state return)
                   (resume return)
                   )))
-             ((debugger-pause debug-state))
+             ((debugger-pause debug-state) #t)
              ))))))))
 
 
@@ -940,8 +943,11 @@
                   ))
             (do-skip (and depth (> depth skip-mode)))
             )
+        ;;(display "; :cont-mode ") (write cont-mode);;DEBUG
+        ;;(display " :do-skip ") (write do-skip);;DEBUG
+        ;;(display " :on-break ") (write on-break) (newline);;DEBUG
         (cond
-         ((and cont-mode do-skip (not on-break))
+         ((and (or cont-mode do-skip) (not on-break))
           ((i-%elisp-apply i) head arg-exprs loc)
           )
          (else
@@ -953,41 +959,45 @@
                   (set!debugger-last-value debug-state return)
                   (resume return)
                   )))
-             ((debugger-pause debug-state))
+             ((debugger-pause debug-state) #t)
              ))))))))
 
 
 (define (new-debugger)
-  (call/cc
-   (lambda (pause)
-     (let*((i  (new-interpreter))
-           (st (new-debugger-state i))
-           )
-       (set!interpret-eval       i (%debug-eval  st))
-       (set!interpret-apply      i (%debug-apply st))
-       (set!interpret-args       i (i-eval-args-list i))
-       (set!interpret-body       i (i-eval-progn-body i))
-       (set!interpret-wrap       i (i-scheme-lambda->elisp-lambda i))
-       (set!interpret-new-frame  i (i-push-stack-frame-eval-body i))
-       (set!debugger-stepper st
-        (lambda ()
-          (let ((form (debugger-current-form st)))
-            ((%debug-eval st) form (env-get-location form))
-            )))
-       st))))
+  (let*((i  (new-interpreter))
+        (st (new-debugger-state i))
+        )
+    (set!interpret-eval       i (%debug-eval  st))
+    (set!interpret-apply      i (%debug-apply st))
+    (set!interpret-args       i (i-eval-args-list i))
+    (set!interpret-body       i (i-eval-progn-body i))
+    (set!interpret-wrap       i (i-scheme-lambda->elisp-lambda i))
+    (set!interpret-new-frame  i (i-push-stack-frame-eval-body i))
+    (set!debugger-stepper st
+     (lambda ()
+       (let ((form (debugger-current-form st)))
+         ((%debug-eval st) form (env-get-location form))
+         (set!debugger-stepper st #f)
+         ;; return `#f` to indicate stepping cannot continue.
+         #f)))
+    st))
 
 
 (define (elisp-debug-step! debug-state)
   (let ((stepper (debugger-stepper debug-state))
-        (i (debugger-interpreter debug-state))
+        (i   (debugger-interpreter debug-state))
         )
-    (set!debugger-continue-mode debug-state #f)
-    (parameterize ((*current-interpreter* i))
-      (call/cc
-       (lambda (pause)
-         (set!debugger-pause debug-state pause)
-         (stepper)
-         )))))
+    (cond
+     ((not stepper) #f)
+     (else
+      (parameterize ((*current-interpreter* i))
+        (call/cc
+         (lambda (pause)
+           (set!debugger-pause debug-state pause)
+           (let ((result (stepper)))
+             (set!debugger-continue-mode debug-state #f)
+             result
+             ))))))))
 
 
 (define (elisp-debug-step-value! debug-state)
@@ -1001,6 +1011,11 @@
 
 
 (define (elisp-debug-skip! debug-state)
+  ;; FIXME: this does not work correctly yet, see `ELISP-DEBUG-CONTINUE!`.
+  ;;
+  ;; This is supposed to note the current stack depth and allow
+  ;; `ELISP-DEBUG-CONTINUE!` through the current expression until the
+  ;; stack depth becomes less than or equal to the noted stack depth.
   (set!debugger-skip-mode
    debug-state
    (view (*the-environment*) =>env-trace-depth*!)
@@ -1010,12 +1025,14 @@
 
 
 (define (elisp-debug-continue! debug-state)
+  ;; FIXME: this does not work correctly yet, fails to stop at breakpoints.
   (set!debugger-continue-mode debug-state #t)
   (elisp-debug-step! debug-state)
   )
 
 
 (define (elisp-debug-set-break! debug-state sym)
+  ;; FIXME: this does not work correctly yet, see `ELISP-DEBUG-CONTINUE!`.
   (let ((sym    (ensure-string sym))
         (breaks (view debug-state =>debugger-breakpoints*!))
         )
@@ -1055,19 +1072,24 @@
      )))
 
 
-(define (elisp-debug-show-breaks debug-state)
-  (let ((breaks (view debug-state =>debugger-breakpoints*!)))
-    (let loop ((breaks breaks))
-      (cond
-       ((null? breaks) (display "----\n"))
-       (else
-        (display (car breaks))
-        (newline)
-        (loop (cdr breaks))
-        )))))
+(define elisp-debug-show-breaks
+  (case-lambda
+    ((debug-state)
+     (elisp-debug-show-breaks debug-state (current-output-port))
+     )
+    ((debug-state port)
+     (let ((breaks (view debug-state =>debugger-breakpoints*!)))
+       (let loop ((breaks breaks))
+         (cond
+          ((null? breaks) (display "----\n" port))
+          (else
+           (display (car breaks) port)
+           (newline port)
+           (loop (cdr breaks))
+           )))))))
 
 
-(define elisp-debug-eval!
+(define elisp-debug-eval
   ;; Construct a new debugger state containing the given `EXPR`
   ;; argument and return it.  It is also possible to reused a debugger
   ;; state by passing it as the second argument to this
@@ -1076,69 +1098,13 @@
   ;; `ELISP-DEBUG-SET-BREAK!`, `DEBUG-CLEAR-BREAK!`, and
   ;; `ELISP-DEBUG-SHOW-BREAKS`.
   (case-lambda
-    ((head arg-exprs) (%elisp-apply head arg-exprs #f))
-    ((head arg-exprs loc)
-     (when debug-print-eval
-       (display "; apply ") (write head) (newline)
-       (display "; - args: ") (write arg-exprs) (newline)
-       )
-     (let*((st (*the-environment*))
-           (func (env-resolve-function st head))
-           (func (cond
-                  ((pair? func) (eval-form func))
-                  ((elisp-form-type? func) (eval-form func (env-get-location func)))
-                  (else func)
-                  ))
-           (sym  (if (lambda-type? head) 'lambda head))
-           (loc  (or loc (and (lambda-type? func) (view func =>lambda-location*!))))
-           )
-       (when debug-print-eval
-         (display "; - resolved function ") (write func) (newline)
-         )
-       (env-trace!
-        loc sym func st eval-error
-        (lambda ()
-          (cond
-           ((syntax-type?  func)
-            (apply (syntax-eval func) head arg-exprs))
-           ((lambda-type?  func)
-            (cond
-             ((macro-type? func)
-              (eval-form
-               (push-stack-frame-eval-body func arg-exprs)
-               (env-get-location func)
-               ))
-             (else
-              (push-stack-frame-eval-body func (eval-args-list arg-exprs))
-              )))
-           ((command-type? func)
-            (apply (command-procedure func) (eval-args-list arg-exprs))
-            )
-           ((procedure?    func)
-            (apply func (eval-args-list arg-exprs))
-            )
-           ((pair?         func)
-            (match func
-              (('lambda arg-exprs body ...)
-               (let ((func (apply (syntax-eval elisp-lambda) func)))
-                 (push-stack-frame-eval-body
-                  (defun-make-lambda 'lambda (%unpack arg-exprs) body)
-                  (eval-args-list arg-exprs))
-                 ))
-              (('macro . func)
-               (cond
-                ((lambda-type? func)
-                 (eval-form
-                  (push-stack-frame-eval-body func arg-exprs)
-                  (env-get-location func)
-                  ))
-                (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
-                ))
-              (any (eval-error "invalid function" func))
-              ))
-           (else (eval-error "invalid function" head))
-           )))))))
-
+    ((expr) (elisp-debug-eval expr (new-debugger)))
+    ((expr debug-state)
+     (set!debugger-current-form debug-state expr)
+     (set!debugger-last-value debug-state #f)
+     (elisp-debug-step! debug-state)
+     debug-state
+     )))
 
 ;;--------------------------------------------------------------------
 ;; The following interfaces are used by built-in macros such as
@@ -1163,90 +1129,13 @@
   (apply (interpret-new-frame (*current-interpreter*)) args))
 
 (define eval-form
-  ;; This is where evaluation begins. This is the actual `EVAL`
-  ;; procedure for Emacs Lisp.
   (case-lambda
-    ((expr) (eval-form expr #f))
-    ((expr loc)
-     (when debug-print-eval
-       (display "; eval ") (write expr) (newline)
-       )
-     (match expr
-       (() '())
-       ((head args ...) (%elisp-apply head args loc))
-       (('quote expr) expr)
-       (('quote exprs ...)
-        (eval-error
-         "wrong number of arguments"
-         "quote" 'expected 1 'got (length exprs)
-         ))
-       (literal
-        (cond
-         ((symbol? literal)
-          (let ((str (symbol->string literal)))
-            (cond
-             ((and (> (string-length str) 0) (char=? #\: (string-ref str 0)))
-              literal ;; symbols starting with : are self-evaluating "keyword" symbols
-              )
-             (else
-              (let ((return (view literal =>elisp-symbol!)))
-                (cond
-                 ((not return) (eval-error "void variable" literal))
-                 ((sym-type? return) (view return =>sym-value*!))
-                 (else return)
-                 ))))))
-         ((elisp-quote-scheme-type? literal)
-          (cond
-           ((elisp-backquoted-form? literal)
-            (eval-backquote (elisp-unquote-scheme literal))
-            )
-           (else (elisp-unquote-scheme literal))
-           ))
-         ((elisp-form-type? literal)
-          (cond
-           ((square-bracketed-form? literal)
-            (elisp-form->vector literal)
-            )
-           (else
-            (eval-form
-             (elisp-form->list literal)
-             (elisp-form-start-loc literal)
-             ))))
-         ((elisp-function-ref-type? literal)
-          (eval-function-ref (elisp-function-get-ref literal))
-          )
-         (else literal)
-         ))))))
-
-
-(define (eval-args-list arg-exprs)
-  (let ((result
-         (let loop ((exprs arg-exprs))
-           (match exprs
-             (() '())
-             ((expr more ...)
-              (let ((result (eval-form expr (env-get-location arg-exprs))))
-                (if (elisp-eval-error-type? result) result
-                    (cons result (loop more)))
-                ))))))
-    (when debug-print-eval
-      (display "; - args-list ") (write result) (newline)
-      )
-    result
-    ))
-
-
-(define (eval-progn-body body-exprs)
-  (let loop ((exprs body-exprs))
-    (match exprs
-      (() '())
-      ((final) (eval-form final (env-get-location final)))
-      ((head more ...)
-       (eval-form head (env-get-location head))
-       (loop more)
-       )
-      (exprs (error "no function body" exprs))
-      )))
+    ((form)
+     ((interpret-eval (*current-interpreter*)) form (env-get-location form))
+     )
+    ((form loc)
+     ((interpret-eval (*current-interpreter*)) form loc)
+     )))
 
 ;;--------------------------------------------------------------------
 ;; Built-in macros

@@ -726,10 +726,12 @@
       (on-err "Lisp nesting exceeds 'max-lisp-eval-depth'")
       ))))
 
+
 (define (env-pop-trace! st)
-  (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!)
   (update (lambda (i) (- i 1)) st =>env-trace-depth*!)
+  (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!)
   )
+
 
 (define (env-trace! loc sym func st on-err run)
   ;; Takes the same three arguments as `NEW-STACK-TRACE-FRAME`, a 4th
@@ -739,10 +741,9 @@
   ;; the content of `*THE-ENVIRONMENT*`.
   ;;------------------------------------------------------------------
   (env-push-trace! st loc sym on-err func)
-  (let ((result (run)))
-    (env-pop-trace! st)
-    result
-    ))
+  (let ((result (run))) (env-pop-trace! st) result)
+  )
+
 
 (define (env-get-stack-trace env)
   (let*((trace (env-trace env))
