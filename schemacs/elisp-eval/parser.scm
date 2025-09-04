@@ -1824,7 +1824,7 @@
          (display-elem (elisp-unquote-scheme elem))
          )
         ((elisp-unquoted-form-type? elem)
-         (if elisp-spliced-form?
+         (if (elisp-spliced-form? elem)
              (display ",@" port)
              (write-char #\, port)
              )
