@@ -868,6 +868,15 @@
     ))
 
 
+(define (env-with-elstkfrm! st size bindings proc)
+  (let*((elstkfrm (env-push-new-elstkfrm! st size bindings))
+        (return   (proc elstkfrm))
+        )
+    (env-pop-elstkfrm! st)
+    return
+    ))
+
+
 (define (env-dynstack-update updater st name newsym)
   ;; Part of the Elisp "SETQ" semantics. This procedure tries to
   ;; update just the dynamic variable stack. If there is no variable

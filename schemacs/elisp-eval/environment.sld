@@ -70,8 +70,7 @@
    new-empty-environment
    elisp-environment-type?
    env-push-trace!  env-pop-trace!  env-trace!
-   env-push-new-elstkfrm!
-   env-pop-elstkfrm!
+   env-with-elstkfrm!
    env-resolve-function
    =>env-symbol!
    env-intern!    ;; implements the ELisp `intern` function

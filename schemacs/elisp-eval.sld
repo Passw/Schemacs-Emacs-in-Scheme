@@ -65,7 +65,7 @@
           elisp-string?  elisp-number?  elisp-integer?  elisp-float?
           elisp-procedure?  elisp-symbol?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
-          env-push-new-elstkfrm!   env-pop-elstkfrm!  env-trace!  
+          env-with-elstkfrm!  env-trace!  
           env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!
           elstkfrm-from-args   elstkfrm-sym-intern!
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
