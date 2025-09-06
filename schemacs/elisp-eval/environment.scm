@@ -784,6 +784,7 @@
   (set!env-lexstack st '())
   (set!env-stkflags st (new-bit-stack))
   (set!env-trace    st '())
+  (set!env-tr-depth st 0)
   (set!env-lxmode   st #t)
   st)
 
