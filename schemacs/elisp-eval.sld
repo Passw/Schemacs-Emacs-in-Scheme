@@ -155,7 +155,8 @@
 
    ;; Debugging
    elisp-debug-eval  debugger-state-type?
-   elisp-debug-step!  elisp-debug-step-value!
+   elisp-debug-step!  elisp-debug-view-step!
+   elisp-debug-step-value!
    elisp-debug-continue!  elisp-debug-skip! ;; <- FIXME: these two don't work correctly yet
    elisp-debug-show-form  elisp-debug-show-result
    elisp-debug-set-break!

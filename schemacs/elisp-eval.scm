@@ -984,6 +984,8 @@
 
 
 (define (elisp-debug-step! debug-state)
+  ;; Single-step the evaluator in the `DEBUG-STATE`.
+  ;;------------------------------------------------------------------
   (let ((stepper (debugger-stepper debug-state))
         (i   (debugger-interpreter debug-state))
         )
@@ -998,6 +1000,19 @@
              (set!debugger-continue-mode debug-state #f)
              result
              ))))))))
+
+
+(define (elisp-debug-view-step! debug-state)
+  ;; Like `ELISP-DEBUG-STEP!` except it shows which form is being
+  ;; evaluated, and what value the form returns, unless the form does
+  ;; not return in which case the returned value from the previous
+  ;; evaluation step is shown again.
+  ;;------------------------------------------------------------------
+  (write-elisp-form (view debug-state =>debugger-current-form*!)) (newline)
+  (let ((more (elisp-debug-step! debug-state)))
+    (write-elisp-form (view debug-state =>debugger-last-value*!)) (newline)
+    more
+    ))
 
 
 (define (elisp-debug-step-value! debug-state)

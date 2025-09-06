@@ -498,6 +498,14 @@
       (macroexpand '(mac1 13 21))
       ))))
 
+(test-equal '((progn '(declare (a 1) (b 2)) ()) () compile-only)
+  (elisp-eval!
+   (scheme->elisp
+    '(let*((specs '((a 1) (b 2)))
+           (form `(declare . ,specs))
+           )
+       (list `(progn ',form nil) nil 'compile-only)
+       ))))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Testing the debugger
