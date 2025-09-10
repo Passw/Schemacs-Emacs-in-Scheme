@@ -465,8 +465,7 @@
                       ))
                )
            (cond
-            (hook
-             (%elisp-apply func args-list (view func =>lambda-location*!)))
+            (func (%elisp-apply func args-list (view func =>lambda-location*!)))
             (else (eval-error "void variable" hook)))
            ))
        (define (second hook)
@@ -566,17 +565,18 @@
 ;; state before actually computing that step of the evaluation.
 
 (define-record-type <interpreter-type>
-  (make<interpreter> apply eval on-args on-body wrap new-frame)
+  (make<interpreter> apply eval eval-qq on-args on-body wrap new-frame)
   interpreter-type?
   (apply       interpret-apply       set!interpret-apply)
   (eval        interpret-eval        set!interpret-eval)
+  (eval-qq     interpret-eval-qq     set!interpret-eval-qq)
   (on-args     interpret-args        set!interpret-args)
   (on-body     interpret-body        set!interpret-body)
   (wrap        interpret-wrap        set!interpret-wrap)
   (new-frame   interpret-new-frame   set!interpret-new-frame)
   )
 
-(define (new-interpreter) (make<interpreter> #f #f #f #f #f #f))
+(define (new-interpreter) (make<interpreter> #f #f #f #f #f #f #f))
 
 ;;====================================================================
 ;; The interpreting evaluator. Matches patterns on the program and
@@ -684,49 +684,52 @@
           (sym  (if (lambda-type? head) 'lambda head))
           (loc  (or loc (and (lambda-type? func) (view func =>lambda-location*!))))
           )
-      (env-trace!
-       loc sym func st eval-error
-       (lambda ()
-         (cond
-          ((syntax-type?  func)
-           (apply (syntax-eval func) head arg-exprs))
-          ((lambda-type?  func)
+      (cond
+       ((elisp-eval-error-type? func) (eval-raise func))
+       (else
+        (env-trace!
+         loc sym func st eval-error
+         (lambda ()
            (cond
-            ((macro-type? func)
-             ((interpret-eval interp)
-              ((interpret-new-frame interp) func arg-exprs)
-              (env-get-location func)
-              ))
-            (else
-             ((interpret-new-frame interp) func ((interpret-args interp) arg-exprs))
-             )))
-          ((command-type? func)
-           (apply (command-procedure func) ((interpret-args interp) arg-exprs))
-           )
-          ((procedure?    func)
-           (apply func ((interpret-args interp) arg-exprs))
-           )
-          ((pair?         func)
-           (match func
-             (('lambda arg-exprs body ...)
-              (let ((func (apply (syntax-eval elisp-lambda) func)))
-                ((interpret-new-frame interp)
-                 (defun-make-lambda 'lambda (%unpack arg-exprs) body)
-                 ((interpret-args interp) arg-exprs))
+            ((syntax-type?  func)
+             (apply (syntax-eval func) head arg-exprs))
+            ((lambda-type?  func)
+             (cond
+              ((macro-type? func)
+               ((interpret-eval interp)
+                ((interpret-new-frame interp) func arg-exprs)
+                (env-get-location func)
                 ))
-             (('macro . func)
-              (cond
-               ((lambda-type? func)
-                ((interpret-eval interp)
-                 ((interpret-new-frame interp) func arg-exprs)
-                 (env-get-location func)
+              (else
+               ((interpret-new-frame interp) func ((interpret-args interp) arg-exprs))
+               )))
+            ((command-type? func)
+             (apply (command-procedure func) ((interpret-args interp) arg-exprs))
+             )
+            ((procedure?    func)
+             (apply func ((interpret-args interp) arg-exprs))
+             )
+            ((pair?         func)
+             (match func
+               (('lambda arg-exprs body ...)
+                (let ((func (apply (syntax-eval elisp-lambda) func)))
+                  ((interpret-new-frame interp)
+                   (defun-make-lambda 'lambda (%unpack arg-exprs) body)
+                   ((interpret-args interp) arg-exprs))
+                  ))
+               (('macro . func)
+                (cond
+                 ((lambda-type? func)
+                  ((interpret-eval interp)
+                   ((interpret-new-frame interp) func arg-exprs)
+                   (env-get-location func)
+                   ))
+                 (else (eval-error "Invalid macro" 'expected 'lambda 'actual func))
                  ))
-               (else (eval-error "invalid macro" 'expected 'lambda 'actual func))
+               (any (eval-error "Invalid function" func))
                ))
-             (any (eval-error "invalid function" func))
-             ))
-          (else (eval-error "invalid function" head))
-          ))))))
+            (else (eval-error "Invalid function" head))
+            ))))))))
 
 
 (define (i-eval-form interp)
@@ -758,7 +761,7 @@
         ((elisp-quote-scheme-type? literal)
          (cond
           ((elisp-backquoted-form? literal)
-           (eval-backquote (elisp-unquote-scheme literal))
+           (car ((interpret-eval-qq interp) (elisp-unquote-scheme literal)))
            )
           (else (elisp-unquote-scheme literal))
           ))
@@ -812,10 +815,69 @@
         ))))
 
 
+(define (i-eval-backquote interp)
+  (lambda (expr)
+    (let expr-loop ((expr expr))
+      (define (splice-loop elems resume)
+        (cond
+         ((null? elems) (expr-loop resume))
+         ((pair? elems)
+          (cons
+           (car elems)
+           (splice-loop (cdr elems) resume)
+           ))
+         (else (cons elems (expr-loop resume)))
+         ))
+      (define (next result remaining)
+        (if remaining (cons result (expr-loop remaining)) result))
+      (define (single expr remaining)
+        (cond
+         ((elisp-form-type? expr)
+          (next (expr-loop (elisp-form->list expr)) remaining)
+          )
+         ((elisp-quote-scheme-type? expr)
+          (next
+           (elisp-quote-scheme
+            (expr-loop (elisp-unquote-scheme expr))
+            (elisp-backquoted-form? expr)
+            )
+           remaining
+           ))
+         ((elisp-unquoted-form-type? expr)
+          (let*((form (elisp-unquoted-get-form expr))
+                (loc (env-get-location form))
+                (splice-elems ((interpret-eval interp) form loc))
+                )
+            (cond
+             ((elisp-spliced-form? expr)
+              (splice-loop splice-elems remaining)
+              )
+             (else (next splice-elems remaining))
+             )))
+         (else (cons expr (expr-loop exprs)))
+         ))
+      (match expr
+        (() '())
+        ((('|,| unq) remaining ...)
+         (cons
+          ((interpret-eval interp) (expr-loop unq) (env-get-location unq))
+          (expr-loop remaining)
+          ))
+        ((('|,@| splice) remaining ...)
+         (splice-loop
+          ((interpret-eval interp) (expr-loop splice) (env-get-location splice))
+          remaining
+          ))
+        ((expr remaining ...) (single expr remaining))
+        (expr (single expr #f))
+        ))))
+
+
 (define ordinary-interpreter
   (let ((i (new-interpreter)))
     (set!interpret-apply      i (i-%elisp-apply                 i))
     (set!interpret-eval       i (i-eval-form                    i))
+    (set!interpret-eval-qq    i (i-eval-backquote               i))
     (set!interpret-args       i (i-eval-args-list               i))
     (set!interpret-body       i (i-eval-progn-body              i))
     (set!interpret-wrap       i (i-scheme-lambda->elisp-lambda  i))
@@ -943,9 +1005,6 @@
                   ))
             (do-skip (and depth (> depth skip-mode)))
             )
-        ;;(display "; :cont-mode ") (write cont-mode);;DEBUG
-        ;;(display " :do-skip ") (write do-skip);;DEBUG
-        ;;(display " :on-break ") (write on-break) (newline);;DEBUG
         (cond
          ((and (or cont-mode do-skip) (not on-break))
           ((i-%elisp-apply i) head arg-exprs loc)
@@ -968,6 +1027,7 @@
         (st (new-debugger-state i))
         )
     (set!interpret-eval       i (%debug-eval  st))
+    (set!interpret-eval-qq    i (i-eval-backquote i))
     (set!interpret-apply      i (%debug-apply st))
     (set!interpret-args       i (i-eval-args-list i))
     (set!interpret-body       i (i-eval-progn-body i))
@@ -1142,6 +1202,9 @@
 
 (define (push-stack-frame-eval-body . args)
   (apply (interpret-new-frame (*current-interpreter*)) args))
+
+(define (eval-backquote . args)
+  (apply (i-eval-backquote (*current-interpreter*)) args))
 
 (define eval-form
   (case-lambda
@@ -2412,57 +2475,14 @@
        (any any)
        ))))
 
-(define (eval-backquote . exprs)
-  (match exprs
-    ((exprs)
-     (let expr-loop ((exprs (%unpack exprs)))
-       (define (splice-loop elems resume)
-         (cond
-          ((null? elems) (expr-loop resume))
-          ((pair? elems)
-           (cons
-            (car elems)
-            (splice-loop (cdr elems) resume)
-            ))
-          (else (cons elems (expr-loop resume)))
-          ))
-       (match exprs
-         (() '())
-         ((('|,| unq) exprs ...)
-          (cons (eval-form (expr-loop unq)) (expr-loop exprs))
-          )
-         ((('|,@| splice) exprs ...)
-          (splice-loop (eval-form (expr-loop splice)) exprs)
-          )
-         (((sub-exprs ...) exprs ...)
-          (cons (expr-loop sub-exprs) (expr-loop exprs))
-          )
-         ((elem exprs ...)
-          (cond
-           ((elisp-form-type? elem)
-            (cons
-             (expr-loop (elisp-form->list #t elem))
-             (expr-loop exprs)
-             ))
-           ((elisp-unquoted-form-type? elem)
-            (cond
-             ((elisp-spliced-form? elem)
-              (splice-loop (eval-form (elisp-unquoted-get-form elem)) exprs)
-              )
-             (else
-              (cons
-               (eval-form (elisp-unquoted-get-form elem))
-               (expr-loop exprs)
-               ))))
-           (else (cons elem (expr-loop exprs)))
-           ))
-         (elem elem)
-         )))
-   (any (eval-error "wrong number of arguments" "backquote" any))
-   ))
-
 (define elisp-backquote
-  (make<syntax> (lambda exprs (apply eval-backquote (cdr exprs)))))
+  (make<syntax>
+   (lambda exprs
+     (match (cdr exprs)
+       (() '())
+       ((expr) (eval-backquote expr))
+       ((exprs ...) (eval-backquote exprs))
+       ))))
 
 (define *macroexpand-max-depth* 16)
 
