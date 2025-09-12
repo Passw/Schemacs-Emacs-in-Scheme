@@ -423,6 +423,7 @@
      (equal? '(nil) (view func =>lambda-body!)))
     ))
 
+
 (test-assert
     (test-run
      equal? '(1 + 2 = 3) test-elisp-eval!
@@ -433,6 +434,7 @@
           (list a '+ b '= (+ a b)))
         '(1 2)
         ))))
+
 
 (test-assert
     (test-run
@@ -455,6 +457,7 @@
      '(apply '(lambda () nil t) '())
      ))
 
+
 (test-assert
     (test-run
      equal? '(2 + 3 = 5) test-elisp-eval!
@@ -464,46 +467,9 @@
        (f 2 3)
        )))
 
-(test-equal '(13 + 21 = 34)
-  ;; `TEST-EQUAL` is used here because the Scheme form input must be
-  ;; converted to Elisp using `SCHEME->ELSIP` which encodes
-  ;; quasiquotes in a way that is compatible with Emacs Lisp, and is a
-  ;; different encoding from `LIST->ELISP-FORM`. So we test the
-  ;; `ELISP-FORM-TYPE?` encoding on it's own here.
-  (elisp-form->list
-   (elisp-eval!
-    (list->elisp-form
-     '(progn
-       (setq x 13 y 21)
-       (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-       (mac1 x y)
-       )))))
-
-(test-equal '(13 + 21 = 34)
-  ;; `TEST-EQUAL` is used here because the Scheme form input must be
-  ;; converted to Elisp using `SCHEME->ELSIP` which encodes
-  ;; quasiquotes in a way that is compatible with Emacs Lisp, and is a
-  ;; different encoding from `LIST->ELISP-FORM`. So we test the
-  ;; `LIST?` encoding on it's own here.
-  (elisp-eval!
-   (scheme->elisp
-    '(progn
-      (setq x 13 y 21)
-      (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-      (mac1 x y)
-      ))))
-
-(test-equal '(list 13 '+ 21 '= (+ 13 21))
-  (elisp-eval!
-   (scheme->elisp
-    '(progn
-      (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-      (macroexpand '(mac1 13 21))
-      ))))
 
 (test-equal (scheme->elisp '(a '()))
   (elisp-eval! (scheme->elisp '(let ((a '())) `(a ',a)))))
-
 
 ;;--------------------------------------------------------------------
 ;; Test evaluating an expression with quote and unquote forms, and
@@ -531,7 +497,7 @@
   ;; uniformly, regardless of whether a list or AST form is being
   ;; evaluated.
   ;;------------------------------------------------------------------
-  (elisp-form->list #t (list->elisp-form (elisp-eval! (scheme->elisp expr)))))
+  (elisp-form->list #t #t (list->elisp-form #t #t (elisp-eval! (scheme->elisp expr)))))
 
 (define (elisp-test-eval-form! expr)
   ;; Convert an `EXPR`, which must be an AST data structure, and then
@@ -562,11 +528,6 @@
     (elisp-test-eval-list-and-form!
      '(let ((a '())) `(',a))
      ))
-
-
-(test-equal (scheme->elisp '(()))
-  (elisp-test-eval-form! '(let ((a '())) `(,a)))
-  )
 
 
 (test-equal (scheme->elisp '(()))

@@ -831,6 +831,7 @@
       (define (next result remaining)
         (if remaining (cons result (expr-loop remaining)) result))
       (define (single expr remaining)
+        (unless expr (error "backquoted null expression"))
         (cond
          ((elisp-form-type? expr)
           (next (expr-loop (elisp-form->list expr)) remaining)
@@ -854,7 +855,8 @@
               )
              (else (next splice-elems remaining))
              )))
-         (else (cons expr (expr-loop exprs)))
+         (remaining (cons expr (expr-loop remaining)))
+         (else expr)
          ))
       (match expr
         (() '())
@@ -868,6 +870,9 @@
           ((interpret-eval interp) (expr-loop splice) (env-get-location splice))
           remaining
           ))
+        (((sub-expr ...) remaining ...)
+         (next (expr-loop sub-expr) remaining)
+         )
         ((expr remaining ...) (single expr remaining))
         (expr (single expr #f))
         ))))
