@@ -740,9 +740,11 @@
   ;; a 5th argument, the Emacs Lisp environment object, defaulting to
   ;; the content of `*THE-ENVIRONMENT*`.
   ;;------------------------------------------------------------------
-  (env-push-trace! st loc sym on-err func)
-  (let ((result (run))) (env-pop-trace! st) result)
-  )
+  (dynamic-wind
+    (lambda () (env-push-trace! st loc sym on-err func))
+    run
+    (lambda () (env-pop-trace! st))
+    ))
 
 
 (define (env-get-stack-trace env)

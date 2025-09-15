@@ -987,7 +987,7 @@
               (lambda ()
                 (let ((return ((i-eval-form i) form loc)))
                   (set!debugger-last-value debug-state return)
-                  (resume return)
+                  return
                   )))
              ((debugger-pause debug-state) #t)
              ))))))))
@@ -1021,7 +1021,7 @@
               (lambda ()
                 (let ((return ((i-%elisp-apply i) head arg-exprs loc)))
                   (set!debugger-last-value debug-state return)
-                  (resume return)
+                  return
                   )))
              ((debugger-pause debug-state) #t)
              ))))))))
