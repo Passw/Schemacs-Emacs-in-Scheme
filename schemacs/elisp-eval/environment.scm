@@ -1107,9 +1107,9 @@
      ((pair? val)
       (let ((head (car val)))
         (case head
-         ((|`|)  (cons 'quasiquote (tail (cdr val))))
-         ((|,|)  (cons 'unquote    (tail (cdr val))))
-         ((|,@|) (cons 'unquote-splicing (tail (cdr val))))
+         ((|`|)  (cons 'quasiquote (cdr val)))
+         ((|,|)  (cons 'unquote    (cdr val)))
+         ((|,@|) (cons 'unquote-splicing (cdr val)))
          (else val)
          )))
      (else val)
