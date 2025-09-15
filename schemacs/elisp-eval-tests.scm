@@ -553,10 +553,10 @@
     ))
 
 (define (ds)
-  (elisp-debug-show-form debug-expr)
-  (let ((result (elisp-debug-step! debug-expr)))
-    (elisp-debug-show-result debug-expr)
-    result
+  (dynamic-wind
+    (lambda () (elisp-debug-show-form debug-expr))
+    (lambda () (elisp-debug-step! debug-expr))
+    (lambda () (elisp-debug-show-result debug-expr))
     ))
 
 
@@ -605,14 +605,12 @@
         (cond
          ((not more) (reverse log))
          (else
-           ;; FIXME: logging doesn't work consistently due to use of
-           ;; continuations.
           (set! log (cons log-item log))
           (loop (+ 1 step))
           ))))))
 
 
-(define (compare-debug-eval form . expected)
+(define (compare-debug-eval form expected)
   (define (write-remaining elems)
     (cond
      ((null? elems) #f)
@@ -647,6 +645,7 @@
         (display "Unexpected debugger output.") (newline)
         (display "  expected: ") (write (car expected)) (newline)
         (display "    actual: ") (write (car results)) (newline)
+        #f
         ))))))
 
 
@@ -655,27 +654,47 @@
      (+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)
      ))
 
-(test-equal
-    (capture-debug-eval debugger-test-form)
-  '((0 "(let ((a 3) (b 6)) (+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11))\n" #f)
-    (1 "3\n" 3)
-    (2 "6\n" 6)
-    (3 "(+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)\n" 6)
-    (4 "1\n" 1)
-    (5 "2\n" 2)
-    (6 "(+ a 4)\n" 2)
-    (7 "a\n" 3)
-    (8 "4\n" 7)
-    (9 "(+ 5 b (* 7 8))\n" 7)
-    (10 "5\n" 5)
-    (11 "b\n" 6)
-    (12 "(* 7 8)\n" 6)
-    (13 "7\n" 7)
-    (14 "8\n" 67)
-    (15 "(* 9 10)\n" 67)
-    (16 "9\n" 9)
-    (17 "10\n" 90)
-    ))
+(test-assert
+    (compare-debug-eval
+     debugger-test-form
+     '((0 "(let ((a 3) (b 6)) (+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11))\n" #f)
+       (1 "3\n" 3)
+       (2 "3\n" 3)
+       (3 "6\n" 6)
+       (4 "6\n" 6)
+       (5 "(+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)\n" #f)
+       (6 "1\n" 1)
+       (7 "1\n" 1)
+       (8 "2\n" 2)
+       (9 "2\n" 2)
+       (10 "(+ a 4)\n" #f)
+       (11 "a\n" 3)
+       (12 "a\n" 3)
+       (13 "4\n" 4)
+       (14 "4\n" 7)
+       (15 "(+ a 4)\n" 7)
+       (16 "(+ 5 b (* 7 8))\n" #f)
+       (17 "5\n" 5)
+       (18 "5\n" 5)
+       (19 "b\n" 6)
+       (20 "b\n" 6)
+       (21 "(* 7 8)\n" #f)
+       (22 "7\n" 7)
+       (23 "7\n" 7)
+       (24 "8\n" 8)
+       (25 "8\n" 56)
+       (26 "(* 7 8)\n" 67)
+       (27 "(+ 5 b (* 7 8))\n" 67)
+       (28 "(* 9 10)\n" #f)
+       (29 "9\n" 9)
+       (30 "9\n" 9)
+       (31 "10\n" 10)
+       (32 "10\n" 90)
+       (33 "(* 9 10)\n" 90)
+       (34 "11\n" 11)
+       (35 "11\n" 178)
+       (36 "(+ 1 2 (+ a 4) (+ 5 b (* 7 8)) (* 9 10) 11)\n" 178)
+       )))
 
 (test-equal 178
   (let ((dbg (elisp-debug-eval debugger-test-form)))
@@ -683,7 +702,7 @@
     (view dbg =>debugger-last-value*!)
     ))
 
-(test-equal 178
+(test-equal 3
   (let ((dbg (elisp-debug-eval debugger-test-form)))
     (elisp-debug-set-break! dbg 'b)
     (elisp-debug-set-break! dbg 'a)

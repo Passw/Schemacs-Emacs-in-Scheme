@@ -57,6 +57,7 @@
           elisp-unquoted-get-form
           elisp-form-type?  square-bracketed-form?
           elisp-form-start-loc  elisp-function-get-ref
+          elisp-form-tokens
           )
     (only (schemacs elisp-eval environment)
           pure  pure*  pure*-typed  pure*-numbers  pure-raw

@@ -159,14 +159,18 @@
 (define (%elisp-eval! expr env)
   (define (run)
     (call/cc
-      (lambda (halt-eval)
-        (let ((handler (new-elisp-error-handler env halt-eval))
-              (raise-impl (new-elisp-raise-impl env halt-eval))
-              )
-          (parameterize ((raise-error-impl* raise-impl))
-            (with-exception-handler handler
-              (lambda () (eval-form expr (env-get-location expr)))
-              ))))))
+     (lambda (halt-eval)
+       (let*((handler (new-elisp-error-handler env halt-eval))
+             (raise-impl (new-elisp-raise-impl env halt-eval))
+             (return
+              (parameterize ((raise-error-impl* raise-impl))
+                (with-exception-handler handler
+                  (lambda () (eval-form expr (env-get-location expr)))
+                  ))))
+         (cond
+          ((elisp-eval-error-type? return) (raise-impl return))
+          (else return)
+          )))))
   (define (run-with-mode new-lxmode)
     (let*((env (*the-environment*))
           (old-lxmode (view env =>env-lexical-mode?!))
@@ -963,65 +967,46 @@
   (make<debugger-state> interp #f #f #f #f #f #f #f '()))
 
 
+(define (form-head form)
+  (and
+   (elisp-form-type? form)
+   (let*((vec (elisp-form-tokens form))
+         (len (vector-length vec))
+         (sym (if (> len 0) (vector-ref vec 0) #f))
+         )
+     (if (symbol? sym) sym #f)
+     )))
+
+
 (define (%debug-eval debug-state)
   (let ((i (debugger-interpreter debug-state)))
     (lambda (form loc)
-      (set!debugger-current-form debug-state form)
       (let*((cont-mode (debugger-continue-mode debug-state))
+            (sym (or (and (symbol? form) form)
+                     (and (pair? form) (symbol? (car form)) (car form))
+                     (form-head form)
+                     ))
             (on-break
-             (and (symbol? form)
+             (and sym
                   (member
-                   (ensure-string form)
+                   (ensure-string sym)
                    (debugger-breakpoints debug-state)
                    ))))
         (cond
-         ((or (and cont-mode (not on-break))
-              (pair? form) (elisp-form-type? form) ;;let `apply` pause on these
-              )
-          ((i-eval-form i) form loc)
-          )
+         ((and cont-mode (not on-break)) ((i-eval-form i) form loc))
          (else
+          (set!debugger-current-form debug-state form)
           (call/cc
            (lambda (resume)
-             (set!debugger-stepper debug-state
+             (set!debugger-stepper
+              debug-state
               (lambda ()
-                (let ((return ((i-eval-form i) form loc)))
+                (set!debugger-last-value debug-state #f)
+                (let*((return ((i-eval-form i) form loc)))
                   (set!debugger-last-value debug-state return)
-                  return
-                  )))
-             ((debugger-pause debug-state) #t)
-             ))))))))
-
-
-(define (%debug-apply debug-state)
-  ;; Evaluates what was previously stored into the
-  ;; `DEBUGGER-CURRENT-FORM` field, stores the result of evaluation
-  ;; into `DEBUGGER-LAST-VALUE`, and places the given form (`HEAD`,
-  ;; `ARG-EXPRS`) into the `DEBUGGER-CURRENT-FORM` field.
-  ;;------------------------------------------------------------------
-  (let ((i (debugger-interpreter debug-state)))
-    (lambda (head arg-exprs loc)
-      (let*((cont-mode (debugger-continue-mode debug-state))
-            (on-break  (member head (debugger-breakpoints debug-state)))
-            (skip-mode (debugger-skip-mode debug-state))
-            (depth
-             (and (integer? skip-mode)
-                  (view (*the-environment*) =>env-trace-depth*!)
-                  ))
-            (do-skip (and depth (> depth skip-mode)))
-            )
-        (cond
-         ((and (or cont-mode do-skip) (not on-break))
-          ((i-%elisp-apply i) head arg-exprs loc)
-          )
-         (else
-          (call/cc
-           (lambda (resume)
-             (set!debugger-stepper debug-state
-              (lambda ()
-                (let ((return ((i-%elisp-apply i) head arg-exprs loc)))
-                  (set!debugger-last-value debug-state return)
-                  return
+                  (set!debugger-current-form debug-state form)
+                  (set!debugger-stepper debug-state (lambda () (resume return)))
+                  ((debugger-pause debug-state) #t)
                   )))
              ((debugger-pause debug-state) #t)
              ))))))))
@@ -1033,18 +1018,12 @@
         )
     (set!interpret-eval       i (%debug-eval  st))
     (set!interpret-eval-qq    i (i-eval-backquote i))
-    (set!interpret-apply      i (%debug-apply st))
+    (set!interpret-apply      i (i-%elisp-apply i))
     (set!interpret-args       i (i-eval-args-list i))
     (set!interpret-body       i (i-eval-progn-body i))
     (set!interpret-wrap       i (i-scheme-lambda->elisp-lambda i))
     (set!interpret-new-frame  i (i-push-stack-frame-eval-body i))
-    (set!debugger-stepper st
-     (lambda ()
-       (let ((form (debugger-current-form st)))
-         ((%debug-eval st) form (env-get-location form))
-         (set!debugger-stepper st #f)
-         ;; return `#f` to indicate stepping cannot continue.
-         #f)))
+    (set!debugger-stepper st #t)
     st))
 
 
@@ -1055,16 +1034,25 @@
         (i   (debugger-interpreter debug-state))
         )
     (cond
-     ((not stepper) #f)
+     ((eq? stepper #f) #f)
+     ((eq? stepper #t)
+      (call/cc
+       (lambda (pause)
+         (set!debugger-pause debug-state pause)
+         (let*((form   (debugger-current-form debug-state))
+               (return ((%debug-eval debug-state) form (env-get-location form)))
+               )
+           (set!debugger-last-value debug-state return)
+           (set!debugger-stepper debug-state #f)
+           #f
+           ))))
      (else
       (parameterize ((*current-interpreter* i))
         (call/cc
          (lambda (pause)
            (set!debugger-pause debug-state pause)
-           (let ((result (stepper)))
-             (set!debugger-continue-mode debug-state #f)
-             result
-             ))))))))
+           (stepper)
+           )))))))
 
 
 (define (elisp-debug-view-step! debug-state)
@@ -1073,10 +1061,10 @@
   ;; not return in which case the returned value from the previous
   ;; evaluation step is shown again.
   ;;------------------------------------------------------------------
-  (write-elisp-form (view debug-state =>debugger-current-form*!)) (newline)
-  (let ((more (elisp-debug-step! debug-state)))
-    (write-elisp-form (view debug-state =>debugger-last-value*!)) (newline)
-    more
+  (dynamic-wind
+    (lambda () (write-elisp-form (view debug-state =>debugger-current-form*!)) (newline))
+    (lambda () (elisp-debug-step! debug-state))
+    (lambda () (write-elisp-form (view debug-state =>debugger-last-value*!)) (newline))
     ))
 
 
