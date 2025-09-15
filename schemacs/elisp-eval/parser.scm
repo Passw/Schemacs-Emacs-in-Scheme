@@ -787,62 +787,141 @@
        elem
        ))
 
+(define (t-dec  maxdepth) (or (eq? maxdepth #t) (- maxdepth  1)))
 
 (define list->elisp-form
+  ;; Convert a Scheme list data structure to an Emacs Lisp AST. Can be
+  ;; applied arguments according to the following patterns.
+  ;;
+  ;; - (list->elisp-form listdata)
+  ;; - (list->elisp-form types listdata)
+  ;; - (list->elisp-form depth types listdata)
+  ;;
+  ;; Detail of each of the arguments:
+  ;;
+  ;; - `listdata` :: the Scheme list data structure to convert. You
+  ;;   can construct the list in any way, but typically it is done
+  ;;   using a quoted form `'(display (+ 1 2))` or a quasiquoted form
+  ;;   `\``(display (+ ,a ,b))`.
+  ;;
+  ;; - `types` :: can be one of the following symbols:
+  ;;
+  ;;   - `'forms`  :: converts only forms
+  ;;   - `'quotes` :: converts only quoted and quasi-quoted forms
+  ;;   - `'all`    :: converts both 'forms and 'quotes
+  ;;
+  ;; - `depth` :: maximum depth of the structure to which to
+  ;;   recurse. Pass `#t` for no depth limit.
+  ;;------------------------------------------------------------------
   (case-lambda
-    ((elems) (list->elisp-form 32 elems))
-    ((prealloc elems)
-     (cond
-      ((pair? elems)
-       (let ((next (car elems)))
-         (define (pack)
-           (let ((buffer (new-mutable-vector prealloc)))
-             (let loop ((elems elems))
-               (cond
-                ((pair? elems)
-                 (let ((next (car elems)))
-                   (mutable-vector-append!
-                    buffer
-                    (cond
-                     ((pair? next)
-                      (list->elisp-form prealloc next)
-                      )
-                     (else next)
-                     ))
-                   (loop (cdr elems))
-                   ))
-                ((null? elems)
-                 (make<elisp-form>
-                  (mutable-vector->vector buffer)
-                  #f #f #f #f #f
-                  ))
-                (else
-                 (make<elisp-form>
-                  (mutable-vector->vector buffer)
-                  elems #f #f #f #f
-                  ))))))
+    ((elem) (list->elisp-form #t elem))
+    ((types elem) (list->elisp-form #t types elem))
+    ((depth types elem)
+     (let*((do-forms  (or (eq? types #t) (eq? types 'forms)  (eq? types 'all)))
+           (do-quotes (or (eq? types #t) (eq? types 'quotes) (eq? types 'all)))
+           (maxdepth
+            (or (and (eq? #f depth) 1)
+                (and (eq? #t depth) #t)
+                (and (integer? depth) depth)
+                )))
+       (define pack-form
          (cond
-          ((symbol? next)
-           (let*((mktail
-                  (lambda ()
-                    (cond
-                     ((null? (cddr elems))
-                      (list->elisp-form (cadr elems))
-                      )
-                     (else
-                      (error "invalid quote syntax" next (cdr elems))
-                      )))))
-             (case next
-               ((quote) (elisp-quote-scheme (mktail) #f))
-               ((quasiquote) (elisp-quote-scheme (mktail) #t))
-               ((unquote) (elisp-unquoted-form (mktail) #f))
-               ((unquote-splicing) (elisp-unquoted-form (mktail) #t))
-               (else (pack))
+          (do-forms
+           (lambda (loop maxdepth elems) ;; elems MUST be a list
+             (let*((prealloc 0)
+                   (final   #f)
+                   (elems
+                    (let list-loop ((elems elems))
+                      (cond
+                       ((null? elems) '())
+                       ((pair? elems)
+                        (set! prealloc (+ 1 prealloc))
+                        (cons (loop (t-dec maxdepth) (car elems))
+                              (list-loop (cdr elems))
+                              ))
+                       (else
+                        ;; If CDR of the final pair is not an empty
+                        ;; list expand it, see if it is a list.
+                        (let final-loop ((pre-final (loop (t-dec maxdepth) elems)))
+                          (cond
+                           ((null? pre-final) '())
+                           ((pair? pre-final)
+                            (set! prealloc (+ 1 prealloc))
+                            (cons (car pre-final)
+                                  (final-loop (cdr pre-final))
+                                  ))
+                           (else (set! final elems) '())
+                           )))
+                       )))
+                   (buffer (make-vector prealloc))
+                   )
+               (let vec-loop ((i 0) (elems elems))
+                 (cond
+                  ((pair? elems)
+                   (vector-set! buffer i (car elems))
+                   (vec-loop (+ 1 i) (cdr elems))
+                   )
+                  ((null? elems)
+                   (make<elisp-form> buffer final #f #f #f #f)
+                   )
+                  (else
+                   (error "non-canonical elements at end of list" elems)
+                   ))))))
+          (else (lambda (loop maxdepth elems) elems))
+          ))
+       (define pack-quote
+         (if do-quotes
+             (lambda (loop maxdepth head tail)
+               (let*((mktail
+                      (lambda ()
+                        (cond ;; allows either (quote . elem) or (quote elem . '())
+                         ((not (or (null? tail) (pair? tail)))
+                          (loop maxdepth tail)
+                          )
+                         ((null? (cdr tail))
+                          (loop maxdepth (car tail))
+                          )
+                         (else
+                          (error "quote form must have exactly 1 argument" head tail)
+                          )))))
+                 (case head
+                   ((quote)            (elisp-quote-scheme  (mktail) #f))
+                   ((quasiquote)       (elisp-quote-scheme  (mktail) #t))
+                   ((unquote)          (elisp-unquoted-form (mktail) #f))
+                   ((unquote-splicing) (elisp-unquoted-form (mktail) #t))
+                   ((function) (make<elisp-function-ref> #f (mktail)))
+                   (else (pack-form loop maxdepth (cons head tail)))
+                   )))
+             (lambda (loop maxdepth head tail)
+               (pack-form loop maxdepth (cons head tail))
                )))
-          (else (pack))
-          )))
-      (else elems)
-      ))))
+       (let loop ((maxdepth maxdepth) (elem elem))
+         (cond
+          ((not (or (eq? maxdepth #t) (>= 1 maxdepth))) elem)
+          ((pair? elem)
+           (pack-quote loop (t-dec maxdepth) (car elem) (cdr elem))
+           )
+          ((elisp-form-type? elem)
+           (let ((final (elisp-form-dot-element elem)))
+             (cond
+              ((or (eq? maxdepth #t) (< 2 maxdepth)
+                   (pair? final) (elisp-form-type? final))
+               (pack-form loop (t-dec maxdepth) (elisp-form->list types 1 elem))
+               )
+              (else elem)
+              )))
+          ((elisp-quote-scheme-type? elem)
+           (elisp-quote-scheme
+            (loop (t-dec maxdepth) (elisp-unquote-scheme elem))
+            (elisp-backquoted-form? elem)
+            ))
+          ((elisp-unquoted-form-type? elem)
+           (elisp-unquoted-form
+            (loop (t-dec maxdepth) (elisp-unquoted-get-form elem))
+            (elisp-spliced-form? elem)
+            ))
+          (else elem)
+          ))))))
 
 
 (define elisp-form->list
@@ -850,41 +929,116 @@
   ;; as possible, this procedure will by default only convert the
   ;; top-most form to a list, the elements of the form will remain as
   ;; forms. If you want a recursive conversion, pass `#T` as the first
-  ;; argument to this procedure.
+  ;; argument to this procedure, or an integer indicating the maximum
+  ;; recursion depth, and the form as the second argument, like so:
+  ;;
+  ;;     (elisp-form->list #f form) ;; depth limit of 1 (default)
+  ;;     (elisp-form->list #t form) ;; no depth limit
+  ;;     (elisp-form->list  3 form) ;; depth limit of 3
+  ;;
+  ;; This function can also take three arguments, where the first
+  ;; argument is a type symbol indicates the type of AST form to
+  ;; convert, and the second two arguments are the same as described
+  ;; above in the case of only two arguments. If this first argument
+  ;; is not given, the default conversion is 'forms only, for example:
+  ;;
+  ;;     (elisp-form->list 'forms 3 form) ;; only AST form types, maximum depth of 3
+  ;;
+  ;; The possible type symbols include:
+  ;;
+  ;; - 'forms  :: converts only forms
+  ;; - 'quotes :: converts only quoted and quasi-quoted forms
+  ;; - 'all    :: converts both 'forms and 'quotes
   ;;------------------------------------------------------------------
   (case-lambda
-    ((form) (elisp-form->list #f form))
-    ((recursive form)
+    ((form) (elisp-form->list 'all 1 form))
+    ((types form)
      (cond
-      ((elisp-form-type? form)
-       (let*((vec (elisp-form-tokens form))
-             (len (vector-length vec))
-             (final (elisp-form-dot-element form))
-             )
-         (let loop ((i 0))
-           (cond
-            ((< i len)
-             (cons
-              (let ((elem (vector-ref vec i)))
-                (if recursive (elisp-form->list recursive elem) elem)
-                )
-              (loop (+ 1 i))
-              ))
-            (final final)
-            (else '())
-            ))))
-      ((elisp-quote-scheme-type? form)
-       (elisp-quote-scheme
-        (elisp-form->list recursive (elisp-unquote-scheme form))
-        (elisp-backquoted-form? form)
-        ))
-      ((elisp-function-ref-type? form)
-       (make<elisp-function-ref>
-        (elisp-function-ref-loc form)
-        (elisp-form->list recursive (elisp-function-get-ref form))
-        ))
-      (else form)
-      ))))
+      ((symbol?  types) (elisp-form->list types  #t form))
+      ;; if "types" is actually a boolean or integer, it is not type but "maxdepth"
+      ((or (boolean? types) (integer? types))
+       (elisp-form->list #t  types form)
+       )
+      (else
+       (error "must be boolean, integer, or one of symbols: 'forms 'quotes 'all" types)
+       )))
+    ((types maxdepth form)
+     (let*((do-forms  (or (eq? types #t) (eq? types 'forms)  (eq? types 'all)))
+           (do-quotes (or (eq? types #t) (eq? types 'quotes) (eq? types 'all)))
+           (maxdepth
+            (or (and (integer? maxdepth) maxdepth)
+                (and (eq? maxdepth #f) 1)
+                (eq? maxdepth #t)
+                (error "maxdepth must be an integer or boolean" maxdepth)
+                )))
+       (let loop ((maxdepth maxdepth) (form form))
+         (cond
+          ((and (integer? maxdepth) (< 1 maxdepth)) form)
+          ((elisp-form-type? form)
+           (let*((vec (elisp-form-tokens form))
+                 (len (vector-length vec))
+                 (result
+                  (let vec-loop ((i 0))
+                    (cond
+                     ((< i len)
+                      (cons
+                       (let ((elem (vector-ref vec i)))
+                         (if do-forms (loop (t-dec maxdepth) elem) elem)
+                         )
+                       (vec-loop (+ 1 i))
+                       ))
+                     (else '())
+                     )))
+                 (final
+                  (loop (t-dec maxdepth)
+                        (elisp-form-dot-element form)
+                        )))
+             (if do-forms result
+                 (make<elisp-form>
+                  (let ((vec (make-vector len)))
+                    (let vec-loop ((i 0) (result result))
+                      (cond
+                       ((< i len)
+                        (vector-set! vec i (car result))
+                        (vec-loop (+ 1 i) (cdr result))
+                        )
+                       (else vec)
+                       )))
+                  (loop (t-dec maxdepth) final)
+                  (elisp-form-delim form)
+                  (elisp-form-locations form)
+                  (elisp-form-start-loc form)
+                  (elisp-form-end-loc form)
+                  ))))
+          ((elisp-quote-scheme-type? form)
+           (let ((result
+                  (loop (t-dec maxdepth)
+                        (elisp-unquote-scheme form)
+                        )))
+             (cond
+              (do-quotes
+               (list
+                (if (elisp-backquoted-form? form) 'quasiquote 'quote)
+                result
+                ))
+              (else
+               (elisp-quote-scheme
+                result
+                (elisp-backquoted-form? form)
+                )))))
+          ((elisp-function-ref-type? form)
+           (let ((result
+                  (loop (t-dec maxdepth)
+                        (elisp-function-get-ref form)
+                        )))
+             (if do-quotes
+                 (list 'function result)
+                 (make<elisp-function-ref>
+                  (elisp-function-ref-loc form)
+                  result
+                  ))))
+          (else form)
+          ))))))
 
 
 (define (elisp-form-equal? a b)

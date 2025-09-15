@@ -253,6 +253,27 @@
       "1234 (+ 1.1 -1.0 990e-2) \"Hello, \\\"world\\\"!\\n\""
       )))
 
+(define (test-list-form-conversion a)
+  (let*((b (list->elisp-form 'all a))
+        (c (elisp-form->list 'all b))
+        (d (list->elisp-form 'all c))
+        )
+    (and (elisp-form-equal? b d)
+         (equal? a c))
+    ))
+
+(test-assert
+    (and
+     (test-list-form-conversion '('a))
+     (test-list-form-conversion '('(a)))
+     (test-list-form-conversion `('a))
+     (test-list-form-conversion `('(a)))
+     (test-list-form-conversion '(`a))
+     (test-list-form-conversion '(`(a)))
+     ))
+
+
+
 (test-assert (run-parser-tests all-parser-test-cases))
 
 (test-assert

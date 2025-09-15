@@ -408,6 +408,9 @@
     '(quasiquote
       ((+ ,(+ 1 2) ,(+ 2 3)) = ,(+ 1 2 2 3))))))
 
+(test-equal '(a (quote ()))
+  (elisp->scheme (scheme->elisp '(a (quote ())))))
+
 ;;--------------------------------------------------------------------------------------------------
 ;; `LAMBDA`, `DEFUN`, `APPLY`, and `FUNCALL` tests.
 
@@ -420,6 +423,7 @@
      (equal? '(nil) (view func =>lambda-body!)))
     ))
 
+
 (test-assert
     (test-run
      equal? '(1 + 2 = 3) test-elisp-eval!
@@ -430,6 +434,7 @@
           (list a '+ b '= (+ a b)))
         '(1 2)
         ))))
+
 
 (test-assert
     (test-run
@@ -452,6 +457,7 @@
      '(apply '(lambda () nil t) '())
      ))
 
+
 (test-assert
     (test-run
      equal? '(2 + 3 = 5) test-elisp-eval!
@@ -461,54 +467,98 @@
        (f 2 3)
        )))
 
-(test-equal '(13 + 21 = 34)
-  ;; `TEST-EQUAL` is used here because the Scheme form input must be
-  ;; converted to Elisp using `SCHEME->ELSIP` which encodes
-  ;; quasiquotes in a way that is compatible with Emacs Lisp, and is a
-  ;; different encoding from `LIST->ELISP-FORM`. So we test the
-  ;; `ELISP-FORM-TYPE?` encoding on it's own here.
-  (elisp-form->list
-   (elisp-eval!
-    (list->elisp-form
-     '(progn
-       (setq x 13 y 21)
-       (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-       (mac1 x y)
-       )))))
 
-(test-equal '(13 + 21 = 34)
-  ;; `TEST-EQUAL` is used here because the Scheme form input must be
-  ;; converted to Elisp using `SCHEME->ELSIP` which encodes
-  ;; quasiquotes in a way that is compatible with Emacs Lisp, and is a
-  ;; different encoding from `LIST->ELISP-FORM`. So we test the
-  ;; `LIST?` encoding on it's own here.
-  (elisp-eval!
-   (scheme->elisp
-    '(progn
-      (setq x 13 y 21)
-      (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-      (mac1 x y)
-      ))))
+(test-equal (scheme->elisp '(a '()))
+  (elisp-eval! (scheme->elisp '(let ((a '())) `(a ',a)))))
 
-(test-equal '(list 13 '+ 21 '= (+ 13 21))
-  (elisp-eval!
-   (scheme->elisp
-    '(progn
-      (defmacro mac1 (a b) `(list ,a '+ ,b '= (+ ,a ,b)))
-      (macroexpand '(mac1 13 21))
-      ))))
+;;--------------------------------------------------------------------
+;; Test evaluating an expression with quote and unquote forms, and
+;; specifically whether evaluating the expression in the form of a
+;; list data structure and evaluating the expression in the form of an
+;; AST data structure produces the same result.
 
-(test-equal '((progn '(declare (a 1) (b 2)) ()) () compile-only)
-  (elisp-eval!
-   (scheme->elisp
-    '(let*((specs '((a 1) (b 2)))
-           (form `(declare . ,specs))
-           )
-       (list `(progn ',form nil) nil 'compile-only)
-       ))))
+(define (elisp-test-eval-list! expr)
+  ;; Evaluate an `EXPR`, which must be a list data structure, and then
+  ;; convert it's result to an AST data structure and then back to a
+  ;; list. The reason this procedure is necessary is because the
+  ;; `ELISP-EVAL!` procedure DOES NOT output unquoted forms as:
+  ;;
+  ;;   `(list '|,| ...)`
+  ;;
+  ;; and DOES NOT output quoted forms as:
+  ;;
+  ;;   `(list 'quote (list ...))`
+  ;;
+  ;; So to ensure that `EQUAL?` can correctly test equality between
+  ;; the two results, the result of evaluation needs to be converted
+  ;; to a form then back to a list to ensure that
+  ;; `<ELISP-QUOTE-SCHEME-TYPE>` and `<ELISP-UNQUOTED-FORM-TYPE>`
+  ;; record types are used to represent quoted and unquoted forms
+  ;; uniformly, regardless of whether a list or AST form is being
+  ;; evaluated.
+  ;;------------------------------------------------------------------
+  (elisp-form->list #t #t (list->elisp-form #t #t (elisp-eval! (scheme->elisp expr)))))
+
+(define (elisp-test-eval-form! expr)
+  ;; Convert an `EXPR`, which must be an AST data structure, and then
+  ;; convert the result to a list.
+  ;;------------------------------------------------------------------
+  (elisp-eval! (list->elisp-form expr)))
+
+(define (elisp-test-eval-list-and-form! expr)
+  ;; Evaluate an `EXPR`, which must be a list data structure, using
+  ;; both `ELISP-TEST-EVAL-FORM!` and `ELISP-TEST-EVAL-LIST!` and
+  ;; check that the results are the same. This ensures there is no
+  ;; difference between evaluating lists and AST forms.
+  ;;------------------------------------------------------------------
+  (let*((a (elisp-test-eval-list! expr))
+        (b (elisp-test-eval-form! expr))
+        (ok (equal? (elisp-test-eval-list! expr) ))
+        )
+    (cond
+     (ok #t)
+     (else
+      (display "; ERROR: evaluation of list and AST form produces different results:\n")
+      (display "; as a list: ") (write a) (newline)
+      (display "; as a form: ") (write b) (newline)
+      #f))))
+
+
+(test-assert
+    (elisp-test-eval-list-and-form!
+     '(let ((a '())) `(',a))
+     ))
+
+
+(test-equal (scheme->elisp '(()))
+  (elisp-test-eval-list! '(let ((a '())) `(,a)))
+  )
+
+
+(test-assert
+    (elisp-test-eval-list-and-form!
+     '(let ((a 1) (b 2)) `('(,a) '(,b)))
+     ))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Testing the debugger
+
+(define debug-expr #f)
+
+(define (debug-start expr)
+  (let ((expr (list->elisp-form expr)))
+    (set! debug-expr (elisp-debug-eval expr))
+    (write-elisp-form expr)
+    (newline)
+    ))
+
+(define (ds)
+  (elisp-debug-show-form debug-expr)
+  (let ((result (elisp-debug-step! debug-expr)))
+    (elisp-debug-show-result debug-expr)
+    result
+    ))
+
 
 (define (capture-debug-step dbg writer)
   (let*((outport (open-output-string))
@@ -928,21 +978,21 @@ top: glo = top
 (test-assert
   (test-elisp-eval!
    '(progn
-      (defvar ramin-hook-test 0 "test hook functions")
-      (defun ramin-hook-success+1 (&optional n)
+      (defvar hook-test-var 0 "test hook functions")
+      (defun test-hook-success+1 (&optional n)
         (unless n (setq n 1))
-        (setq ramin-hook-test (+ n ramin-hook-test))
+           (setq hook-test-var (+ n hook-test-var))
         t)
-      (defun ramin-hook-failure+1 (&optional n)
+      (defun test-hook-failure+1 (&optional n)
         (unless n (setq n 1))
-        (setq ramin-hook-test (+ n ramin-hook-test))
+           (setq hook-test-var (+ n hook-test-var))
         nil)
-      (defvar ramin-hook-A 'ramin-hook-success+1)
-      (defvar ramin-hook-B 'ramin-hook-failure+1)
-      (defvar ramin-hook-ABA
-        '(ramin-hook-success+1 ramin-hook-failure+1 ramin-hook-success+1))
-      (defvar ramin-hook-BAB
-        '(ramin-hook-failure+1 ramin-hook-success+1 ramin-hook-failure+1))
+      (defvar test-hook-A 'test-hook-success+1)
+      (defvar test-hook-B 'test-hook-failure+1)
+      (defvar test-hook-ABA
+        '(test-hook-success+1 test-hook-failure+1 test-hook-success+1))
+      (defvar test-hook-BAB
+        '(test-hook-failure+1 test-hook-success+1 test-hook-failure+1))
       t)
    ))
 
@@ -950,18 +1000,18 @@ top: glo = top
     (test-run
      eqv? 1 test-elisp-eval!
      '(progn
-       (setq ramin-hook-test 0)
-       (run-hooks 'ramin-hook-A)
-       ramin-hook-test
+       (setq hook-test-var 0)
+       (run-hooks 'test-hook-A)
+       hook-test-var
        )))
 
 (test-assert
     (test-run
      eqv? 8 test-elisp-eval!
      '(progn
-       (setq ramin-hook-test 0)
-       (run-hooks 'ramin-hook-ABA 'ramin-hook-B 'ramin-hook-BAB 'ramin-hook-A)
-       ramin-hook-test
+       (setq hook-test-var 0)
+       (run-hooks 'test-hook-ABA 'test-hook-B 'test-hook-BAB 'test-hook-A)
+       hook-test-var
        )))
 
 (test-assert
@@ -976,14 +1026,14 @@ top: glo = top
      ;; levels of indirection, and the first level of indirection *must*
      ;; resolve to either a symbol or a list of symbols.
      '(progn
-       (setq ramin-hook-test 0)
+       (setq hook-test-var 0)
        (run-hooks
-        ramin-hook-B
-        ramin-hook-A
-        'ramin-hook-success+1
-        'ramin-hook-failure+1
+        test-hook-B
+        test-hook-A
+        'test-hook-success+1
+        'test-hook-failure+1
         )
-       ramin-hook-test
+       hook-test-var
        )))
 
 (test-assert
@@ -991,18 +1041,18 @@ top: glo = top
      equal? '(4 3) test-elisp-eval!
      '(list
        (progn
-        (setq ramin-hook-test 0)
-        (run-hook-with-args-until-failure 'ramin-hook-A)
-        (run-hook-with-args-until-failure 'ramin-hook-B)
-        (run-hook-with-args-until-failure 'ramin-hook-ABA)
-        ramin-hook-test
+        (setq hook-test-var 0)
+        (run-hook-with-args-until-failure 'test-hook-A)
+        (run-hook-with-args-until-failure 'test-hook-B)
+        (run-hook-with-args-until-failure 'test-hook-ABA)
+        hook-test-var
         )
        (progn
-        (setq ramin-hook-test 0)
-        (run-hook-with-args-until-failure 'ramin-hook-A)
-        (run-hook-with-args-until-failure 'ramin-hook-B)
-        (run-hook-with-args-until-failure 'ramin-hook-BAB)
-        ramin-hook-test
+        (setq hook-test-var 0)
+        (run-hook-with-args-until-failure 'test-hook-A)
+        (run-hook-with-args-until-failure 'test-hook-B)
+        (run-hook-with-args-until-failure 'test-hook-BAB)
+        hook-test-var
         ))))
 
 (test-assert
@@ -1010,18 +1060,18 @@ top: glo = top
      equal? '(3 4) test-elisp-eval!
      '(list
        (progn
-        (setq ramin-hook-test 0)
-        (run-hook-with-args-until-success 'ramin-hook-A)
-        (run-hook-with-args-until-success 'ramin-hook-B)
-        (run-hook-with-args-until-success 'ramin-hook-ABA)
-        ramin-hook-test
+        (setq hook-test-var 0)
+        (run-hook-with-args-until-success 'test-hook-A)
+        (run-hook-with-args-until-success 'test-hook-B)
+        (run-hook-with-args-until-success 'test-hook-ABA)
+        hook-test-var
         )
        (progn
-        (setq ramin-hook-test 0)
-        (run-hook-with-args-until-success 'ramin-hook-A)
-        (run-hook-with-args-until-success 'ramin-hook-B)
-        (run-hook-with-args-until-success 'ramin-hook-BAB)
-        ramin-hook-test
+        (setq hook-test-var 0)
+        (run-hook-with-args-until-success 'test-hook-A)
+        (run-hook-with-args-until-success 'test-hook-B)
+        (run-hook-with-args-until-success 'test-hook-BAB)
+        hook-test-var
         ))))
 
 ;;--------------------------------------------------------------------------------------------------

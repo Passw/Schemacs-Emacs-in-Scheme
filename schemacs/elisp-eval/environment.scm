@@ -968,8 +968,9 @@
   (let ((head
          (cond
           ((sym-type? head) head)
+          ((lambda-type? head) head)
           ((symbol? head) (env-sym-lookup st (symbol->string head)))
-          (else head)))
+          (else (eval-error "Invalid function" head))))
         )
     (cond
      ((sym-type? head) (sym-function head))
@@ -1101,14 +1102,14 @@
 
 
 (define (elisp->scheme val)
-  (define (replace-elem elem)
+  (define (replace-elem val)
     (cond
      ((pair? val)
-      (let ((head (car val)) (tail (cdr val)))
+      (let ((head (car val)))
         (case head
-         ((|`|)  (cons 'quasiquote tail))
-         ((|,|)  (cons 'unquote    tail))
-         ((|,@|) (cons 'unquote-splicing tail))
+         ((|`|)  (cons 'quasiquote (tail (cdr val))))
+         ((|,|)  (cons 'unquote    (tail (cdr val))))
+         ((|,@|) (cons 'unquote-splicing (tail (cdr val))))
          (else val)
          )))
      (else val)
