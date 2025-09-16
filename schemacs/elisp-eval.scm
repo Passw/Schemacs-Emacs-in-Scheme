@@ -651,19 +651,18 @@
   ;; the type of the `FUNC` argument that is applied (whether it be a
   ;; Scheme procedure or an Elisp Lambda), the result is a procedure
   ;; that takes Elisp values and returns Elisp values.
-  ;; ------------------------------------------------------------------
+  ;;------------------------------------------------------------------
   (lambda (func)
     (lambda args
       (cond
        ((lambda-type? func)
         (cond
          ((eq? 'macro (view func =>lambda-kind*!))
-          ((interpret-new-frame interp) func args)
+          ((interpret-eval interp) ((interpret-new-frame interp) func args))
           )
          (else
-          ((interpret-apply interp)
-           func args (view func =>lambda-location*!)
-           ))))
+          ((interpret-new-frame interp) func args)
+          )))
        ((procedure? func)
         (scheme->elisp (apply func (map elisp->scheme args)))
         )
@@ -1650,7 +1649,6 @@
 
 
 (define (eval-defalias sym-expr val-expr docstr)
-  (display "; defalias ") (write sym-expr) (newline);;DEBUG
   (let*((st (*the-environment*))
         (sym (eval-ensure-interned (eval-form sym-expr)))
         (val (eval-form val-expr))
@@ -2006,6 +2004,7 @@
          (else arg)
          )))
      ((is-lambda? arg) (make-lambda arg))
+     ((procedure? arg) arg)
      (else
       (eval-error "wrong type argument" arg 'expecting "function")
       ))))
@@ -2312,8 +2311,16 @@
                    (loop (cdr seq))))
             (else (eval-error "wrong type argument" "mapcar" 'expected "listp" seq))
             )))
-        ((elisp-form-type? seq) (loop (elisp-form->list seq)))
-        ((vector? seq) (seq (vector->list seq)))
+        ((elisp-form-type? seq) (loop (elisp-form-tokens seq)))
+        ((vector? seq)
+         (let ((len (vector-length seq)))
+           (let loop ((i 0))
+             (cond
+              ((< i len)
+               (cons ((scheme-lambda->elisp-lambda func) (vector-ref seq i))
+                     (loop (+ 1 i))))
+              (else '())
+              ))))
         (else (eval-error "wrong type argument" "mapcar" 'expected "listp" seq))
         )))
     (any (eval-error "wrong number of arguments" "mapcar" 'expected 2 any))

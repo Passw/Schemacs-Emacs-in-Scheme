@@ -456,6 +456,11 @@
      equal? #t  test-elisp-eval!
      '(apply '(lambda () nil t) '())
      ))
+(test-assert
+    (test-run
+     equal? '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8))
+     test-elisp-eval!
+     '(apply (function list) '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8)))))
 
 
 (test-assert
@@ -1139,6 +1144,11 @@ top: glo = top
 
 (test-equal '(#t #t #t #t #t)
   (test-elisp-eval! '(mapcar (function symbolp) '(zero one two three four))))
+
+(test-equal '((+ 1 1) (+ 1 2) (+ 2 3) (+ 3 5) (+ 5 8))
+  (test-elisp-eval!
+   '(mapcar (lambda (x) x) '((+ 1 1) (+ 1 2) (+ 2 3) (+ 3 5) (+ 5 8)))
+   ))
 
 (test-equal '()
   (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four)))))
