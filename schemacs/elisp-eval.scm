@@ -2366,6 +2366,27 @@
 (define elisp-memq   (eval-member "memq"   eval-eq))
 (define elisp-member (eval-member "member" eval-equal))
 
+(define (eval-assq name select)
+  (lambda args
+    (match args
+      ((key alist)
+       (let loop ((alist alist))
+         (cond
+          ((null? alist) '())
+          ((pair? alist)
+           (let ((head (car alist)))
+             (cond
+              ((and (pair? head) (eval-eq key (select head))) head)
+              (else (loop (cdr alist)))
+              )))
+          (else (eval-error "wrong type argument" 'expected "list" 'got alist))
+          )))
+      (any (eval-error "wrong number of arguments" name 'expected 2 'got (length args)))
+      )))
+
+(define elisp-assq (eval-assq "assq" car))
+(define elisp-rassq (eval-assq "rassq" cdr))
+
 ;;--------------------------------------------------------------------------------------------------
 ;; Formatting, output, and errors
 
@@ -2635,6 +2656,8 @@
      (mapcar   . ,elisp-mapcar)
      (memq     . ,elisp-memq)
      (member   . ,elisp-member)
+     (assq     . ,elisp-assq)
+     (rassq    . ,elisp-rassq)
 
      ,(type-predicate 'null      elisp-null?)
      ,(type-predicate 'consp     elisp-pair?)

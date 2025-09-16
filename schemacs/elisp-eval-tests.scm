@@ -1157,6 +1157,14 @@ top: glo = top
 (test-assert (test-elisp-eval! '(memq 'b '(a b c))))
 (test-assert (test-elisp-eval! '(memv 'b '(a b c))))
 
+(define named-numbers ''((zero . 0) (one . 1) (two . 2) (three . 3) (four . 4)))
+
+(test-equal '(zero . 0) (test-elisp-eval! (scheme->elisp `(assq 'zero ,named-numbers))))
+(test-equal '(four . 4) (test-elisp-eval! (scheme->elisp `(assq 'four ,named-numbers))))
+(test-equal '(zero . 0) (test-elisp-eval! (scheme->elisp `(rassq 0 ,named-numbers))))
+(test-equal '(four . 4) (test-elisp-eval! (scheme->elisp `(rassq 4 ,named-numbers))))
+
+
 ;;--------------------------------------------------------------------------------------------------
 
 (test-end "schemacs_elisp_eval_tests")
