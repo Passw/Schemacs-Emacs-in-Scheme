@@ -552,11 +552,12 @@
     (newline)
     ))
 
+
 (define (ds)
-  (dynamic-wind
-    (lambda () (elisp-debug-show-form debug-expr))
-    (lambda () (elisp-debug-step! debug-expr))
-    (lambda () (elisp-debug-show-result debug-expr))
+  (elisp-debug-show-form debug-expr)
+  (let ((return (elisp-debug-step! debug-expr)))
+    (elisp-debug-show-result debug-expr)
+    return
     ))
 
 

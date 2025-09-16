@@ -50,6 +50,7 @@
           parse-state  =>parse-state-filepath*!
           elisp-form->list  elisp-form->vector
           write-parser-location  write-elisp-form
+          write-location-form-newline
           elisp-parse-state-type?  elisp-function-ref-type?
           elisp-quote-scheme  elisp-unquote-scheme
           elisp-quote-scheme-type?  elisp-backquoted-form?
@@ -57,7 +58,7 @@
           elisp-unquoted-get-form
           elisp-form-type?  square-bracketed-form?
           elisp-form-start-loc  elisp-function-get-ref
-          elisp-form-tokens
+          elisp-form-tokens  elisp-form-locations
           )
     (only (schemacs elisp-eval environment)
           pure  pure*  pure*-typed  pure*-numbers  pure-raw

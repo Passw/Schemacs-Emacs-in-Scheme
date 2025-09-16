@@ -251,54 +251,60 @@
 
 (define elisp-load!
   (case-lambda
-    ((filepath)
-     (elisp-load! filepath (*the-environment*))
-     )
+    ((filepath) (elisp-load! filepath #f))
     ((filepath env)
      (let*((name "load-file-name")
            (port (open-input-file filepath))
            )
-       (define (setq-load-file-name val)
-         (lens-set val env
-          (=>env-obarray-key! name)
-          (=>sym-value! name))
+       (define (run env)
+         (define (setq-load-file-name val)
+           (lens-set val env
+            (=>env-obarray-key! name)
+            (=>sym-value! name)
+            ))
+         (call-with-port port
+           (lambda (port)
+             (setq-load-file-name filepath)
+             (let*((parst
+                    (let ((parst (parse-state port)))
+                      (lens-set filepath parst =>parse-state-filepath*!)
+                      parst
+                      ))
+                   (old-dialect (view env =>env-lexical-mode?!))
+                   (dialect (select-elisp-dialect! parst))
+                   (env
+                    (lens-set
+                     (case dialect
+                       ((dynamic-binding) #f)
+                       (else #t))
+                     env =>env-lexical-mode?!
+                     ))
+                   (result
+                    (call/cc
+                     (lambda (halt-eval)
+                       (let ((handler (new-elisp-error-handler env halt-eval))
+                             (raise-impl (new-elisp-raise-impl env halt-eval))
+                             )
+                         (parameterize ((raise-error-impl* raise-impl))
+                           (with-exception-handler handler
+                             (lambda ()
+                               (eval-iterate-forms env parst
+                                (lambda (form)
+                                  (eval-form form (env-get-location form))
+                                  )))))))))
+                   )
+               (exec-run-hooks 'after-load-functions (list filepath))
+               (setq-load-file-name nil)
+               (lens-set old-dialect env =>env-lexical-mode?!)
+               result
+               ))))
+       (cond
+        ((elisp-environment-type? env)
+         (parameterize ((*the-environment* env)) (run env))
          )
-       (call-with-port port
-         (lambda (port)
-           (setq-load-file-name filepath)
-           (let*((parst
-                  (let ((parst (parse-state port)))
-                    (lens-set filepath parst =>parse-state-filepath*!)
-                    parst
-                    ))
-                 (old-dialect (view env =>env-lexical-mode?!))
-                 (dialect (select-elisp-dialect! parst))
-                 (env
-                  (lens-set
-                   (case dialect
-                     ((dynamic-binding) #f)
-                     (else #t))
-                   env =>env-lexical-mode?!
-                   ))
-                 (result
-                  (call/cc
-                   (lambda (halt-eval)
-                     (let ((handler (new-elisp-error-handler env halt-eval))
-                           (raise-impl (new-elisp-raise-impl env halt-eval))
-                           )
-                       (parameterize ((raise-error-impl* raise-impl))
-                         (with-exception-handler handler
-                           (lambda ()
-                             (eval-iterate-forms env parst
-                              (lambda (form)
-                                (%elisp-eval! form env)
-                                )))))))))
-                 )
-             (exec-run-hooks 'after-load-functions (list filepath))
-             (setq-load-file-name nil)
-             (lens-set old-dialect env =>env-lexical-mode?!)
-             result
-             )))))))
+        ((not env) (run (*the-environment*)))
+        (else (error "expecting environment type" env))
+        )))))
 
 
 (define subfeature-key "subfeature")
@@ -724,11 +730,14 @@
                (('macro . func)
                 (cond
                  ((lambda-type? func)
-                  ((interpret-eval interp)
-                   ((interpret-new-frame interp) func arg-exprs)
-                   (env-get-location func)
-                   ))
-                 (else (eval-error "Invalid macro" 'expected 'lambda 'actual func))
+                  (let ((interim ((interpret-new-frame interp) func arg-exprs)))
+                    ((interpret-eval interp)
+                     interim
+                     (env-get-location func)
+                     )))
+                 (else
+                  (eval-error "Invalid macro" 'expected 'lambda 'actual func)
+                  )
                  ))
                (any (eval-error "Invalid function" func))
                ))
@@ -947,9 +956,15 @@
      (elisp-debug-show-form debug-state (current-output-port))
      )
     ((debug-state port)
-     (write-elisp-form (debugger-current-form debug-state) port)
-     (newline port)
-     )))
+     (let ((form (debugger-current-form debug-state)))
+       (cond
+        ((and (elisp-form-type? form) (elisp-form-locations form))
+         (write-location-form-newline form port)
+         )
+        (else
+         (write-elisp-form form port)
+         (newline port)
+         ))))))
 
 
 (define elisp-debug-show-result
@@ -1635,6 +1650,7 @@
 
 
 (define (eval-defalias sym-expr val-expr docstr)
+  (display "; defalias ") (write sym-expr) (newline);;DEBUG
   (let*((st (*the-environment*))
         (sym (eval-ensure-interned (eval-form sym-expr)))
         (val (eval-form val-expr))
