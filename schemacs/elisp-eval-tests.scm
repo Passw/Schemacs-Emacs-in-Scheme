@@ -306,6 +306,16 @@
         (list a b c d)
         )))
 
+;; Test whether closures can properly capture variables
+(test-assert
+    (test-run
+     equal? 6 test-elisp-eval!
+     '(progn
+       (defun test-closure-capture (a b)
+         (let ((f (lambda (c) (+ a b c))))
+           (apply f '(1))))
+       (test-closure-capture 2 3))))
+
 ;;--------------------------------------------------------------------------------------------------
 ;; Test `SETQ`, `LET`, and `LET*` special forms.
 
