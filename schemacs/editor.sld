@@ -20,12 +20,12 @@
     (only (schemacs editor command)
           command-type? command-procedure
           new-command show-command apply-command)
-    (prefix (schemacs elisp-eval) schemacs:)
+    (only (schemacs eval) eval-string)
     (prefix (schemacs keymap) km:)
     (prefix (schemacs editor-impl) *impl/)
     (only (schemacs editor-impl)
           make<cell-factory>
-          factor-make-cell
+          factory-make-cell
           factory-set!cell-value
           )
     (only (schemacs pretty)

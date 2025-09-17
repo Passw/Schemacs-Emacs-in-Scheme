@@ -17,6 +17,8 @@
 
   (export
    cell-factory*
+   make<cell-factory> is<cell-factory-type>?
+   factory-make-cell factory-set!cell-value
    new-buffer-view*
    delete-char*
    new-mode-line-view*

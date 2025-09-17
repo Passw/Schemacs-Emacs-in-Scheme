@@ -76,14 +76,10 @@
        (cond
         ((not cmd) #f)
         ((not c) #f)
-        ((procedure? cmd)
-         (cmd window c)
-         #t)
-        ((command-type? cmd)
-         ((command-procedure cmd) window c)
-         #t)
-        (else (error "*self-insert-command* does not contain a procedure" cmd)))    
-       ))))
+        ((procedure?    cmd) (cmd window c) #t)
+        ((command-type? cmd) ((command-procedure cmd) window c) #t)
+        (else (error "*self-insert-command* does not contain a procedure" cmd))
+        )))))
 
 
 (define self-insert-command
@@ -175,10 +171,9 @@ buffer of the current window."))
   (record-unit-lens buffer-view set!buffer-view '=>buffer-view))
 
 (define (insert string-or-char)
-  (let*((window (selected-window))
-        (buffer (window-buffer window))
-        )
-    ((*impl/insert-into-buffer*) buffer string-or-char)))
+  (let ((buffer (window-buffer (selected-window))))
+    ((*impl/insert-into-buffer*) buffer string-or-char)
+    ))
 
 (define delete-char
   (new-command
@@ -666,15 +661,15 @@ To disable this, set option 'delete-active-region' to nil."
    ((not init-window) #f)
    (else (error "argument 1 to new-frame not a window" init-window))))
 
+
 (define select-window
   (case-lambda
     ((window) (select-window window #f))
     ((window norecord)
-     ;; TODO: if norecord is #f record this selection action into some kind of history object.
      (display ";;select-window ")(write (view window =>window-buffer =>buffer-handle))(newline);;DEBUG
-     ((*impl/select-window*) window))
+     ((*impl/select-window*) window)
      (lens-set window (selected-frame) =>winframe-window)
-    ))
+     )))
 
 ;; -------------------------------------------------------------------------------------------------
 
@@ -899,7 +894,7 @@ To disable this, set option 'delete-active-region' to nil."
           )
       (cond
        ((not state)
-        ((*unbound-key-index*) window key-path))
+        ((*unbound-key-index*) (selected-window) key-path))
        ((km:modal-lookup-state-type? state)
         (let ((is-waiting
                (km:modal-lookup-state-step!
@@ -934,11 +929,11 @@ To disable this, set option 'delete-active-region' to nil."
         )
     (display-in-echo-area winframe str)))
 
-(define (is-buffer-changed? win)
+(define (is-buffer-changed? window)
   ;; Takes a window, calls *IMPL/IS-BUFFER-modified?* on the buffer
   ;; that the window is currently displaying
   ;; ------------------------------------------------------------------
-  ((*impl/is-buffer-modified?*) (view win =>window-buffer)))
+  ((*impl/is-buffer-modified?*) (view window =>window-buffer)))
 
 ;; TODO: when constructing the editor, frames, windows, and buffers,
 ;; make the construction happen in two passes. First, the record data
@@ -1063,7 +1058,7 @@ To disable this, set option 'delete-active-region' to nil."
                  (with-exception-handler (lambda (caught) (halt caught))
                    (lambda ()
                      (call-with-values
-                         (lambda () (schemacs:eval-string input-string))
+                         (lambda () (eval-string input-string))
                        (lambda args args)))))))))
            (output-string
             (cond
