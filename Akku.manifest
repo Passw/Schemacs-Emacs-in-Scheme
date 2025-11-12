@@ -8,9 +8,10 @@
    "  - written in portable R7RS Scheme, should run on any compliant Scheme implementation."
    "  - able to run your init.el, run Emacs software pulled from ELPA."
    "  - use Emacs Regression Tests (ERT) from GNU Emacs to ensure compatibility."
-   "  - encourage the use of the Scheme programming language to develop apps and text editing workflows."
-   )
+   "  - encourage the use of the Scheme programming language to develop apps and text editing workflows.")
   (authors "Ramin Honary")
   (license "AGPL-3.0-or-later")
-  (depends ("akku-r7rs" "^1.0.1"))
-)
+  (depends
+   ("akku-r7rs" "^1.0.1")
+   ((chibi match) "^0.9.1")
+   ))

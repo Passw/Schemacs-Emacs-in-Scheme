@@ -75,6 +75,13 @@
          (string-append (path-directory path) "/"))
        (define list-directory-files directory-files)))
 
+    (chicken
+     (import
+       (chicken file)
+       (chicken process-context)
+       (filepath)
+       ))
+
     (else)
     )
 
@@ -89,6 +96,7 @@
          (define opendir opendir)
          (define closedir closedir)
          (define readdir readdir)
+         (define (pathname->dirname path) (string-append (dirname path) "/"))
          ))
 
       (gauche
@@ -159,8 +167,16 @@
 
       (chibi)
 
+      (chicken
+       (define list-directory-files directory)
+       (define (pathname->dirname path)
+         (string-append (filepath:take-directory path) "/")
+         )
+       )
+
       (else
-        (error "(slib directory) not supported for current R7RS Scheme implementation")))
+        (error "(slib directory) not supported for current R7RS Scheme implementation")
+        ))
 
     (cond-expand
       (guile

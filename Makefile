@@ -38,7 +38,7 @@ SEARCH_PATHS := . \
 ######################################################################
 # building
 
-.PHONY: all
+.PHONY: all  schemacs-run-gauche  schemacs-run-chibi  gauche-repl  chibi-repl
 
 all:
 	@echo '###<--- BUILD PROFILE NOT SPECIFIED --->###'
@@ -59,7 +59,16 @@ schemacs-stklos: $(SCHEME_LIBRARIES)
 	stklos -l "./build.scm";
 
 schemacs-chicken: $(SCHEME_LIBRARIES)
-	csc -R r7rs $(SCHEME_LIBRARIES)
+	@eggsists() { chicken-status -c "$$1" | grep -lq -F "$$1"; }; \
+	if ! ( eggsists r7rs && \
+	       eggsists matchable && \
+	       eggsists filepath \
+	     ) \
+	  then { \
+	    echo "Warning: must install eggs: r7rs, matchable, filepath"; \
+	    chicken-install -s r7rs matchable filepath; \
+	  } fi;
+	csc -X r7rs -R r7rs -R matchable -R filepath -sJ -I '$(PWD)' $(SCHEME_LIBRARIES)
 
 schemacs-chez: $(SCHEME_LIBRARIES)
 	akku install && \
@@ -68,6 +77,23 @@ schemacs-chez: $(SCHEME_LIBRARIES)
 	    --compile-imported-libraries \
 	    --libdirs ./.akku/lib \
 
+schemacs-run-gauche:
+	gosh -r7 -I'$(PWD)' -e '(load "./elisp-tests.scm")'
+
+schemacs-run-chibi:
+	chibi-scheme -e '(load "./elisp-tests.scm")'
+
+gauche-repl:
+	gosh -r7 -I'$(PWD)'
+
+chibi-repl:
+	chibi-scheme
+
+guile-repl:
+	guile --r7rs -L '$(PWD)'
+
+chez-repl:
+	chezscheme --libdirs ./.akku/lib
 
 ######################################################################
 # Cleaning
