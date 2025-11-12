@@ -76,8 +76,144 @@
        (define list-directory-files directory-files)))
 
     (else)
-
     )
 
-  (include "directory.scm")
-  )
+  (begin
+    ;; functions must be defined in platform specific ways
+
+    (cond-expand
+      (guile
+       (begin
+         (define current-directory getcwd)
+         (define make-directory mkdir)
+         (define opendir opendir)
+         (define closedir closedir)
+         (define readdir readdir)
+         ))
+
+      (gauche
+        (begin
+          ; current-directory exported
+          (define (make-directory str) (current-directory str))
+          (define (pathname->dirname path)
+            (let-values (((dir name ext) (decompose-path path)))
+                        dir))
+          (define list-directory-files directory-list)))
+
+      (kawa
+        (import (only (kawa lib files) create-directory path-directory)
+                (only (kawa lib ports) current-path)
+                (only (kawa base) as invoke))
+        (begin
+          (define current-directory current-path)
+          (define make-directory create-directory)
+          (define (pathname->dirname path)
+            (let* ((dir (path-directory path))
+                   (chars (reverse (string->list dir))))
+              (if (and (not (null? chars))
+                       (char=? #\. (car chars))) ; Kawa sometimes adds a 'dot' to end, so remove it
+                (list->string (reverse (cdr chars)))
+                dir)))
+          (define (list-directory-files dir)
+            (map (lambda (file) ; list-directory-files must return just the filenames
+                   (let ((path (invoke file 'toString)))
+                     (string-copy path (string-length (pathname->dirname path)))))
+                 (invoke (java.io.File (as String dir)) 'listFiles)))))
+
+      (larceny
+        (import (primitives current-directory list-directory)
+                (only (srfi 59) pathname->vicinity))
+        (begin
+          ; current-directory exported
+          (define (make-directory str) (system (string-append "mkdir " str)))
+          (define pathname->dirname pathname->vicinity)
+          (define list-directory-files list-directory)))
+
+      (sagittarius
+        (import (sagittarius)
+                (util file)
+                (only (srfi 1) filter))
+        (begin
+          ; current-directory exported
+          (define (make-directory str) (create-directory str))
+          (define (pathname->dirname path)
+            (let-values (((dir file ext) (decompose-path path)))
+                        (if (string? dir)
+                          dir
+                          "")))
+          (define (list-directory-files dir)
+            (filter file-regular? (read-directory dir)))))
+
+
+      (mit
+       (begin
+        (define current-directory pwd)
+        (define pathname->dirname pathname-directory)
+        (define list-directory-files directory-read)
+        ))
+
+      (stklos
+       (begin
+         (define pathname->dirname dirname)
+         ))
+
+      (chibi)
+
+      (else
+        (error "(slib directory) not supported for current R7RS Scheme implementation")))
+
+    (cond-expand
+      (guile
+       ;; Where possible, iterating over directories with
+       ;; `DIRECTORY-FOR-EACH` is done lazily so as not to load all
+       ;; directory entries into memory before iterating. On most
+       ;; platforms, this also indicates to the operating system that the
+       ;; directory is being used by this process while it iterates over
+       ;; entries.
+
+       (begin
+         (define directory-for-each
+           (case-lambda
+             ((proc dirname) (directory-for-each proc dirname identity))
+             ((proc dirname pred)
+              (let ((stream (opendir dirname)))
+                (let loop ()
+                  (let ((next (readdir stream)))
+                    (cond
+                     ((eof-object? next) (closedir stream) (values))
+                     ((pred next) (proc next) (loop))
+                     (else (loop))
+                     ))))
+              ))))
+       )
+
+      (else
+       ;; The default implementation of `DIRECTORY-FOR-EACH` iterates over
+       ;; a list of directory entry strings that were all collected into
+       ;; memory by the `LIST-DIRECTORY-FILES` procedure (which is not
+       ;; exported).
+
+       (begin
+         (define directory-for-each
+           (case-lambda
+             ((proc dir) (directory-for-each proc dir identity))
+             ((proc dir given-selector)
+              (let ((selector (cond ((null? given-selector) identity)
+                                    ((procedure? given-selector) given-selector)
+                                    ((string? given-selector) (filename:match?? given-selector))
+                                    (else (error "Invalid selector for directory-for-each")))))
+                (for-each (lambda (filename) (when (selector filename) (proc filename)))
+                          (list-directory-files dir)))))))
+       ))
+
+
+    (begin
+      (define (directory*-for-each proc path-glob)
+        (let* ((dir (pathname->dirname path-glob))
+               (glob (string-copy path-glob (string-length dir))))
+          (directory-for-each proc
+                              (if (equal? "" dir) "." dir)
+                              glob))))
+
+    ;;----------------------------------------------------------------
+    ))
