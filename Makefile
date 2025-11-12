@@ -48,7 +48,7 @@ schemacs-mitscheme.com: build.scm $(SCHEME_LIBRARIES)
 
 schemacs-guile: $(SCHEME_LIBRARIES)
 	guile --r7rs  --fresh-auto-compile \
-	  -l $(PWD) \
+	  -L $(PWD) \
 	  -c '(let () (load "./build.scm") (exit 0))';
 
 
