@@ -10,9 +10,12 @@
   #:prefix gio:)
  )
 
-;;(gi:use-typelibs
-;; (("GObject" "2.0")
-;;  #:prefix gobj:))
+(gi:use-typelibs
+ (("GObject" "2.0")
+  #:prefix gobject-
+  #:select
+  (ref unref)
+  ))
 
 ;; (gi:use-typelibs
 ;;  (("Gdk" "3.0")
@@ -42,6 +45,7 @@
 (gi-repo:load-by-name "Gtk" "FlowBox")
 (gi-repo:load-by-name "Gtk" "IMContext")
 (gi-repo:load-by-name "Gtk" "Label")
+(gi-repo:load-by-name "Gtk" "Layout")
 (gi-repo:load-by-name "Gtk" "Orientation")
 (gi-repo:load-by-name "Gtk" "Separator")
 (gi-repo:load-by-name "Gtk" "ScrolledWindow")
@@ -193,18 +197,25 @@
   ;;
   ;; - TEXT   :: the GtkTextView
   ;;
+  ;; - LAYOUT :: contains the text box in an area that automatically
+  ;;             fills the available space in the window
+  ;;
+  ;; - SCOLLERS :: adds scroll bar controlls to the LAYOUT
+  ;;
   ;; - WINDOW :: the <WINFRAME-TYPE> to which this "window" belongs
   ;;
   ;; - FOCUS  :: an event handler object for the GtkTextView, must be
   ;;             kept here in order to prevent it from being deleted
   ;;             when the view loses focus.
   ;;------------------------------------------------------------------
-  (make<window-metadata> box text window focus)
+  (make<window-metadata> box text layout scrollers window focus)
   window-metadata-type?
-  (box     window-metadata-box       set!window-metadata-box)
-  (text    window-metadata-text      set!window-metadata-text)
-  (window  window-metadata-parent    set!window-metadata-parent)
-  (focus   window-metadata-focus-in  set!window-metadata-focus-in))
+  (box        window-metadata-box        set!window-metadata-box)
+  (text       window-metadata-text       set!window-metadata-text)
+  (layout     window-metadata-layout     set!window-metadata-layout)
+  (scrollers  window-metadata-scrollers  set!window-metadata-scrollers)
+  (window     window-metadata-parent     set!window-metadata-parent)
+  (focus      window-metadata-focus-in   set!window-metadata-focus-in))
 
 (define =>window-metadata-box
   (record-unit-lens
@@ -230,6 +241,8 @@
           #:hexpand #t
           #:vexpand #t
           #:visible #t))
+        (layout (gi:make <GtkLayout> #:visible #t))
+        (scrollers (gi:make <GtkScrolledWindow> #:visible #t))
         (text
          (gi:make <GtkTextView>
           #:buffer buffer
@@ -242,7 +255,7 @@
           ed:=>line-display-view
           =>mode-line-metadata-widget))
         (focus-in-handler-obj (gi:make <signal> #:name "focus-in-event"))
-        (this (make<window-metadata> box text window focus-in-handler-obj))
+        (this (make<window-metadata> box text layout scrollers window focus-in-handler-obj))
         (focus-in-handler-callback
          (lambda _
            (display ";;focus-in-event ")(write text)(newline);;DEBUG
@@ -250,12 +263,12 @@
         )
     (gi:connect text focus-in-handler-obj focus-in-handler-callback)
     (display ";;gtk-emacs-window:\n");;DEBUG
-    (display ";;       box = ")(write box)(newline);;DEBUG
-    (display ";;      text = ")(write text)(newline);;DEBUG
-    (display ";; mode-line = ")(write mode-line)(newline);;DEBUG
-    (box:pack-start box text #t #t 0)
+    (container:add layout text)
+    (container:add scrollers layout)
+    (box:pack-start box layout #t #t 0)
     (box:pack-start box mode-line #f #f 0)
     this))
+
 
 (define (gtk-app-window-inner-layout window-view mode-line)
   ;; Defines a box that groups the window (the text view) with the mode line.
@@ -365,6 +378,7 @@
   (let ((view (new-minibuffer-view #f)))
     (minibuffer-metadata-layout view)))
 
+
 (define (gtk-focus-minibuffer winframe prompt-text init-input)
   (display ";;gtk-focus-minibuffer: prompt-text: ")(write prompt-text);;DEBUG
   (display " init-input: ")(write init-input)(newline);;DEBUG
@@ -388,6 +402,7 @@
     (display ";;    widget:grab-focus minibuf ")(write minibuf)(newline);;DEBUG
     (widget:grab-focus minibuf)
     ))
+
 
 (define (gtk-get-minibuffer-text winframe)
   (display ";;gtk-get-minibuffer-text frame\n");;DEBUG
@@ -437,12 +452,14 @@
   (let ((winview (view window ed:=>window-view)))
     (cond
      ((window-metadata-type? winview)
-      (view winview =>window-metadata-text))
+      (view winview =>window-metadata-text)
+      )
      ((minibuffer-metadata-type? winview)
-      (view winview =>minibuffer-metadata-text-input))
+      (view winview =>minibuffer-metadata-text-input)
+      )
      (else
-      (error "window does not contain window or minibuffer metadata" winview window))
-     )))
+      (error "window does not contain window or minibuffer metadata" winview window)
+      ))))
 
 ;; -------------------------------------------------------------------------------------------------
 
@@ -541,8 +558,8 @@
   (let*((buffer (gi:make <GtkTextBuffer>))
         (text-view
          (gi:make <GtkTextView>
-                  #:buffer buffer
-                  #:visible #t)))
+          #:buffer buffer
+          #:visible #t)))
     (display ";;    buffer = ")(write buffer)(newline);;DEBUG
     (display ";; text-view = ")(write text-view)(newline);;DEBUG
     text-view))
@@ -564,7 +581,9 @@
            ed:=>winframe-echo-area
            ed:=>line-display-view))
         )
-    (text-view:insert-at-cursor textview str)))
+    (display ";;insert-into ") (write textview) (newline);;DEBUG
+    (text-view:insert-at-cursor textview str)
+    ))
 
 (define (clear-echo-area winframe)
   (display ";;clear-echo-area\n");;DEBUG
@@ -577,7 +596,8 @@
         (end   (text-buffer:get-end-iter!   buffer (gi:make <GtkTextIter>)))
         )
     ;; window-metadata-view-handle
-    (text-buffer:delete buffer start end)))
+    (text-buffer:delete buffer start end)
+    ))
 
 ;; -------------------------------------------------------------------------------------------------
 
@@ -605,6 +625,7 @@
    #:child layout
    #:visible #t))
 
+
 (define (new-winframe-view winframe window)
   ;; Create a new winframe-like and the Gtk application window to make it
   ;; usable in a GtkApplication.
@@ -612,7 +633,7 @@
   (let*((use-key-control #f) ;; I'm not sure which mechanism to use yet
         (editor-state (ed:winframe-parent-editor winframe))
         (window-view  (view window ed:=>window-view))
-        (win-view-box (window-metadata-box window-view))
+        (win-view-box (window-metadata-scrollers window-view))
         (_ ;;DEBUG
          (begin ;;DEBUG
            (display ";;    window-view box: ")(write win-view-box)(newline);;DEBUG
@@ -705,19 +726,13 @@
     (widget:set-visible window-handle #t)
     (make<winframe-metadata> window-handle outer-layout echo-area minibuffer key-press-handler-obj)))
 
+
 (define (gtk-select-window window)
   (let*((winview (view window ed:=>window-view))
         (winframe (ed:window-parent-frame window))
-        (impl
-         (cond
-          ((window-metadata-type? winview)
-           (window-metadata-text winview))
-          ((minibuffer-metadata-type? winview)
-           (minibuffer-metadata-text-input winview))
-          (else
-           (error "window does not contain window or minibuffer metadata" winview window))
-          ))
+        (impl (gtk-window-or-minibuffer-text-view window))
         )
+    (display "; grab-focus ") (write impl) (newline);;DEBUG
     (widget:grab-focus impl)
     (lens-set window winframe ed:=>winframe-window)
     ;; Now we MUST return false here, telling Gtk that the event is
