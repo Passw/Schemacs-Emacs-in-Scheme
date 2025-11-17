@@ -434,7 +434,7 @@
               #:valign 'start
               #:selectable #t
               #:has-default #f
-              #:has-focus #f
+              #:can-focus #t ;; TODO: set this to #t but select none until click
               #:vexpand #f
               #:hexpand #f
               )))
@@ -568,7 +568,8 @@
     (define (gtk-container-nullify-focus container _widget)
       ;; A signal which disables the default focus behavior when a
       ;; container widget is created.
-      (display "; caught set-focus-child signal\n")
+      ;;--------------------------------------------------------------
+      ;;(display "; caught set-focus-child signal\n");;DEBUG
       #t
       )
 
