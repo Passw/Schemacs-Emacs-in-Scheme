@@ -434,7 +434,8 @@
               #:valign 'start
               #:selectable #t
               #:has-default #f
-              #:can-focus #t ;; TODO: set this to #t but select none until click
+              #:focus-on-click #t ;; TODO: set this to #t but select none until click
+              #:can-default #f
               #:vexpand #f
               #:hexpand #f
               )))
@@ -570,7 +571,8 @@
       ;; container widget is created.
       ;;--------------------------------------------------------------
       ;;(display "; caught set-focus-child signal\n");;DEBUG
-      #t
+      (container:set-focus-child container #f)
+      #f
       )
 
     (define (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
@@ -821,12 +823,12 @@
     (define (gtk-draw-div-grid o outer cont)
       (let*((outer (gtk-prepare-outer-box o outer #f))
             (scroll (gtk-make-scroller o (div-prop-lookup 'scrolled: o)))
-            (viewport (and scroll (gi:make <GtkViewport>)))
-            (grid (gi:make <GtkGrid>))
+            (viewport (and scroll (gi:make <GtkViewport> #:has-focus #f #:can-default #f)))
+            (grid (gi:make <GtkGrid> #:has-focus #f #:can-default #f))
             (wref (make<gtk-div-contain> outer scroll viewport grid))
             )
         (gobject-ref grid)
-        (gi:connect grid container:set-focus-child gtk-container-nullify-focus)
+        (gi:connect grid container:add gtk-container-nullify-focus)
         ;; ^ TODO: this doesn't prevent the first element in the grid from
         ;;         being foused auomatically. Need to find out how to make
         ;;         sure nothing is selected when the widget is realized.

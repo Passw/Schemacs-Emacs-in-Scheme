@@ -38,7 +38,9 @@
           pp-line-indent-char
           pp-line-indent
           pp-line-string)
-    )
+    (only (schemacs ui)
+          state-var  tiled-window
+          ))
 
   (export
    ;; A quick note on naming: names delimited with asterisks,
@@ -49,8 +51,8 @@
    ;; parameterized with procedures that do nothing by default.
 
    ;; ---------------- Buffers ----------------
-   buffer-type? buffer-cell
-   =>buffer-handle =>buffer-view =>buffer-local-keymap
+   buffer-type?  buffer-cell
+   =>buffer-handle  =>buffer-view  =>buffer-local-keymap
    *default-buffer-local-keymap*
    current-buffer
    selected-buffer
@@ -58,18 +60,18 @@
    ;; -------------- Mode Lines --------------
    ;; This includes the echo area
    line-display-type?
-   new-line-display new-mode-line new-header-line new-echo-area
+   new-line-display  new-mode-line  new-header-line  new-echo-area
    =>line-display-view
    *mode-line-format*
    mode-line-display-items
 
    ;; ---------------- Windows ----------------
    window-type?
-   window-cell window-buffer window-parent-frame
-   =>window-buffer =>window-view =>window-local-keymap
-   =>window-mode-line =>window-header-line
+   window-cell  window-buffer  window-parent-frame
+   =>window-buffer  =>window-view  =>window-local-keymap
+   =>window-mode-line  =>window-header-line
    *default-window-local-keymap*
-   selected-window select-window
+   selected-window  select-window
 
    ;; -------------- Minibuffers -------------
    new-minibuffer
@@ -78,15 +80,15 @@
    ;; ---------------- Frames ----------------
    winframe-type? winframe-cell
    winframe-parent-editor
-   =>winframe-window =>winframe-local-keymap =>winframe-view
-   =>winframe-echo-area =>winframe-minibuffer =>winframe-prompt
+   =>winframe-selected-window  =>winframe-local-keymap  =>winframe-view
+   =>winframe-echo-area  =>winframe-minibuffer  =>winframe-prompt
    *default-winframe-local-keymap*
    *default-minibuffer-keymap*
    selected-frame
    key-event-handler
    format-message
-   display-in-echo-area clear-echo-area
-   simple-read-minibuffer read-from-minibuffer
+   display-in-echo-area  clear-echo-area
+   simple-read-minibuffer  read-from-minibuffer
    exit-minibuffer
    focus-minibuffer
    clear-minibuffer
@@ -95,9 +97,8 @@
    exit-minibuffer-with-return
 
    ;; ---------------- Editor ----------------
-   editor-type? new-editor editor-cell
+   editor-type?  new-editor  editor-cell
    =>editor-buffer-table
-   =>editor-window-table
    =>editor-winframe-table
    =>editor-proc-table
    =>editor-base-keymap
@@ -107,16 +108,16 @@
    current-editor
 
    ;; ---------------- Front-end API ----------------
-   new-self-insert-keymap key-event-self-insert
+   new-self-insert-keymap  key-event-self-insert
    default-keymap
    print-exception-message
-   self-insert-keymap self-insert-command
+   self-insert-keymap  self-insert-command
    delete-char delete-backward-char
-   *unbound-key-index*  unbound-key-index-handler
-   *waiting-key-index*  waiting-key-index-handler
-   *dispatch-key-event* dispatch-key-event-handler
-   insert get-buffer read-from-minibuffer
-   eval-expression-string eval-expression
+   *unbound-key-index*   unbound-key-index-handler
+   *waiting-key-index*   waiting-key-index-handler
+   *dispatch-key-event*  dispatch-key-event-handler
+   insert  get-buffer  read-from-minibuffer
+   eval-expression-string  eval-expression
    print-to-buffer
    )
 
@@ -188,7 +189,7 @@
            (key-event-self-insert uarg c)))
         ((uarg c)
          (let*((winframe (selected-frame))
-               (window   (winframe-window winframe))
+               (window   (winframe-selected-window winframe))
                (cmd      (*impl/self-insert-command*))
                )
            (cond
@@ -277,6 +278,9 @@
       (keymap  buffer-local-keymap  set!buffer-local-keymap)
       (handle  buffer-handle        set!buffer-handle)
       (view    buffer-view          set!buffer-view)
+      ;; NOTE: the view ^ here, in Gtk, is a GtkTextBuffer, not a
+      ;; GtkTextView. A GtkTextView is functionally equivalent to an
+      ;; Emacs "window".
       )
 
     (define =>buffer-handle
@@ -325,14 +329,13 @@
       (case-lambda
         ((handle) (new-buffer handle #f))
         ((handle keymap)
-         (let*((keymap (if keymap keymap (*default-buffer-local-keymap*)))
-               (cell (make<cell>))
-               (this (make<buffer> cell keymap handle #f))
+         (let*((keymap (or keymap (*default-buffer-local-keymap*)))
+               (this (make<buffer> #f keymap handle #f))
                (view ((*impl/new-buffer-view*) this))
                )
            (set!buffer-view this view)
-           (set!cell-value cell this)
-           this))))
+           this
+           ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -356,7 +359,7 @@
 
     (define (new-line-display-backend backend-param)
       (lambda (parent-window)
-        (let ((this (make<line-display-type> (make<cell>) parent-window #f)))
+        (let ((this (make<line-display-type> #f parent-window #f)))
           (set!line-display-view this ((backend-param) this))
           this)))
 
@@ -443,7 +446,7 @@
           parent-window widget-view
           (mode-line-collect-items
            parent-window widget-view '()
-           (if items items (*mode-line-format*)))))))
+           (or items (*mode-line-format*)))))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -470,32 +473,39 @@
     (define window-buffer
       (case-lambda
         (() (window-buffer (selected-window)))
-        ((window) (%window-buffer window))))
+        ((window) (%window-buffer window))
+        ))
 
     (define *default-window-local-keymap*
       ;; This keymap maps self-insert-key to all printable ASCII characters.
-      (make-parameter #f))
+      (make-parameter #f)
+      )
 
     (define =>window-local-keymap
-      (record-unit-lens window-local-keymap set!window-local-keymap '=>window-local-keymap))
+      (record-unit-lens window-local-keymap set!window-local-keymap '=>window-local-keymap)
+      )
 
     (define =>window-buffer
-      (record-unit-lens %window-buffer set!window-buffer '=>window-buffer))
+      (record-unit-lens %window-buffer set!window-buffer '=>window-buffer)
+      )
 
     (define =>window-mode-line
       (record-unit-lens
        window-mode-line
        set!window-mode-line
-       '=>window-mode-ilne))
+       '=>window-mode-line
+       ))
 
     (define =>window-header-line
       (record-unit-lens
        window-header-line
        set!window-header-line
-       '=>window-header-line))
+       '=>window-header-line
+       ))
 
     (define =>window-view
-      (record-unit-lens window-view set!window-view '=>window-view))
+      (record-unit-lens window-view set!window-view '=>window-view)
+      )
 
     (define (new-window-with-view make-view mode-line-items parent-winframe buffer keymap)
       ;; This window constructor lets you specify the view constructor, so
@@ -504,14 +514,13 @@
       ;; `NEW-MINIBUFFER` to construct a window that contains the
       ;; minibuffer.
       ;;------------------------------------------------------------------
-      (let*((cell (make<cell>))
-            (buffer
+      (let*((buffer
              (cond
               ((buffer-type? buffer) buffer)
               ((not buffer) (new-buffer #f #f))
               (else (error "argument 2 to new-window not a buffer" buffer))))
             (keymap (keymap-arg-or-default keymap *default-window-local-keymap*))
-            (this (make<window> cell parent-winframe buffer keymap #f #f #f))
+            (this (make<window> #f parent-winframe buffer keymap #f #f #f))
             )
         (when mode-line-items
           (set!window-mode-line this (new-mode-line this mode-line-items)))
@@ -520,20 +529,21 @@
         ;; NOTE: the header line is not created initially, it can be
         ;; created when there is a need to display it.
         (set!window-header-line this ((*impl/new-header-line-view*) this))
-        (set!cell-value cell this)
-        this))
+        this
+        ))
 
     (define (new-window parent buffer keymap)
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
       ;;------------------------------------------------------------------
-      (new-window-with-view (*impl/new-window-view*) (*mode-line-format*) parent buffer keymap))
+      (new-window-with-view (*impl/new-window-view*) (*mode-line-format*) parent buffer keymap)
+      )
 
 
     (define (debug-print-keymaps winframe);;DEBUG
-      (let*((window   (winframe-window    winframe))
-            (buffer   (window-buffer        window))
-            (winkmap  (window-local-keymap  window))
+      (let*((window   (winframe-selected-window  winframe))
+            (buffer   (window-buffer             window))
+            (winkmap  (window-local-keymap       window))
             (bufkmap  (if (buffer-type?  buffer) (buffer-local-keymap  buffer) #f))
             (frmkmap  (if (winframe-type? winframe) (winframe-local-keymap winframe) #f))
             (awaiting (winframe-awaiting-prompt? winframe))
@@ -542,7 +552,8 @@
                (print "#:" field #\space
                 (or (and (not keymap) "#f")
                     (view keymap km:=>keymap-label!)
-                    "<no-label>")))))
+                    "<no-label>"
+                    )))))
         (pretty
          (print
           (bracketed 2 #\( #\)
@@ -551,7 +562,8 @@
            (print-keymap-name "winkmap" winkmap) #\space
            (print-keymap-name "frmkmap" frmkmap)
            )
-          (line-break)))
+          (line-break)
+          ))
         #t))
 
     (define (window-get-or-reset-modal-state! winframe)
@@ -568,24 +580,28 @@
           (cond
            ((km:modal-lookup-state-type? state) state)
            (else
-            (let*((window   (winframe-window       winframe))
-                  (buffer   (window-buffer         window))
-                  (frmkmap  (winframe-local-keymap winframe))
-                  (winkmap  (window-local-keymap   window))
-                  (bufkmap  (buffer-local-keymap   buffer))
+            (let*((window   (winframe-selected-window  winframe))
+                  (buffer   (window-buffer             window))
+                  (frmkmap  (winframe-local-keymap     winframe))
+                  (winkmap  (window-local-keymap       window))
+                  (bufkmap  (buffer-local-keymap       buffer))
                   (init-km  (km:keymap bufkmap winkmap frmkmap))
-                  (state (if (null? init-km) #f (km:new-modal-lookup-state init-km)))
+                  (state (and (not (null? init-km)) (km:new-modal-lookup-state init-km)))
                   )
               (unless (not state)
-                (set!winframe-modal-state winframe state))
-              state)))))
+                (set!winframe-modal-state winframe state)
+                )
+              state
+              )))))
        (else
-        (error "not <winframe-type> data" winframe))))
+        (error "not <winframe-type> data" winframe)
+        )))
 
     (define (unbound-key-index-handler key-index)
       (format-message
        "~s is undefined\n"
-       (km:keymap-index->list key-index)))
+       (km:keymap-index->list key-index)
+       ))
 
     (define *unbound-key-index*
       ;; This event handlers is parameterized should it ever become
@@ -647,7 +663,7 @@
       (let*((editor (winframe-parent-editor parent-winframe))
             (id (editor-get-next-obj-id editor))
             (handle (string-append " *Minibuf-" (number->string id) "*"))
-            (keymap (if keymap keymap (*default-minibuffer-keymap*)))
+            (keymap (or keymap (*default-minibuffer-keymap*)))
             (buffer (new-buffer handle keymap))
             )
         (new-window-with-view (*impl/new-minibuffer-view*) #f parent-winframe buffer keymap)
@@ -656,18 +672,22 @@
     ;; -------------------------------------------------------------------------------------------------
 
     (define-record-type <winframe-type>
-      (make<winframe> cell editor window modal keymap echo minibuf dispatch prompt view)
+      (make<winframe>
+       cell editor window layout modal keymap
+       echo minibuf dispatch prompt view
+       )
       winframe-type?
       (cell     winframe-cell)
       (editor   winframe-parent-editor)
-      (window   winframe-window         set!winframe-window)
-      (modal    winframe-modal-state    set!winframe-modal-state)
-      (keymap   winframe-local-keymap   set!winframe-local-keymap)
-      (echo     winframe-echo-area      set!winframe-echo-area)
-      (minibuf  winframe-minibuffer     set!winframe-minibuffer)
-      (dispatch winframe-event-dispatch set!winframe-event-dispatch)  
-      (prompt   winframe-prompt-stack   set!winframe-prompt-stack)
-      (view     winframe-view           set!winframe-view)
+      (window   winframe-selected-window set!winframe-selected-window)
+      (layout   winframe-layout          set!winframe-layout)
+      (modal    winframe-modal-state     set!winframe-modal-state)
+      (keymap   winframe-local-keymap    set!winframe-local-keymap)
+      (echo     winframe-echo-area       set!winframe-echo-area)
+      (minibuf  winframe-minibuffer      set!winframe-minibuffer)
+      (dispatch winframe-event-dispatch  set!winframe-event-dispatch)  
+      (prompt   winframe-prompt-stack    set!winframe-prompt-stack)
+      (view     winframe-view            set!winframe-view)
       ;; Interesting note: it was here where I discovered that Guile does
       ;; NOT allow record types or field "<frame-type>" or have predicates
       ;; called "frame-type?". When I did try the "frame-type?" predicate,
@@ -680,51 +700,60 @@
 
     (define *default-winframe-local-keymap*
       ;; This keymap maps self-insert-key to all printable ASCII characters.
-      (make-parameter #f))
+      (make-parameter #f)
+      )
+
+    (define =>winframe-layout
+      (record-unit-lens
+       winframe-layout
+       set!winframe-layout
+       '=>winframe-layout
+       ))
 
     (define =>winframe-keymap
       (record-unit-lens
        winframe-local-keymap
        set!winframe-local-keymap
-       '=>winframe-local-keymap))
+       '=>winframe-local-keymap
+       ))
 
-    (define =>winframe-window
-      ;; This field should contain a reference to the currently focused
-      ;; `<WINDOW-TYPE>`. The front-end GUI must setup event handlers that
-      ;; update this field whenever the GUI engine generates an event
-      ;; indicating that the user keyboard focus has changed. Provide an
-      ;; implementation for *impl/select-window* that can be called both
-      ;; programmatically and from the window focus event handler used in
-      ;; the GUI front-end.
+    (define =>winframe-selected-window
+      ;; This field should contain a `DIV` from the `(schemacs ui)`
+      ;; library, in particular a `tiled-window` type of `DIV`.
       ;;------------------------------------------------------------------
       (record-unit-lens
-       winframe-window
-       set!winframe-window
-       '=>winframe-window))
+       winframe-selected-window
+       set!winframe-selected-window
+       '=>winframe-selected-window
+       ))
 
     (define =>winframe-modal-state
       (record-unit-lens
        winframe-modal-state
        set!winframe-modal-state
-       '=>winframe-modal-state))
+       '=>winframe-modal-state
+       ))
 
     (define =>winframe-view
       (record-unit-lens
        winframe-view
        set!winframe-view
-       '=>winframe-view))
+       '=>winframe-view
+       ))
 
     (define =>winframe-minibuffer
       (record-unit-lens
        winframe-minibuffer
        set!winframe-minibuffer
-       '=>winframe-minibuffer))
+       '=>winframe-minibuffer
+       ))
 
     (define =>winframe-echo-area
       (record-unit-lens
        winframe-echo-area
        set!winframe-echo-area
-       '=>winframe-echo-area))
+       '=>winframe-echo-area
+       ))
 
     (define =>winframe-event-dispatch
       ;; Keeps a continuation constructed at the point of event dispatch
@@ -737,7 +766,8 @@
       (record-unit-lens
        winframe-event-dispatch
        set!winframe-event-dispatch
-       '=>winframe-event-dispatch))
+       '=>winframe-event-dispatch
+       ))
 
     (define =>winframe-prompt-stack
       ;; Keeps a continuation at which the end user has been prompted for
@@ -748,37 +778,39 @@
       (record-unit-lens
        winframe-prompt-stack
        set!winframe-prompt-stack
-       '=>winframe-prompt-stack))
+       '=>winframe-prompt-stack
+       ))
 
-    (define (new-frame editor init-window init-keymap)
+    (define (new-frame editor init-buffer init-keymap)
       ;; "keymap" is the keymap for this local frame, which is a fallback
       ;; keymap used when no key matches the buffer local keymap.
-      (cond
-       ((window-type? init-window)
-        (let*((cell        (make<cell>))
-              (init-keymap (keymap-arg-or-default init-keymap *default-winframe-local-keymap*))
-              (modal-key-state #f)
-              (echo-area   #f)
-              (minibuffer  #f)
-              (dispatch    (make-parameter #f))
-              (prompt      '())
-              (view        #f)
-              (this
-               (make<winframe>
-                cell editor init-window modal-key-state init-keymap
-                echo-area minibuffer dispatch prompt view))
-              )
-          (set!winframe-window     this init-window)
-          (unless (window-parent-frame init-window)
-            (set!window-parent-frame init-window this))
-          (set!winframe-echo-area  this (new-echo-area this))
-          (set!winframe-minibuffer this (new-minibuffer this #f))
-          (set!winframe-view       this ((*impl/new-winframe-view*) this init-window))
-          (set!cell-value cell this)
-          this))
-       ((not init-window) #f)
-       (else (error "argument 1 to new-frame not a window" init-window))))
-
+      (let*((init-buffer (or init-buffer (editor-messages editor)))
+            (init-keymap (keymap-arg-or-default init-keymap *default-winframe-local-keymap*))
+            (modal-key-state #f)
+            (echo-area   #f)
+            (minibuffer  #f)
+            (dispatch    (make-parameter #f))
+            (prompt      '())
+            (view        #f)
+            (this
+             (make<winframe>
+              #f editor #f #f modal-key-state init-keymap
+              echo-area minibuffer dispatch prompt view
+              ))
+            (init-window (new-window this init-buffer init-keymap))
+            )
+        (set!winframe-selected-window this init-window)
+        (set!winframe-layout this
+         (state-var eq? (tiled-window (buffer-view init-buffer)))
+         )
+        (unless (window-parent-frame init-window)
+          (set!window-parent-frame init-window this)
+          )
+        (set!winframe-echo-area  this (new-echo-area this))
+        (set!winframe-minibuffer this (new-minibuffer this #f))
+        (set!winframe-view       this ((*impl/new-winframe-view*) this init-window))
+        this
+        ))
 
     (define select-window
       (case-lambda
@@ -786,7 +818,7 @@
         ((window norecord)
          (display ";;select-window ")(write (view window =>window-buffer =>buffer-handle))(newline);;DEBUG
          ((*impl/select-window*) window)
-         (lens-set window (selected-frame) =>winframe-window)
+         (lens-set window (selected-frame) =>winframe-selected-window)
          )))
 
     ;; -------------------------------------------------------------------------------------------------
@@ -872,7 +904,7 @@
       ;; again after this procedure is applied.
       ;;------------------------------------------------------------------
       (let*((prompt-stack (view winframe =>winframe-prompt-stack))
-            (prompt-item  (if (null? prompt-stack) #f (car prompt-stack)))
+            (prompt-item  (and (not (null? prompt-stack)) (car prompt-stack)))
             )
         (display ";;winframe-prompt-resume ")(write return)(newline);;DEBUG
         (debug-print-keymaps winframe);;DEBUG
@@ -893,7 +925,7 @@
     ;; -------------------------------------------------------------------------------------------------
 
     (define (selected-frame) (*impl/selected-frame*))
-    (define (selected-window) (view (selected-frame) =>winframe-window))
+    (define (selected-window) (view (selected-frame) =>winframe-selected-window))
     (define (current-buffer) (*impl/current-buffer*))
     (define selected-buffer current-buffer)
       ;; These are global variables from the point of view of Emacs
@@ -907,11 +939,10 @@
     (define-record-type <editor-type>
       ;; The editor state.
       (make<editor>
-       cell buftab wintab frametab proctab keymap messages counter view)
+       cell buftab frametab proctab keymap messages counter view)
       editor-type?
       (cell      editor-cell)
       (buftab    editor-buffer-table    set!editor-buffer-table)
-      (wintab    editor-window-table    set!editor-window-table)
       (frametab  editor-winframe-table  set!editor-winframe-table)
       (proctab   editor-proc-table      set!editor-proc-table)
       (keymap    editor-base-keymap     set!editor-base-keymap)
@@ -920,29 +951,33 @@
       (view      editor-view            set!editor-view))
 
     (define =>editor-buffer-table
-      (record-unit-lens editor-buffer-table set!editor-buffer-table '=>editor-buffer-table))
-
-    (define =>editor-window-table
-      (record-unit-lens editor-window-table set!editor-window-table '=>editor-window-table))
+      (record-unit-lens editor-buffer-table set!editor-buffer-table '=>editor-buffer-table)
+      )
 
     (define =>editor-winframe-table
-      (record-unit-lens editor-winframe-table set!editor-winframe-table '=>editor-winframe-table))
+      (record-unit-lens editor-winframe-table set!editor-winframe-table '=>editor-winframe-table)
+      )
 
     (define =>editor-proc-table
-      (record-unit-lens editor-proc-table set!editor-proc-table '=>editor-proc-table))
+      (record-unit-lens editor-proc-table set!editor-proc-table '=>editor-proc-table)
+      )
 
     (define =>editor-base-keymap
-      (record-unit-lens editor-base-keymap set!editor-base-keymap '=>editor-base-keymap))
+      (record-unit-lens editor-base-keymap set!editor-base-keymap '=>editor-base-keymap)
+      )
 
     (define =>editor-obj-counter
-      (record-unit-lens editor-obj-counter set!editor-obj-counter '=>editor-obj-counter))
+      (record-unit-lens editor-obj-counter set!editor-obj-counter '=>editor-obj-counter)
+      )
 
     (define =>editor-view
-      (record-unit-lens editor-view set!editor-view '=>editor-view))
+      (record-unit-lens editor-view set!editor-view '=>editor-view)
+      )
 
     (define (new-table size)
       ;; TODO: make use of the `SIZE` parameter
-      (make-hash-table equal? default-hash))
+      (make-hash-table equal? default-hash)
+      )
 
     (define (editor-get-next-obj-id editor)
       (let ((i (editor-obj-counter editor)))
@@ -958,15 +993,13 @@
       ;; using the Scheme environment object constructed by this (schemacs
       ;; editor) library as the editor state itself, with all fields of
       ;; <editor-type> redefined as parameters in this environment.
-      (let*((cell           (make<cell>))
-            (msgs           (new-buffer "*Messages*"))
+      (let*((msgs           (new-buffer "*Messages*"))
             (buffer-table   (new-table 63))
             (winframe-table (new-table 15))
             (this
              (make<editor>
-              cell ; editor-cell
+              #f ; editor-cell
               buffer-table ; buffer table
-              (new-table 15) ; window table
               winframe-table ; frame table
               (new-table 15) ; process table
               (*default-keymap*) ; base-keymap
@@ -981,8 +1014,6 @@
             )
         (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "GUIgi-Shell"))
-        (lens-set window     this =>editor-window-table   (=>hash-key! "main"))
-        (set!cell-value cell this)
         (*impl/current-editor-closure* this)
         this))
 
@@ -1090,7 +1121,7 @@
 
     (define (focus-minibuffer winframe prompt init-input)
       ;; Move the keyboard focus to the minibuffer.
-      (lens-set (winframe-minibuffer winframe) winframe =>winframe-window)
+      (lens-set (winframe-minibuffer winframe) winframe =>winframe-selected-window)
       ((*impl/focus-minibuffer*) winframe prompt init-input))
 
     (define (clear-minibuffer window)
