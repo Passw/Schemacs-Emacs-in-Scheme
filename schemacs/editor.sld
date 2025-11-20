@@ -5,6 +5,16 @@
   ;; and therefore is not just a clone of the Emacs editor, but of the
   ;; Emacs Lisp programming language.
 
+
+  ;; TODO: consider possibly doing the following:
+  ;;
+  ;;  1. changing this library to `(schemacs ui main)`
+  ;;
+  ;;  2. replacing `(schemacs editor-impl)` with `(schemacs ui
+  ;;     text-buffer-impl)`, which means getting rid of all calls to
+  ;;     the editor-impl APIs in `(schemacs editor)`.
+  ;;
+
   (import
     (scheme base)
     (scheme lazy)
@@ -38,8 +48,14 @@
           pp-line-indent-char
           pp-line-indent
           pp-line-string)
+    (only (schemacs ui rectangle)
+          rect2D  point2D  size2D
+          )
     (only (schemacs ui)
-          state-var  tiled-window
+          run-div-monad  enclose  expand
+          state-var  use-vars  div  div-pack  pack-elem
+          div-space  floater
+          tiled-windows  cut-horizontal  cut-vertical
           ))
 
   (export
@@ -49,6 +65,8 @@
    ;; *IMPL/NEW-WINFRAME-VIEW* are parameters that SHOULD be
    ;; parameterized by the user interface backend, but are typically
    ;; parameterized with procedures that do nothing by default.
+
+   main  *the-editor-state*
 
    ;; ---------------- Buffers ----------------
    buffer-type?  buffer-cell
@@ -80,7 +98,8 @@
    ;; ---------------- Frames ----------------
    winframe-type? winframe-cell
    winframe-parent-editor
-   =>winframe-selected-window  =>winframe-local-keymap  =>winframe-view
+   =>winframe-layout  =>winframe-selected-window
+   =>winframe-local-keymap  =>winframe-view
    =>winframe-echo-area  =>winframe-minibuffer  =>winframe-prompt
    *default-winframe-local-keymap*
    *default-minibuffer-keymap*
@@ -97,7 +116,7 @@
    exit-minibuffer-with-return
 
    ;; ---------------- Editor ----------------
-   editor-type?  new-editor  editor-cell
+   editor-type?  new-editor
    =>editor-buffer-table
    =>editor-winframe-table
    =>editor-proc-table
@@ -200,7 +219,6 @@
             (else (error "*self-insert-command* does not contain a procedure" cmd))
             )))))
 
-
     (define self-insert-command
       ;; This is an actual command (not just a procedure) that calls the
       ;; procedured stored in the *impl/self-insert-command* parameter
@@ -218,8 +236,9 @@
        (lambda () (key-event-self-insert #f))
        key-event-self-insert
        "Takes a key event and converts it to a character based on the keyboard
-    key that was pressed, then inserts that character into the current
-    buffer of the current window."))
+ key that was pressed, then inserts that character into the current
+ buffer of the current window."
+       ))
 
 
     (define self-insert-layer
@@ -470,6 +489,38 @@
       (view         window-view          set!window-view)
       )
 
+    (define (new-window-with-view make-view mode-line-items parent-winframe buffer keymap)
+      ;; This window constructor lets you specify the view constructor, so
+      ;; pick a nice one. This procedure is called by `NEW-WINDOW` to
+      ;; construct ordinary buffer windows, and it is called by
+      ;; `NEW-MINIBUFFER` to construct a window that contains the
+      ;; minibuffer.
+      ;;------------------------------------------------------------------
+      (let*((buffer
+             (cond
+              ((buffer-type? buffer) buffer)
+              ((not buffer) (new-buffer #f #f))
+              (else (error "argument 2 to new-window not a buffer" buffer))))
+            (keymap (keymap-arg-or-default keymap *default-window-local-keymap*))
+            (this (make<window> #f parent-winframe buffer keymap #f #f #f))
+            )
+        (when mode-line-items
+          (set!window-mode-line this (new-mode-line this mode-line-items)))
+           ;; mode-line must be constructed before make-view
+        (set!window-view this (make-view this))
+        ;; NOTE: the header line is not created initially, it can be
+        ;; created when there is a need to display it.
+        (set!window-header-line this ((*impl/new-header-line-view*) this))
+        this
+        ))
+
+    (define (new-window parent buffer keymap)
+      ;; Construct a new ordinary window -- ordinary, that is, as opposed
+      ;; to the window constructed specifically to contain the minibuffer.
+      ;;------------------------------------------------------------------
+      (new-window-with-view (*impl/new-window-view*) (*mode-line-format*) parent buffer keymap)
+      )
+
     (define window-buffer
       (case-lambda
         (() (window-buffer (selected-window)))
@@ -506,39 +557,6 @@
     (define =>window-view
       (record-unit-lens window-view set!window-view '=>window-view)
       )
-
-    (define (new-window-with-view make-view mode-line-items parent-winframe buffer keymap)
-      ;; This window constructor lets you specify the view constructor, so
-      ;; pick a nice one. This procedure is called by `NEW-WINDOW` to
-      ;; construct ordinary buffer windows, and it is called by
-      ;; `NEW-MINIBUFFER` to construct a window that contains the
-      ;; minibuffer.
-      ;;------------------------------------------------------------------
-      (let*((buffer
-             (cond
-              ((buffer-type? buffer) buffer)
-              ((not buffer) (new-buffer #f #f))
-              (else (error "argument 2 to new-window not a buffer" buffer))))
-            (keymap (keymap-arg-or-default keymap *default-window-local-keymap*))
-            (this (make<window> #f parent-winframe buffer keymap #f #f #f))
-            )
-        (when mode-line-items
-          (set!window-mode-line this (new-mode-line this mode-line-items)))
-           ;; mode-line must be constructed before make-view
-        (set!window-view this (make-view this))
-        ;; NOTE: the header line is not created initially, it can be
-        ;; created when there is a need to display it.
-        (set!window-header-line this ((*impl/new-header-line-view*) this))
-        this
-        ))
-
-    (define (new-window parent buffer keymap)
-      ;; Construct a new ordinary window -- ordinary, that is, as opposed
-      ;; to the window constructed specifically to contain the minibuffer.
-      ;;------------------------------------------------------------------
-      (new-window-with-view (*impl/new-window-view*) (*mode-line-format*) parent buffer keymap)
-      )
-
 
     (define (debug-print-keymaps winframe);;DEBUG
       (let*((window   (winframe-selected-window  winframe))
@@ -673,11 +691,10 @@
 
     (define-record-type <winframe-type>
       (make<winframe>
-       cell editor window layout modal keymap
+       editor window layout modal keymap
        echo minibuf dispatch prompt view
        )
       winframe-type?
-      (cell     winframe-cell)
       (editor   winframe-parent-editor)
       (window   winframe-selected-window set!winframe-selected-window)
       (layout   winframe-layout          set!winframe-layout)
@@ -697,6 +714,55 @@
       ;;
       ;; This is definitely a bug and should be reported.
       )
+
+    (define (new-frame editor init-buffer init-keymap)
+      ;; "keymap" is the keymap for this local frame, which is a fallback
+      ;; keymap used when no key matches the buffer local keymap.
+      (let*((editor      (or editor (*the-editor-state*)))
+            (init-buffer (or init-buffer (editor-messages editor)))
+            (init-keymap
+             (keymap-arg-or-default
+              init-keymap
+              *default-winframe-local-keymap*
+              ))
+            (init-window     #f)
+            (layout          #f)
+            (modal-key-state #f)
+            (echo-area       #f)
+            (minibuffer      #f)
+            (dispatch        (make-parameter #f))
+            (prompt          '())
+            (view            #f)
+            (this
+             (make<winframe>
+              editor  init-window  layout
+              modal-key-state  init-keymap
+              echo-area  minibuffer
+              dispatch  prompt  view
+              ))
+            (init-window (new-window this init-buffer init-keymap))
+            (echo-area   (new-echo-area this))
+            (minibuffer  (new-minibuffer this #f))
+            (layout      (state-var eq? init-window))
+            (widget
+             (floater
+              (rect2D 0 0 expand expand)
+              (div-pack
+               cut-horizontal
+               (pack-elem
+                (size2D expand expand)
+                (use-vars (list layout) (lambda (o) o))
+                )
+               (pack-elem lo-size (line-display-view echo-area))
+               (pack-elem lo-size (line-display-view minibuf))
+               ))))
+        (set!winframe-selected-window this init-window)
+        (set!winframe-layout          this layout)
+        (set!winframe-echo-area       this echo-area)
+        (set!winframe-minibuffer      this minibuffer)
+        (set!winframe-view            this widget)
+        this
+        ))
 
     (define *default-winframe-local-keymap*
       ;; This keymap maps self-insert-key to all printable ASCII characters.
@@ -780,37 +846,6 @@
        set!winframe-prompt-stack
        '=>winframe-prompt-stack
        ))
-
-    (define (new-frame editor init-buffer init-keymap)
-      ;; "keymap" is the keymap for this local frame, which is a fallback
-      ;; keymap used when no key matches the buffer local keymap.
-      (let*((init-buffer (or init-buffer (editor-messages editor)))
-            (init-keymap (keymap-arg-or-default init-keymap *default-winframe-local-keymap*))
-            (modal-key-state #f)
-            (echo-area   #f)
-            (minibuffer  #f)
-            (dispatch    (make-parameter #f))
-            (prompt      '())
-            (view        #f)
-            (this
-             (make<winframe>
-              #f editor #f #f modal-key-state init-keymap
-              echo-area minibuffer dispatch prompt view
-              ))
-            (init-window (new-window this init-buffer init-keymap))
-            )
-        (set!winframe-selected-window this init-window)
-        (set!winframe-layout this
-         (state-var eq? (tiled-window (buffer-view init-buffer)))
-         )
-        (unless (window-parent-frame init-window)
-          (set!window-parent-frame init-window this)
-          )
-        (set!winframe-echo-area  this (new-echo-area this))
-        (set!winframe-minibuffer this (new-minibuffer this #f))
-        (set!winframe-view       this ((*impl/new-winframe-view*) this init-window))
-        this
-        ))
 
     (define select-window
       (case-lambda
@@ -1009,13 +1044,13 @@
               ))
             (view       ((*impl/new-editor-view*) this))
             (_          (set!editor-view this view))
-            (window     (new-window #f msgs #f)) ; main window, because frames must have at least one
-            (init-frame (new-frame this window #f)) ; initial frame
+            (init-frame (new-frame this msgs #f)) ; initial frame
             )
         (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
-        (lens-set init-frame this =>editor-winframe-table (=>hash-key! "GUIgi-Shell"))
+        (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
         (*impl/current-editor-closure* this)
-        this))
+        this
+        ))
 
     (define get-buffer
       (case-lambda
@@ -1229,17 +1264,20 @@
        (lambda () (eval-expression-string #f))
        eval-expression-string
        "Evaluate EXP and print resulting value in the echo area. When called
-    interactively, read an Emacs Lisp expression in the minibuffer and
-    evaluate it.  Value is also consed on to front of the variable
-    ‘values’. Optional argument INSERT-VALUE non-nil (interactively, with
-    a non ‘-’ prefix argument) means insert the result into the current
-    buffer instead of printing it in the echo area."
+ interactively, read an Emacs Lisp expression in the minibuffer and
+ evaluate it.  Value is also consed on to front of the variable
+ ‘values’. Optional argument INSERT-VALUE non-nil (interactively, with
+ a non ‘-’ prefix argument) means insert the result into the current
+ buffer instead of printing it in the echo area."
        ))
 
     (define (command-error-default-function data context signal)
-      ((*impl/command-error-default-function*) data context signal))
+      ((*impl/command-error-default-function*) data context signal)
+      )
 
-    (define command-error-function (make-parameter command-error-default-function))
+    (define command-error-function
+      (make-parameter command-error-default-function)
+      )
 
     (define (buffer-line-break pp) ((pp-state-output-port pp) #\newline))
 
@@ -1271,7 +1309,8 @@
     (define (buffer-first-indent pp)
       (%buffer-write-line pp
        (pp-state-indent-char pp)
-       (pp-state-indent pp)))
+       (pp-state-indent pp)
+       ))
 
     (define (buffer-print-finalize pp) (values))
 
@@ -1322,8 +1361,7 @@
           indent
           indent-char
           #f ;;start-of-line
-          ))
-        ))
+          ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -1334,8 +1372,8 @@
            ((#\delete)    . ,delete-char)
            ((meta #\:)    . ,eval-expression)
            ))
-        self-insert-layer))
-
+        self-insert-layer
+        ))
 
     (define *default-keymap*
       ;; The keymap for all keys that are not pressed simultaneously with
@@ -1345,8 +1383,8 @@
 
     (define *default-buffer-local-keymap*
       ;; This keymap maps self-insert-key to all printable ASCII characters.
-      (make-parameter default-keymap))
-
+      (make-parameter default-keymap)
+      )
 
     (define *default-minibuffer-keymap*
       (make-parameter
@@ -1356,10 +1394,20 @@
          `(((#\return) . ,exit-minibuffer)
            ((#\newline) . ,exit-minibuffer)
            ))
-        (*default-keymap*))))
+        (*default-keymap*)
+        )))
 
     ;;--------------------------------------------------------------------
     ;; TODO: fix bug, the call to `EXIT-MINIBUFFER-WITH-RETURN` does not
     ;; restore the window correctly, somehow the minibuffer keymap is
     ;; still used to respond to key events after calling this function.
+
+    ;;----------------------------------------------------------------
+
+    (define *the-editor-state* (make-parameter (new-editor)))
+
+    (define (main . args)
+      (editor-view (*the-editor-state*))
+      )
+
     ))
