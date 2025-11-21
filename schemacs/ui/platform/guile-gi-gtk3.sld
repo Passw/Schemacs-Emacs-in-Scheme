@@ -2,10 +2,11 @@
   (import
     (scheme base)
     (scheme write)
+    (scheme file)
     (only (scheme process-context) command-line)
     (only (schemacs lens) lens  view  lens-set  update)
     (only (schemacs vbal)
-          vbal-assq
+          vbal-assq  vbal-for-each
           )
     (only (schemacs ui rectangle)
           point2D  point2D-x  point2D-y
@@ -35,6 +36,8 @@
           labeled-group  text-editor  canvas  composite
           tiled-windows
           )
+    (prefix (schemacs ui text-buffer-impl) *impl/)
+    (only (schemacs ui text-buffer) *text-load-buffer-size*)
     (only (scheme case-lambda) case-lambda)
     (only (scheme char) char-upcase)
     (prefix (gi) gi:)
@@ -864,6 +867,112 @@
         o))
 
     ;;----------------------------------------------------------------
+    ;; Text Buffer API wrapper
+
+    (define (gtk-buffer-type? o)
+      (gi:is-a? o <GtkTextBuffer>)
+      )
+
+    (define (gtk-new-buffer)
+      (gi:make <GtkTextBuffer>)
+      )
+
+    (define (gtk-style-type? o)
+      (gi:is-a? o <GtkTextTag>)
+      )
+
+    (define (gtk-new-style props)
+      (call-with-port (open-output-string)
+        (lambda (port)
+          (vbal-for-each
+           (lambda (sym val)
+             (write-string (symbol->string sym) port)
+             (write val port)
+             (write-char #\; port)
+             )
+           props
+           )
+          (let*((props (get-output-string port))
+                (style (text-tag:new props))
+                )
+            (display "; new GtkTextTag object with properties: ");;DEBUG
+            (write result);;DEBUG
+            (newline);;DEBUG
+            (gobject-ref props)
+            style
+            ))))
+
+    (define (gtk-buffer-length buffer)
+      (text-buffer:get-char-count buffer)
+      )
+
+    (define (gtk-text-load-port buffer port flags)
+      ;; TODO: handle `FLAGS` to allow for markdown and HTML parsing.
+      (cond
+       ((not (gtk-buffer-type? buffer))
+        (error "not a GtkTextBuffer" buffer)
+        )
+       ((not (input-port-open? port))
+        (error "not an open input port" port)
+        )
+       (else
+        (let ((bufsize (gtk-buffer-length buffer)))
+          (let loop ((count 0))
+            (let*((next-chunk (read-string bufsize))
+                  (chunk-size (string-length next-chunk)))
+              (cond
+               ((eof-object? next-chunk) count)
+               (else
+                (text-buffer:insert-at-cursor buffer next-chunk chunk-size)
+                (display "; inserted ") (write chunk-size) (display " characters") (newline) ;;DEBUG
+                (loop (+ count chunk-size))
+                ))))))))
+
+    (define (gtk-text-dump-port buffer port flags)
+      (cond
+       ((not (gtk-buffer-type? buffer))
+        (error "not a GtkTextBuffer" buffer)
+        )
+       ((not (output-port-open? port))
+        (error "not an open output port" port)
+        )
+       (else
+        (let*((chunk-size (*text-load-buffer-size*))
+              (bufsize (gtk-buffer-length buffer))
+              )
+          (let loop ((lo 0) (hi (min bufsize chunk-size)))
+            (cond
+             ((< lo bufsize)
+              (let*((lo-iter
+                     (text-buffer:get-iter-at-offset!
+                      buffer (gi:make <GtkTextIter>)
+                      lo))
+                    (hi-iter
+                     (text-buffer:get-iter-at-offset!
+                      buffer (gi:make <GtkTextIter>)
+                      hi))
+                    (chunk (text-buffer:get-slice lo-iter hi-iter #t))
+                    )
+                (string-for-each (lambda (c) (write-char c port)) chunk)
+                (loop (+ lo chunk-size) (min bufsize (+ hi chunk-size)))
+                ))
+             (else (values))
+             ))))))
+
+    (define (parameterized-gtk-api thunk)
+      (parameterize
+          ((*impl/buffer-type?*     gtk-buffer-type?)
+           (*impl/new-buffer*       gtk-new-buffer)
+           (*impl/style-type?*      gtk-style-type?)
+           (*impl/new-style*        gtk-new-style)
+           (*impl/buffer-length*    gtk-buffer-length)
+           (*impl/text-load-port*   gtk-text-load-port)
+           (*impl/text-dump-port*   gtk-text-dump-port)
+           )
+        (thunk)
+        ))
+
+    ;;----------------------------------------------------------------
 
     (define *gtk-application-object*
       (begin
@@ -923,6 +1032,7 @@
         (gi-repo:load-by-name "Gtk" "Separator")
         (gi-repo:load-by-name "Gtk" "ScrolledWindow")
         (gi-repo:load-by-name "Gtk" "TextBuffer")
+        (gi-repo:load-by-name "Gtk" "TextTag")
         (gi-repo:load-by-name "Gtk" "TextIter")
         (gi-repo:load-by-name "Gtk" "TextView")
         (gi-repo:load-by-name "Gtk" "DeleteType")

@@ -896,7 +896,7 @@
            (else
             (error
              "div-monad returned element of incorrect type"
-             content-type? div result
+             content-type? elem result
              )))))
       (define (gather-vec resume next vec)
         (let ((len (vector-length vec)))

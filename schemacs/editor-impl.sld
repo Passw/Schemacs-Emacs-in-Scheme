@@ -106,7 +106,7 @@
       ;; <window-type>, a view of <line-display-type>, and a list of
       ;; strings or propertized strings to be inserted into the display.
       (make-parameter
-       (lambda (window info)
+       (lambda (window line-disp info)
          (display ";; no implementation for mode-line-set-info\n")
          (display ";; ")
          (write info)

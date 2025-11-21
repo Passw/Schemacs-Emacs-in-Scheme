@@ -6,17 +6,18 @@
     (scheme case-lambda)
     )
   (export
-    new-buffer*  buffer-type?*  new-style*  style-type?*
-    buffer-length*  text-load*  text-dump*
-    get-cursor-index*  set-cursor-index*
-    move-cursor-index*  set-cursor-position*
-    index->line-column*  get-end-of-line*  get-start-of-line*
-    insert-string*  insert-char*  copy-string*  get-char*
-    get-default-style*  set-default-style*
-    get-text-style*  set-text-style*
-    get-selection*  set-selection*
-    scan-for-char*  scan-for-string*
-    )
+   new-buffer*  buffer-type?*  new-style*  style-type?*
+   buffer-length*  text-load-port*  text-dump-port*
+   get-cursor-index*  set-cursor-index*
+   move-cursor-index*  set-cursor-position*
+   index->line-column*  get-end-of-line*  get-start-of-line*
+   insert-string*  insert-char*  copy-string*  get-char*
+   delete-range*  delete-from-cursor*
+   get-default-style*  set-default-style*
+   get-text-style*  set-text-style*
+   get-selection*  set-selection*
+   scan-for-char*  scan-for-string*
+   )
   (begin
 
     (define buffer-type?*
@@ -32,7 +33,7 @@
       ;; Create a new implementation-specific text buffer opaque data
       ;; structure.
       ;;--------------------------------------------------------------
-      (make-parameter (lambda (buffer) #f)))
+      (make-parameter (lambda () (error "`new-buffer` not defined"))))
 
     (define style-type?*
       ;; Returns `#t` only if the applied argument `STYLE` is an
@@ -51,30 +52,7 @@
       ;;--------------------------------------------------------------
       (make-parameter
        (lambda (props)
-         (error "`new-style` not defined")
-         )))
-
-    (define text-load*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-input-file`, open a text file for reading at the
-      ;; `FILEPATH` and place it's content into the text buffer at the
-      ;; current cursor position.
-      ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer filepath)
-         (error "`text-load` not defined" filepath)
-         )))
-
-    (define text-dump*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-output-file`, open a text file for writing at the
-      ;; `FILEPATH` and write the content of the buffer to the file.
-      ;; The `APPEND` argument indicates whether to open a file for
-      ;; appending, or for truncation.
-      ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer filepath append)
-         (error "`text-dump` not defined" buffer filepath append)
+         (error "`new-style` not defined" props)
          )))
 
     (define buffer-length*
@@ -82,6 +60,36 @@
       (make-parameter
        (lambda (buffer)
          (error "`buffer-length` not defined" buffer)
+         )))
+
+    (define text-load-port*
+      ;; Using a `FILEPATH` of the same type that would be applied to
+      ;; `open-input-file`, open a text file for reading at the
+      ;; `FILEPATH` and place it's content into the text buffer at the
+      ;; current cursor position. The `FLAGS` argument is a set of
+      ;; properties expressed as a `(schemacs vbal)` data structure,
+      ;; it can tweak the parameters of the file loading
+      ;; operation. This could, for example, tell Gtk to parse HTML in
+      ;; the file and set text properties according to HTML tags.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (buffer filepath flags)
+         (error "`text-load-port` not defined" buffer filepath flags)
+         )))
+
+    (define text-dump-port*
+      ;; Using a `FILEPATH` of the same type that would be applied to
+      ;; `open-output-file`, open a text file for writing at the
+      ;; `FILEPATH` and write the content of the buffer to the file.
+      ;; The `FLAGS` argument is a set of properties expressed as a
+      ;; `(schemacs vbal)` data structure, it can tweak the parameters
+      ;; of the file loading operation. This could, for example, tell
+      ;; Gtk to parse HTML in the file and set text properties
+      ;; according to HTML tags.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (buffer filepath flags)
+         (error "`text-dump-port` not defined" buffer filepath flags)
          )))
 
     (define get-cursor-index*
@@ -180,6 +188,29 @@
       (make-parameter
        (lambda (buffer)
          (error "`get-char` not defined" buffer)
+         )))
+
+    (define delete-range*
+      ;; Delete characters between the two character positions. The
+      ;; positions may be expressed as integers, in which case they
+      ;; are character positions, or as `location` data structure as
+      ;; defined in the `(schemacs lexer)` library.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (buffer from to)
+         (error "`delete-range` not defined" buffer)
+         )))
+
+    (define delete-from-cursor*
+      ;; Delete characters starting from the cursor position and
+      ;; ending at the given character position. The character
+      ;; position may be expressed as an integer, in which case it is
+      ;; a character position, or as a `location` data structur as
+      ;; defined in the `(schemacs lexer)` library.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (buffer to)
+         (error "`delete-from-cursor` not defined" buffer)
          )))
 
     (define get-default-style*

@@ -5,7 +5,6 @@
   ;; and therefore is not just a clone of the Emacs editor, but of the
   ;; Emacs Lisp programming language.
 
-
   ;; TODO: consider possibly doing the following:
   ;;
   ;;  1. changing this library to `(schemacs ui main)`
@@ -51,11 +50,15 @@
     (only (schemacs ui rectangle)
           rect2D  point2D  size2D
           )
+    (only (schemacs vbal) alist->vbal)
     (only (schemacs ui)
           run-div-monad  enclose  expand
-          state-var  use-vars  div  div-pack  pack-elem
-          div-space  floater
-          tiled-windows  cut-horizontal  cut-vertical
+          state-var  use-vars  =>state-var-value*!
+          div  view-type  properties
+          div-pack  pack-elem  cut-horizontal  cut-vertical
+          div-space   floater
+          tiled-windows  text-editor
+          use-vars-value;;DEBUG
           ))
 
   (export
@@ -79,9 +82,7 @@
    ;; This includes the echo area
    line-display-type?
    new-line-display  new-mode-line  new-header-line  new-echo-area
-   =>line-display-view
-   *mode-line-format*
-   mode-line-display-items
+   *mode-line-format*  *header-line-format*
 
    ;; ---------------- Windows ----------------
    window-type?
@@ -142,35 +143,6 @@
 
   ;; =======================
   (begin
-
-    ;; All of the record types defined in the module can be initialized by
-    ;; a "new-<record-type-name>" function. All record types also have at
-    ;; least two slots which are both initialized to #f by these "new-___"
-    ;; initializers:
-    ;;
-    ;;   - "___-view" slots intended to hold information used for
-    ;;   rendering the record structure in some kind of interactive user
-    ;;   environment, such as a GUI or a CLI It is easier to place the
-    ;;   slots for these view data structures directly into the record
-    ;;   itself so that the view and the record can both be accessed from
-    ;;   within the same thread via the same reference. Trying to wrap a
-    ;;   buffer with a reference to its thread (the Goblins "vat") inside
-    ;;   of a GUI view data structure would become very messy indeed.
-    ;;   These fields can be initialized by parametrizable procedures.
-    ;;
-    ;;  - "___-cell" slots are deprecated.
-    ;;
-    ;; Another architectural choice made here is to define paramaterizable
-    ;; constructors for the views used in each of the record types, that
-    ;; is, each view constructor is a lambda expression wrapped in a
-    ;; parameter variable.  The reason for this is to make it easier use
-    ;; multiple between front-ends at runtime, you can simply paramaterize
-    ;; the "*impl/new-___-view*" function for each of the data types in
-    ;; this module in a way that is specific to your front-end. Each of
-    ;; these view constructors take a reference to the data structure that
-    ;; is being defined.
-
-    ;; -------------------------------------------------------------------------------------------------
 
     (define (keymap-arg-or-default km-arg *default*)
       ;; This function is basically "or" except it throws an exception if
@@ -255,7 +227,7 @@
       (let*((winframe (selected-frame))
             (txt (get-minibuffer-text winframe))
             )
-        (display ";;minibuffer-prompt-resume ")(write txt)(newline);;DEBUG
+        (display ";;minibuffer-prompt-resume ")(write txt)(newline) ;;DEBUG
         (winframe-prompt-resume winframe txt)))
 
     ;; -------------------------------------------------------------------------------------------------
@@ -364,108 +336,132 @@
       ;; things like the echo area, the minibuffer, the mode line, and the
       ;; header line. In the Gtk backend, these are all GtkFlowBox widgets
       ;; containing one or more GtkLabel widgets.
-      (make<line-display-type> cell frame view)
+      (make<line-display-type> parent prompt-var input-var view)
       line-display-type?
-      (cell   line-display-cell)
-      (frame  line-display-parent-frame  set!line-display-parent-frame)
-      (view   line-display-view          set!line-display-view))
+      (parent      line-display-parent-frame  set!line-display-parent-frame)
+      (prompt-var  line-display-prompt-var    set!line-display-prompt-var)
+      (input-var   line-display-input-var     set!line-display-input-var)
+      (view        line-display-view          set!line-display-view)
+      )
 
-    (define =>line-display-view
-      (record-unit-lens
-       line-display-view
-       set!line-display-view
-       '=>line-display-view))
+    (define (new-line-display parent prompt)
+      (let*((prompt-var prompt)
+            (input-var (state-var (text-editor "")))
+            (this (make<line-display-type> parent prompt-var input-var #f))
+            (widget
+             (div-pack
+              cut-vertical
+              (view-type this)
+              (properties 'wrapping: #t)
+              (size2D expand enclose)
+              (use-vars (list input-var) (lambda (o) o))
+              )))
+        (set!line-display-view this widget)
+        this
+        ))
 
-    (define (new-line-display-backend backend-param)
-      (lambda (parent-window)
-        (let ((this (make<line-display-type> #f parent-window #f)))
-          (set!line-display-view this ((backend-param) this))
-          this)))
+    (define (new-echo-area parent) (new-line-display parent #f))
 
-    (define new-echo-area   (new-line-display-backend *impl/new-echo-area-view*))
-    (define new-header-line (new-line-display-backend *impl/new-header-line-view*))
+    (define (new-minibuffer parent)
+      (new-line-display parent (state-var (div "")))
+      )
 
-    (define (new-mode-line parent-window items)
-      (let ((line-display
-             ((new-line-display-backend *impl/new-mode-line-view*) parent-window)))
-        (mode-line-display-items parent-window (line-display-view line-display) items)
-        line-display))
+    (define (new-header-line parent-window st)
+      (new-mode-line parent-window (or st *header-line-format*))
+      )
+
+    (define (new-mode-line parent-window st)
+      (let ((st (or st (*mode-line-format*))))
+        (use-vars
+         (list st)
+         (lambda (items) 
+           (display "; new-mode-line ");;DEBUG
+           (write items);;DEBUG
+           (newline);;DEBUG
+           items
+           );;DEBUG
+         )
+        ))
+
+    (define *header-line-format* (make-parameter (state-var #f)))
 
     (define *mode-line-format*
       (make-parameter
-       (list
-        (lambda (_) (if (*impl/is-graphical-display?*) " " "-"))
-        (lambda (_) "-") ;; buffer encoding
-        (lambda (_) ":") ;; end of line style
-        (lambda (_) "-") ;; buffer file is writable ("%" in read-only mode)
-        (lambda (parent-window)  ;; "%" in read-only mode and unchanged
-          (if (is-buffer-changed? parent-window) "*" "-"))
-        (lambda (_) "-") ;; buffer is local or remote ("@" means remote)
-        "  "
-        (lambda (parent-window)
-          (list
-           #:propertize
-           (view parent-window =>window-buffer =>buffer-handle)
-           '(#:weight . "bold"))
-          )
-        )))
+       (state-var
+        (list
+         (lambda (_) (if (*impl/is-graphical-display?*) " " "-"))
+         (lambda (_) "-") ;; buffer encoding
+         (lambda (_) ":") ;; end of line style
+         (lambda (_) "-") ;; buffer file is writable ("%" in read-only mode)
+         (lambda (parent-window) ;; "%" in read-only mode and unchanged
+           (if (is-buffer-changed? parent-window) "*" "-")
+           )
+         (lambda (_) "-") ;; buffer is local or remote ("@" means remote)
+         "  "
+         (lambda (parent-window)
+           (list
+            'propertize:
+            (view parent-window =>window-buffer =>buffer-handle)
+            '(weight: . "bold")
+            ))))))
 
-    (define (mode-line-display-single parent-window widget-view stack item)
+    (define (mode-line-display-single parent-window stack item)
       (cond
        ((or (eq? #t item) (eq? #f item)) stack)
        ((procedure? item)
         (let ((next-item (item parent-window)))
-          (mode-line-display-single
-           parent-window widget-view stack next-item)))
-       ((eq? #:separator item) (cons #:separator stack))
+          (mode-line-display-single parent-window stack next-item)
+          ))
+       ((eq? 'separator item) (cons 'separator stack))
        ((pair? item)
         (cond
-         ((eq? #:propertize (car item))
+         ((or (eq? 'propertize: (car item)) (eq? ':propertize (car item)))
           (cond
            ((not (null? (cdr item)))
             (cons
              (cons
-              #:propertize
+              'propertize:
               (cons
-               (mode-line-display-single parent-window widget-view '() (cadr item))
-               (cddr item)))
-             stack))
+               (mode-line-display-single parent-window '() (cadr item))
+               (cddr item)
+               ))
+             stack
+             ))
            (else
-            (mode-line-collect-items parent-window widget-view stack item)
+            (mode-line-collect-items parent-window stack item)
             )))
-         (else stack)))
-       ((string? item) (cons item stack))
+         (else stack)
+         ))
+       ((string? item) (cons (div item) stack))
        (else
-        (error "unknown mode-line item" item))
-       ))
+        (error "unknown mode-line item" item)
+        )))
 
-    (define (mode-line-collect-items parent-window widget-view stack items)
+    (define (mode-line-collect-items parent-window stack items)
       (display ";;mode-line-collect-items ")(write items)(newline)
       (let loop ((stack stack) (items items))
         (cond
          ((pair? items)
           (loop
-           (mode-line-display-single
-            parent-window widget-view stack (car items))
-           (cdr items)))
+           (mode-line-display-single parent-window stack (car items))
+           (cdr items)
+           ))
          (else (reverse stack))
          )))
 
-    (define mode-line-display-items
+    (define (mode-line-display-items parent-window)
       ;; Loop over the `ITEMS` (or `*MODE-LINE-FORMAT*` if no `ITEMS` are
       ;; given, or if `ITEMS` is #f) and collect strings, collect all
       ;; strings into a list, call the back-end function
       ;; `*IMPL/MODE-LINE-DISPLAY-ITEMS*`.
       ;;------------------------------------------------------------------
-      (case-lambda
-        ((parent-window widget-view)
-         (mode-line-display-items parent-window widget-view #f))
-        ((parent-window widget-view items)
-         ((*impl/mode-line-display-items*)
-          parent-window widget-view
-          (mode-line-collect-items
-           parent-window widget-view '()
-           (or items (*mode-line-format*)))))))
+      (lambda (items)
+        (display "; mode-line-display-items ") (write items) (newline);;DEBUG
+        (and items
+         (apply
+          div-pack cut-vertical
+          (mode-line-collect-items parent-window '() items)
+          ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -478,9 +474,8 @@
       ;; the nearest thing to what Emacs considers to be a window. You may
       ;; provide a buffer as an argument, or #f. If you do not
       ;; provide a buffer, an new empty buffer is created.
-      (make<window> cell parent buffer keymap mode-line header-line view)
+      (make<window> parent buffer keymap mode-line header-line view)
       window-type?
-      (cell         window-cell)
       (parent       window-parent-frame  set!window-parent-frame)
       (buffer       %window-buffer       set!window-buffer)
       (keymap       window-local-keymap  set!window-local-keymap)
@@ -489,37 +484,41 @@
       (view         window-view          set!window-view)
       )
 
-    (define (new-window-with-view make-view mode-line-items parent-winframe buffer keymap)
-      ;; This window constructor lets you specify the view constructor, so
-      ;; pick a nice one. This procedure is called by `NEW-WINDOW` to
-      ;; construct ordinary buffer windows, and it is called by
-      ;; `NEW-MINIBUFFER` to construct a window that contains the
-      ;; minibuffer.
-      ;;------------------------------------------------------------------
-      (let*((buffer
-             (cond
-              ((buffer-type? buffer) buffer)
-              ((not buffer) (new-buffer #f #f))
-              (else (error "argument 2 to new-window not a buffer" buffer))))
-            (keymap (keymap-arg-or-default keymap *default-window-local-keymap*))
-            (this (make<window> #f parent-winframe buffer keymap #f #f #f))
-            )
-        (when mode-line-items
-          (set!window-mode-line this (new-mode-line this mode-line-items)))
-           ;; mode-line must be constructed before make-view
-        (set!window-view this (make-view this))
-        ;; NOTE: the header line is not created initially, it can be
-        ;; created when there is a need to display it.
-        (set!window-header-line this ((*impl/new-header-line-view*) this))
-        this
-        ))
+    (define (showlines elems);;DEBUG
+      (let loop ((i 0) (elems elems));;DEBUG
+        (cond;;DEBUG
+         ((pair? elems);;DEBUG
+          (cond;;DEBUG
+           ((< i 10) (write-string "     "));;DEBUG
+           ((< i 100) (write-string "    "));;DEBUG
+           ((< i 1000) (write-string "   "));;DEBUG
+           ((< i 10000) (write-string "  "));;DEBUG
+           ((< i 100000) (write-string " "));;DEBUG
+           (else (values));;DEBUG
+           );;DEBUG
+          (write i) (display ": ") (write (car elems)) (newline);;DEBUG
+          (loop (+ 1 i) (cdr elems));;DEBUG
+          );;DEBUG
+         (else (values));;DEBUG
+         )));;DEBUG
 
     (define (new-window parent buffer keymap)
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
       ;;------------------------------------------------------------------
-      (new-window-with-view (*impl/new-window-view*) (*mode-line-format*) parent buffer keymap)
-      )
+      (let*((this (make<window> parent buffer keymap #f #f #f))
+            (mode-line (new-mode-line this (*mode-line-format*)))
+            (header-line (new-header-line this (*header-line-format*)))
+            (widget
+             (div-pack
+              cut-horizontal (view-type this)
+              header-line buffer mode-line
+              )))
+        (set!window-mode-line   this mode-line)
+        (set!window-header-line this header-line)
+        (set!window-view        this widget)
+        this
+        ))
 
     (define window-buffer
       (case-lambda
@@ -558,7 +557,7 @@
       (record-unit-lens window-view set!window-view '=>window-view)
       )
 
-    (define (debug-print-keymaps winframe);;DEBUG
+    (define (debug-print-keymaps winframe) ;;DEBUG
       (let*((window   (winframe-selected-window  winframe))
             (buffer   (window-buffer             window))
             (winkmap  (window-local-keymap       window))
@@ -568,18 +567,18 @@
             (print-keymap-name
              (lambda (field keymap)
                (print "#:" field #\space
-                (or (and (not keymap) "#f")
-                    (view keymap km:=>keymap-label!)
-                    "<no-label>"
-                    )))))
+                      (or (and (not keymap) "#f")
+                          (view keymap km:=>keymap-label!)
+                          "<no-label>"
+                          )))))
         (pretty
          (print
           (bracketed 2 #\( #\)
-           "#:awaiting " awaiting #\space
-           (print-keymap-name "bufkmap" bufkmap) #\space
-           (print-keymap-name "winkmap" winkmap) #\space
-           (print-keymap-name "frmkmap" frmkmap)
-           )
+                     "#:awaiting " awaiting #\space
+                     (print-keymap-name "bufkmap" bufkmap) #\space
+                     (print-keymap-name "winkmap" winkmap) #\space
+                     (print-keymap-name "frmkmap" frmkmap)
+                     )
           (line-break)
           ))
         #t))
@@ -629,7 +628,7 @@
 
     (define (waiting-key-index-handler key-path keymap)
       (format-message "~s-"
-       (km:keymap-index->list (force key-path))))
+                      (km:keymap-index->list (force key-path))))
 
     (define *waiting-key-index*
       ;; This event handlers is parameterized should it ever become
@@ -674,18 +673,6 @@
       ;; necessary to override it, but usually the default procedure
       ;; DISPATCH-KEY-EVENT-HANDLER does the job well enough.
       (make-parameter dispatch-key-event-handler))
-
-    ;; -------------------------------------------------------------------------------------------------
-
-    (define (new-minibuffer parent-winframe keymap)
-      (let*((editor (winframe-parent-editor parent-winframe))
-            (id (editor-get-next-obj-id editor))
-            (handle (string-append " *Minibuf-" (number->string id) "*"))
-            (keymap (or keymap (*default-minibuffer-keymap*)))
-            (buffer (new-buffer handle keymap))
-            )
-        (new-window-with-view (*impl/new-minibuffer-view*) #f parent-winframe buffer keymap)
-        ))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -735,26 +722,26 @@
             (view            #f)
             (this
              (make<winframe>
-              editor  init-window  layout
-              modal-key-state  init-keymap
-              echo-area  minibuffer
-              dispatch  prompt  view
+              editor  init-window  layout  modal-key-state  init-keymap
+              echo-area  minibuffer  dispatch  prompt  view
               ))
             (init-window (new-window this init-buffer init-keymap))
             (echo-area   (new-echo-area this))
-            (minibuffer  (new-minibuffer this #f))
-            (layout      (state-var eq? init-window))
+            (minibuffer  (new-minibuffer this))
+            (layout      (state-var init-window))
+            (lo-size     (size2D expand enclose))
             (widget
              (floater
               (rect2D 0 0 expand expand)
               (div-pack
                cut-horizontal
+               (view-type this)
                (pack-elem
                 (size2D expand expand)
                 (use-vars (list layout) (lambda (o) o))
                 )
                (pack-elem lo-size (line-display-view echo-area))
-               (pack-elem lo-size (line-display-view minibuf))
+               (pack-elem lo-size (line-display-view minibuffer))
                ))))
         (set!winframe-selected-window this init-window)
         (set!winframe-layout          this layout)
@@ -851,7 +838,7 @@
       (case-lambda
         ((window) (select-window window #f))
         ((window norecord)
-         (display ";;select-window ")(write (view window =>window-buffer =>buffer-handle))(newline);;DEBUG
+         (display ";;select-window ")(write (view window =>window-buffer =>buffer-handle))(newline) ;;DEBUG
          ((*impl/select-window*) window)
          (lens-set window (selected-frame) =>winframe-selected-window)
          )))
@@ -916,7 +903,7 @@
                    (make<minibuffer-prompt> cont window)
                    stack))
                 winframe =>winframe-prompt-stack)
-               (dispatch) ; this does not return
+               (dispatch)               ; this does not return
                )))
            (else (error "recursive edit failed, no event dispatch continuation"))
            )))
@@ -941,8 +928,8 @@
       (let*((prompt-stack (view winframe =>winframe-prompt-stack))
             (prompt-item  (and (not (null? prompt-stack)) (car prompt-stack)))
             )
-        (display ";;winframe-prompt-resume ")(write return)(newline);;DEBUG
-        (debug-print-keymaps winframe);;DEBUG
+        (display ";;winframe-prompt-resume ")(write return)(newline) ;;DEBUG
+        (debug-print-keymaps winframe) ;;DEBUG
         (cond
          ((minibuffer-prompt-type? prompt-item)
           (let ((prompt  (minibuffer-prompt-continuation     prompt-item))
@@ -963,11 +950,11 @@
     (define (selected-window) (view (selected-frame) =>winframe-selected-window))
     (define (current-buffer) (*impl/current-buffer*))
     (define selected-buffer current-buffer)
-      ;; These are global variables from the point of view of Emacs
-      ;; Lisp. They are parameters in this library, and are parameterized
-      ;; by the GUI provider library. These APIs are exposed in the
-      ;; (SCHEMACS EDITOR) library, but as procedures which cannot modify
-      ;; the parameter.
+    ;; These are global variables from the point of view of Emacs
+    ;; Lisp. They are parameters in this library, and are parameterized
+    ;; by the GUI provider library. These APIs are exposed in the
+    ;; (SCHEMACS EDITOR) library, but as procedures which cannot modify
+    ;; the parameter.
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -1033,14 +1020,14 @@
             (winframe-table (new-table 15))
             (this
              (make<editor>
-              #f ; editor-cell
-              buffer-table ; buffer table
-              winframe-table ; frame table
-              (new-table 15) ; process table
-              (*default-keymap*) ; base-keymap
-              msgs  ; messages minibuffer
-              0     ; counter
-              #f    ; view
+              #f                        ; editor-cell
+              buffer-table              ; buffer table
+              winframe-table            ; frame table
+              (new-table 15)            ; process table
+              (*default-keymap*)        ; base-keymap
+              msgs                      ; messages minibuffer
+              0                         ; counter
+              #f                        ; view
               ))
             (view       ((*impl/new-editor-view*) this))
             (_          (set!editor-view this view))
@@ -1072,7 +1059,7 @@
       ;; *dispatch-key-event* function handlers.
       (cond
        ((winframe-type? winframe)
-        (debug-print-keymaps winframe);;DEBUG
+        (debug-print-keymaps winframe) ;;DEBUG
         (let*((state (window-get-or-reset-modal-state! winframe))
               (window (selected-window))
               )
@@ -1129,7 +1116,7 @@
     ;; then the GUI is constructed on top of this superstructure.
 
     (define (get-minibuffer-text frame)
-      (display ";;get-minibuffer-text\n");;DEBUG
+      (display ";;get-minibuffer-text\n") ;;DEBUG
       ((*impl/get-minibuffer-text*) frame))
 
     (define (exit-minibuffer-with-return return)
@@ -1139,7 +1126,7 @@
       ;; saved which contains the stack of the procedure that called it,
       ;; this function resumes that continuation with the return value to
       ;; that procedure call given as an argument to this procedure.
-      (display ";;exit-minibuffer-with-return\n");;DEBUG
+      (display ";;exit-minibuffer-with-return\n") ;;DEBUG
       (let ((winframe (selected-frame)))
         ((*impl/exit-minibuffer*) winframe)
         (winframe-prompt-resume winframe return)
@@ -1173,7 +1160,7 @@
         ((prompt init-input keymap)
          (let*((window   (selected-window))
                (winframe (window-parent-frame window))
-               (minibuf  (winframe-minibuffer winframe))
+               ;;(minibuf  (winframe-minibuffer winframe))
                )
            (focus-minibuffer winframe prompt init-input)
            (winframe-await-prompt winframe window)
@@ -1232,7 +1219,7 @@
                  (else (error "must be a string" input-string))))
                (_ (pretty
                    (print ";;eval-expression-string: "
-                    (qstr input-string) (line-break))))
+                          (qstr input-string) (line-break))))
                (result
                 (cond
                  ((string=? "" input-string) #f)
@@ -1289,28 +1276,28 @@
                (buffer (pp-state-line-buffer pp)))
            (when (>= indent 0)
              (insert buffer
-              (call-with-port
-                  (lambda (port)
-                    (let loop ((i 0))
-                      (if (>= i indent) (values)
-                          (begin (write-char char port) (loop (+ 1 i)))))
-                    (get-output-string port))
-                (open-output-string))))
+                     (call-with-port
+                         (lambda (port)
+                           (let loop ((i 0))
+                             (if (>= i indent) (values)
+                                 (begin (write-char char port) (loop (+ 1 i)))))
+                           (get-output-string port))
+                       (open-output-string))))
            (when string (insert buffer string))
            ))))
 
     (define (buffer-write-line pp line)
       (%buffer-write-line pp
-       (pp-line-indent-char line)
-       (pp-line-indent line)
-       (pp-line-string line)
-       ))
+                          (pp-line-indent-char line)
+                          (pp-line-indent line)
+                          (pp-line-string line)
+                          ))
 
     (define (buffer-first-indent pp)
       (%buffer-write-line pp
-       (pp-state-indent-char pp)
-       (pp-state-indent pp)
-       ))
+                          (pp-state-indent-char pp)
+                          (pp-state-indent pp)
+                          ))
 
     (define (buffer-print-finalize pp) (values))
 
@@ -1356,7 +1343,7 @@
           buffer-first-indent
           buffer-write-line
           buffer-print-finalize
-          buffer ;;line-buffer
+          buffer                      ;;line-buffer
           (*impl/insert-into-buffer*) ;;output-port
           indent
           indent-char
@@ -1367,13 +1354,13 @@
 
     (define default-keymap
       (km:keymap '*default-keymap*
-        (km:alist->keymap-layer
-         `(((#\backspace) . ,delete-backward-char)
-           ((#\delete)    . ,delete-char)
-           ((meta #\:)    . ,eval-expression)
-           ))
-        self-insert-layer
-        ))
+                 (km:alist->keymap-layer
+                  `(((#\backspace) . ,delete-backward-char)
+                    ((#\delete)    . ,delete-char)
+                    ((meta #\:)    . ,eval-expression)
+                    ))
+                 self-insert-layer
+                 ))
 
     (define *default-keymap*
       ;; The keymap for all keys that are not pressed simultaneously with
