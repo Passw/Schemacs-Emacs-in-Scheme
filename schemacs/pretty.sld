@@ -74,9 +74,81 @@
    pp-line-buffer-zero-count pp-line-buffer-char-count
    pp-line-buffer-min-len    pp-line-buffer-max-len
    pp-line-buffer-min-indent pp-line-buffer-max-indent
+
+   display-lines  display-integer-right-align
    )
 
   (begin
+
+    (define (%right-align i port)
+      (cond
+       ((< i 10) (write-string "     " port))
+       ((< i 100) (write-string "    " port))
+       ((< i 1000) (write-string "   " port))
+       ((< i 10000) (write-string "  " port))
+       ((< i 100000) (write-string " " port))
+       (else (values))
+       )
+      (write i port)
+      )
+
+    (define display-integer-right-align
+      (case-lambda
+        ((num) (%right-align num (current-output-port)))
+        ((num port) (%right-align num port))
+        ))
+
+    (define (%display-lines elems write port)
+      ;; This is just a general-purpose utility function for printing
+      ;; elements of a list or vector with their indicies. It is not
+      ;; otherwise related to the pretty printer defined in this
+      ;; library.
+      ;;--------------------------------------------------------------
+      (cond
+       ((pair? elems)
+        (let loop ((i 0) (elems elems))
+          (cond
+           ((pair? elems)
+            (%right-align i port)
+            (display ": " port)
+            (write (car elems) port)
+            (newline port)
+            (loop (+ 1 i) (cdr elems))
+            )
+           (else (values))
+           )))
+       ((vector? elems)
+        (let ((len (vector-length elems)))
+          (let loop ((i 0))
+            (cond
+             ((< i len)
+              (%right-align i port)
+              (display ": " port)
+              (write (vector-ref elems i) port)
+              (newline port)
+              (loop (+ 1 i))
+              )
+             (else (values))
+             ))))
+       (else (error "display-lines cannot operate on value of this type" elems))
+       ))
+
+    (define display-lines
+      (case-lambda
+        ((elems) (%display-lines elems write (current-output-port)))
+        ((elems write/port)
+         (cond
+          ((procedure? write/port)
+           (%display-lines elems write/port (current-output-port))
+           )
+          ((output-port? write/port)
+           (%display-lines elems write write/port)
+           )))
+        ((elems write port)
+         (%display-lines elems write port)
+         )))
+
+    ;;----------------------------------------------------------------
 
     (define-record-type <pp-line-type>
       ;; A line of text that is stored into a buffer filled by a pretty
