@@ -7,6 +7,7 @@
           record-unit-lens  lens  update
           =>view-only-lens  =>canonical
           )
+    (only (schemacs pretty) print form)
     )
   (export
    size2D-type?     size2D         size2D=?   point2D->size2D
@@ -18,7 +19,7 @@
    point2D-min-max  rect2D-opposite-corner
    rect2D-enclosing copy-rect2D    copy-point2D
    copy-size2D      copy-2D
-   write-rect2D     write-point2D  write-size2D
+   print-rect2D     print-point2D  print-size2D
    )
   (begin
 
@@ -43,16 +44,9 @@
         ((w h) (make<size2D> w h))
         ))
 
-    (define write-size2D
-      (case-lambda
-        ((s) (write-size2D s (current-output-port)))
-        ((s port)
-         (write-string "(size2D " port)
-         (write (size2D-width s) port)
-         (write-char #\space port)
-         (write (size2D-height s) port)
-         (write-char #\) port)
-         )))
+    (define (print-size2D s)
+      (form 1 "size2D" (size2D-width s) (size2D-height s))
+      )
 
     (define-record-type <point2D-type>
       (point2D x y)
@@ -65,16 +59,9 @@
       (point2D (point2D-x o) (point2D-y o))
       )
 
-    (define write-point2D
-      (case-lambda
-        ((p) (write-size2D p (current-output-port)))
-        ((p port)
-         (write-string "(point2D " port)
-         (write (point2D-x p) port)
-         (write-char #\space port)
-         (write (point2D-y p) port)
-         (write-char #\) port)
-         )))
+    (define (print-point2D p)
+      (form 1 "pint2D" (point2D-x p) (point2D-y p))
+      )
 
     (define-record-type <rect2D-type>
       (make<rect2D> point size)
@@ -231,22 +218,15 @@
           (- max-y min-y)
           ))))
 
-    (define write-rect2D
-      (case-lambda
-        ((r) (write-size2D r (current-output-port)))
-        ((r port)
-         (let ((p (rect2D-point r))
-               (s (rect2D-size  r))
-               )
-           (write-string "(rect2D " port)
-           (write (point2D-x p) port)
-           (write-char #\space port)
-           (write (point2D-y p) port)
-           (write (size2D-width s) port)
-           (write-char #\space port)
-           (write (size2D-height s) port)
-           (write-char #\) port)
-           ))))
+    (define (print-rect2D r)
+      (let ((p (rect2D-point r))
+            (s (rect2D-size  r))
+            )
+        (form
+         1 "rect2D"
+         (point2D-x p) (point2D-y p)
+         (size2D-width s) (size2D-height s)
+         )))
 
     ;;--------------------------------------------------------------
     ))

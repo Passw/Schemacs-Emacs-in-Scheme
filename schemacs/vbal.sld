@@ -7,13 +7,16 @@
   (import
     (scheme base)
     (scheme case-lambda)
-    )
+    (only (schemacs pretty)
+          print  line-break  qstr
+          ))
   (export
    vbal-type?  vbal-length  vbal-copy
    alist->vbal  vbal->vector  vbal->alist
    vbal-find  vbal-assoc  vbal-assq  vbal-assv
    vbal-ref  vbal-set!  vbal-key-set!  vbal-value-set!
    vbal-map  vbal-map!  vbal-for-each
+   print-vbal-with  print-vbal-with
    )
   (begin
 
@@ -201,4 +204,15 @@
            (else (values))
            ))))
 
+    (define (print-vbal-with proc vbal)
+      (apply print
+       (map (lambda (pair) (proc (car pair) (cdr pair)))
+            (vbal->alist vbal)
+            )))
+
+    (define (print-vbal vbal)
+      (print-vbal-with (lambda (key val) (print (qstr key) "  " (qstr val) line-break)) vbal)
+      )
+
+    ;;----------------------------------------------------------------
     ))

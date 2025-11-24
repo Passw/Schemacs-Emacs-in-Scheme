@@ -65,15 +65,20 @@
     (only (schemacs vbal) ;;(schemacs vbal)
           vbal-type?  alist->vbal  vbal-copy  vbal-assq
           vbal-length  vbal-for-each
+          print-vbal-with
           )
     (only (schemacs ui rectangle)
-          rect2D-type?  rect2D  copy-rect2D  write-rect2D
+          rect2D-type?  rect2D  copy-rect2D  print-rect2D
           size2D-type?  size2D  copy-2D      rect2D-size
-          point2D-type?  write-point2D
+          point2D-type?  print-point2D
           )
     (only (schemacs lens)
           record-unit-lens  lens  update
           =>view-only-lens  =>canonical
+          )
+    (only (schemacs pretty)
+          pretty  print  qstr  line-break  form
+          join-by  join-lines
           )
     )
   (export
@@ -81,7 +86,7 @@
    state-var  use-vars  get-var  update-var  signal-var
    =>state-var-value*!  div-event-handler  use-vars-value
    ;;------------------------------------------------------------------
-   div-type?   div-record-type?  div   copy-div  write-div
+   div-type?   div-record-type?  div   copy-div  print-div
    div-parent  div-view-type  div-content  div-from-var?
    div-on-update  div-equality-test
    view-type  on-update  equality-test  widget   properties  content
@@ -556,76 +561,62 @@
       (write-char #\) port)
       )
 
-    (define (%write-div depth o port)
+    (define (print-div o)
       (let*-values
           (((cont) (div-content o))
-           ((constr write-content)
+           ((constr print-content)
             (cond
-             ((div-pack-type?  cont) (values "div-pack"  write-div-pack))
-             ((div-grid-type?  cont) (values "div-grid"  write-div-grid))
-             ((div-space-type? cont) (values "div-space" write-div-space))
-             (else (values "div" write-div-content))
+             ((div-pack-type?  cont) (values "div-pack"  print-div-pack))
+             ((div-grid-type?  cont) (values "div-grid"  print-div-grid))
+             ((div-space-type? cont) (values "div-space" print-div-space))
+             (else (values "div" (lambda (o) (and o (qstr o)))))
              ))
            ((props) (div-properties o))
+           ((vtype) (div-view-type o))
            ((len) (and props (vbal-length props)))
            )
-        (write-char #\( port)
-        (write-string constr port)
-        (cond
-         ((div-pack-type? cont)
-          ;; Special rule here to write the div-pack flags on the same
-          ;; line as the "div-pack" constructor.
-          (write-char #\space port)
-          (write (div-pack-orientation cont) port)
-          (let ((flags (div-pack-flags cont)))
-            (let loop
-                ((flags
-                  (cons
-                   (div-pack-from cont)
-                   (or (and (not flags) '()) flags)
-                   )))
-              (cond
-               ((pair? flags)
-                (write-char #\space port)
-                (write (car flags) port)
-                (loop (cdr flags))
-                )
-               (else (values))
-               ))))
-         (else (newline))
-         )
-        (let*((depth1 (+ 1 depth)))
-          (cond
-           ((and props (< 0 len))
-            (indent depth port)
-            (write-string "(properties")
-            (vbal-for-each
-             (lambda (k v)
-               (newline port)
-               (indent depth1 port)
-               (write-char #\' port)
-               (write k port)
-               (write-string "  " port)
-               (write v port)
-               )
+        (form
+         1 constr
+         (cond
+          ((div-pack-type? cont)
+           ;; Special rule here to write the div-pack flags on the same
+           ;; line as the "div-pack" constructor.
+           (apply
+            join-by #\space (div-pack-orientation cont)
+            (let ((flags (div-pack-flags cont)))
+              (let loop
+                  ((flags
+                    (cons
+                     (div-pack-from cont)
+                     (or (and (not flags) '()) flags)
+                     )))
+                (cond
+                 ((pair? flags)
+                  (cons (car flags) (loop (cdr flags)))
+                  )
+                 (else (list (line-break)))
+                 )))))
+          (else #f)
+          )
+         (and vtype (print (print-div-view-type vtype) (line-break)))
+         ;; now write the properties list
+         (and props
+          (print
+           (form
+            1 "properties" (line-break)
+            (print-vbal-with
+             (lambda (key val)
+               (print
+                (if (symbol? key) (print #\' key) (qstr key))
+                "  " (qstr val) (line-break)
+                ))
              props
-             )
-            (newline port)
-            (indent depth1 port)
-            (write-char #\) port) ;; end of properties
-            )
-           (else (values))
-           )
-          (newline port)
-          (write-content depth (div-content o) port)
-          (write-char #\) port) ;; end of constructor
-          )))
-
-    (define write-div
-      (case-lambda
-        ((o) (%write-div 0 o (current-output-port)))
-        ((o port) (%write-div 0 o port))
-        ))
+             ))
+           (line-break)
+           ))
+         ;; now write the content
+         (print-content cont)
+         )))
 
     (define expand
       ;; keyword: `EXPAND` used as argument to `SIZE2D` procedure,
@@ -1351,65 +1342,48 @@
        cont
        ))
 
-    (define (write-div-grid depth cont port)
-      (let*((ws (lambda (c get)
-                  (let*((vec (get cont))
-                        (len (vector-length vec))
-                        )
-                    (indent depth port)
-                    (write-char #\( port)
-                    (write-char c port)
-                    (write-string "-sizes" port)
-                    (let loop ((i 0))
-                      (cond
-                       ((< i len)
-                        (write-char #\space port)
-                        (write (vector-ref vec i) port)
-                        (loop (+ 1 i))
-                        )
-                       (else (write-char #\) port))
-                       ))
-                    (newline port)
-                    )))
-            (xs (div-grid-x-sizes cont))
-            (xs-len (vector-length xs))
-            (vec (div-grid-subdivs cont))
-            (len (vector-length vec))
+    (define (print-div-grid cont)
+      (define xs (div-grid-x-sizes cont))
+      (define xs-len (vector-length xs))
+      (define vec (div-grid-subdivs cont))
+      (define len (vector-length vec))
+      (define (print-sizes c get)
+        (let*((vec (get cont))
+              (len (vector-length vec))
+              )
+          (apply form 1 (print c "-sizes") (vector->list vec))
+          ))
+      (define (x-loop i x)
+        (cond
+         ((>= i len) '())
+         ((< x xs-len)
+          (cons
+           (print-div (vector-ref vec i))
+           (x-loop (+ 1 i) (+ 1 x))
+           ))
+         (else '())
+         ))
+      (define (y-loop i y)
+        (cond
+         ((< i len)
+          (cons
+           (form
+            1 "list" y (line-break)
+            (apply join-lines (x-loop i 0))
+            (line-break)
             )
-        (ws #\x div-grid-x-sizes)
-        (ws #\y div-grid-y-sizes)
-        (indent depth port)
-        (write-string "(row-major" port)
-        (let*((depth (+ 1 depth))
-              (depth1 (+ 1 depth))
-              )
-          (let loop ((i 0))
-            (when (= 0 (remainder i xs-len))
-              (when (< 0 i)
-                (indent depth1 port)
-                (write-char #\) port) ;; end of row list
-                (newline port)
-                )
-              (indent depth port)
-              (write-string "(list" port) ;; start of row list
-              (newline port)
-              )
-            (cond
-             ((< i len)
-              (%write-div depth1 (vector-ref vec i) port)
-              (loop (+ 1 i))
-              )
-             (else
-              (indent depth1 port)
-              (write-char #\) port) ;; end of row list
-              (newline port)
-              )))
-          (indent depth1 port)
-          (write-char #\) port) ;; end of row list
-          (newline port)
-          )
-        (write-char #\) port) ;; end of row-major
-        ))
+           (y-loop (+ xs-len i) (+ 1 y))
+           ))
+         (else '())
+         ))
+      (print
+       (line-break)
+       (print-sizes #\x div-grid-x-sizes) (line-break)
+       (print-sizes #\y div-grid-y-sizes) (line-break)
+       (form
+        1 "row-major" (line-break)
+        (apply join-lines (y-loop 0 0))
+        )))
 
     ;;----------------------------------------------------------------
 
@@ -1657,26 +1631,27 @@
        cont
        ))
 
-    (define (write-div-pack depth cont port)
+    (define (print-div-pack cont)
       ;; NOTE: flags and orientation are written by a special rule in
       ;; the `%write-div` procedure.
-      (vector-for-each
-       (lambda (size subdiv)
-         (newline port)
-         (indent depth port)
-         (write-string "(pack-elem " port)
-         (write size port)
-         (newline port)
-         (indent depth port)
-         (%write-div (+ 1 depth) subdiv port)
-         ;; <no newline or indentation here>
-         (newline port)
-         (indent depth port)
-         (write-char #\) port) ;; end of pack-elem
-         )
-       (div-pack-subdiv-sizes cont)
-       (div-pack-subdivs cont)
-       ))
+      (let*((sizes (div-pack-subdiv-sizes cont))
+            (subdivs (div-pack-subdivs cont))
+            (len (min (vector-length sizes) (vector-length subdivs)))
+            )
+        (apply
+         join-lines
+         (let loop ((i 0))
+           (cond
+            ((< i len)
+             (cons
+              (form
+               1 "pack-elem" (vector-ref sizes i) (line-break)
+               (print-div (vector-ref subdivs i))
+               )
+              (loop (+ 1 i))
+              ))
+            (else '())
+            )))))
 
     ;;----------------------------------------------------------------
 
@@ -1909,40 +1884,33 @@
        cont
        ))
 
-    (define (write-div-space depth cont port)
-      (when (div-space-outer-align cont)
-        (indent depth port)
-        (write-string "(outer-align " port)
-        (write-point2D (div-space-outer-align cont) port)
-        (write-char #\) port) ;; close outer-align
-        )
-      (when (div-space-inner-align cont)
-        (write-string "(inner-align " port)
-        (write-point2D (div-space-inner-align cont) port)
-        (write-char #\) port) ;; close inner align
-        )
-      (vector-for-each
-       (lambda (flo) (write-floater depth flo port))
-       (div-space-elements cont)
-       ))
+    (define (print-div-space cont)
+      (let*((outer (div-space-outer-align cont))
+            (inner (div-space-inner-align cont))
+            )
+        (apply
+         join-by (line-break)
+         (and outer
+              (form 1 "outer-align" outer (line-break))
+              )
+         (and inner
+              (form 1 "inner-align" inner (line-break))
+              )
+         (map
+          print-floater
+          (vector->list (div-space-elements cont))
+          ))))
 
-    (define (write-floater depth flo port)
-      (indent depth port)
-      (write-string "(floater" port)
-      (when (floater-z-index flo)
-        (write-char #\space port)
-        (write (floater-z-index flo) port)
-        )
-      (newline port)
-      (let ((depth (+ 1 depth)))
-        (indent depth port)
-        (write-rect2D (floater-rect flo) port)
-        (newline port)
-        (%write-div depth (floater-div flo) port)
-        (newline port)
-        (indent depth port)
-        (write-char #\) port) ;; end of floater
-        ))
+    (define (print-floater flo)
+      (let ((z (floater-z-index flo))
+            (r (floater-rect flo))
+            (cont (floater-div flo))
+            )
+        (form
+         1 "floater" z (line-break)
+         (print-rect2D r) (line-break)
+         (print-div (floater-div flo))
+         )))
 
     ;;----------------------------------------------------------------
     ;; Pre-defined view types
@@ -2172,6 +2140,24 @@
       ;;--------------------------------------------------------------
       (apply div-pack (view-type tiled-windows) args)
       )
+
+    (define (print-div-view-type vtype)
+      (and vtype
+           (let ((sym
+                  (cond
+                   ((eq? vtype push-button) "push-button")
+                   ((eq? vtype check-box) "check-box")
+                   ((eq? vtype text-input) "text-input")
+                   ((eq? vtype radio-group) "radio-group")
+                   ((eq? vtype labeled-group) "labeled-group")
+                   ((eq? vtype text-editor) "text-editor")
+                   ((eq? vtype canvas) "canvas")
+                   ((eq? vtype composite) "composite")
+                   ((eq? vtype tiled-windows) "tilded-windows")
+                   (else vtype)
+                   )))
+             (form 1 "view-type" sym)
+             )))
 
     ;;----------------------------------------------------------------
     ))

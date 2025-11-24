@@ -70,7 +70,7 @@
    pp-line-indent pp-line-indent-char pp-line-string
    empty-line?
 
-    new-line-buffer-stats
+   new-line-buffer-stats
    pp-line-buffer-zero-count pp-line-buffer-char-count
    pp-line-buffer-min-len    pp-line-buffer-max-len
    pp-line-buffer-min-indent pp-line-buffer-max-indent
@@ -101,7 +101,8 @@
       (or (eq? line *empty-line*)
           (and
            (= 0 (pp-line-indent line))
-           (equal? "\n" (pp-line-string line)))))
+           (equal? "\n" (pp-line-string line))
+           )))
 
     (define pp-line
       ;; Construct a <PP-LINE-TYPE> data structure. If one argument is
@@ -115,8 +116,8 @@
       (case-lambda
         ((txt) (make<pp-line-type> 0 #\space txt))
         ((i txt) (make<pp-line-type> i #\space txt))
-        ((i c txt) (make<pp-line-type> i c txt))))
-
+        ((i c txt) (make<pp-line-type> i c txt))
+        ))
 
     (define pp-display-line
       ;; Write a <PP-LINE-TYPE> data structure to a given port, or if no
@@ -134,9 +135,10 @@
               ((>= i indent) (values))
               (else
                (write-char char port)
-               (loop (+ 1 i)))))
-           (display (pp-line-string line) port)))))
-
+               (loop (+ 1 i))
+               )))
+           (display (pp-line-string line) port)
+           ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -178,7 +180,8 @@
         (() (make<pp-line-buffer-stats-type> 0 0 0 0 #f #f))
         ((maxlen minlen numzeros charcount minindent maxindent)
          (make<pp-line-buffer-stats-type>
-          maxlen minlen numzeros charcount minindent maxindent))
+          maxlen minlen numzeros charcount minindent maxindent
+          ))
         ((stats)
           (make<pp-line-buffer-stats-type>
            (pp-line-buffer-max-len stats)
@@ -186,44 +189,50 @@
            (pp-line-buffer-zero-count stats)
            (pp-line-buffer-char-count stats)
            (pp-line-buffer-min-indent stats)
-           (pp-line-buffer-max-indent stats)))
-        ))
+           (pp-line-buffer-max-indent stats)
+           ))))
 
     (define =>pp-line-buffer-max-len
       (record-unit-lens
        pp-line-buffer-max-len
        set!pp-line-buffer-max-len
-       '=>pp-line-buffer-max-len))
+       '=>pp-line-buffer-max-len
+       ))
 
     (define =>pp-line-buffer-min-len
       (record-unit-lens
        pp-line-buffer-min-len
        set!pp-line-buffer-min-len
-       '=>pp-line-buffer-min-len))
+       '=>pp-line-buffer-min-len
+       ))
 
     (define =>pp-line-buffer-zero-count
       (record-unit-lens
        pp-line-buffer-zero-count
        set!pp-line-buffer-zero-count
-       '=>pp-line-buffer-zero-count))
+       '=>pp-line-buffer-zero-count
+       ))
 
     (define =>pp-line-buffer-char-count
       (record-unit-lens
        pp-line-buffer-char-count
        set!pp-line-buffer-char-count
-       '=>pp-line-buffer-char-count))
+       '=>pp-line-buffer-char-count
+       ))
 
     (define =>pp-line-buffer-min-indent
       (record-unit-lens
        pp-line-buffer-min-indent
        set!pp-line-buffer-min-indent
-       '=>pp-line-buffer-min-indent))
+       '=>pp-line-buffer-min-indent
+       ))
 
     (define =>pp-line-buffer-max-indent
       (record-unit-lens
        pp-line-buffer-max-indent
        set!pp-line-buffer-max-indent
-       '=>pp-line-buffer-max-indent))
+       '=>pp-line-buffer-max-indent
+       ))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -273,17 +282,16 @@
                  ((boolean? init) (if init (new-line-buffer-stats) #f))
                  ((pp-line-buffer-stats-type? init) init)
                  (else
-                  (error "first argument must be a boolean or a buffer stat record type"))
-                 ))
+                  (error "first argument must be a boolean or a buffer stat record type")
+                  )))
                (buffer
                 (cond
                  ((integer? sink) (new-mutable-vector sink))
                  ((pp-line-buffer-type? sink) sink)
-                 (else (error "second argument must be an integer buffer size, or a line buffer" sink))))
-               )
-           (make<pp-line-buffer-type> buffer stats 0 #\space))))
-      )
-
+                 (else (error "second argument must be an integer buffer size, or a line buffer" sink))
+                 )))
+           (make<pp-line-buffer-type> buffer stats 0 #\space)
+           ))))
 
     (define (pp-line-buffer-append! buffer line)
       ;; Append a line of text of type `<PP-LINE-TYPE>` (which may be
@@ -295,8 +303,8 @@
       ;; API is designed to efficiently construct and fill line buffers
       ;; with text in a convenient, structured way. Using this procedure
       ;; is much less structured and less convenient.
-      (mutable-vector-append! (pp-line-buffer buffer) line))
-
+      (mutable-vector-append! (pp-line-buffer buffer) line)
+      )
 
     (define (pp-fold-lines fold init buffer)
       ;; Constructs a `<PP-CONSUMER-TYPE>` that can be used as the first
@@ -317,8 +325,10 @@
       (let-values
           (((len accum)
             (mutable-vector-fold/index
-             fold init (pp-line-buffer buffer))))
-        accum))
+             fold init (pp-line-buffer buffer)
+             )))
+        accum
+        ))
 
     ;;-------------------------------------------------------------------------------------------------
 
@@ -372,7 +382,6 @@
       ;;------------------------------------------------------------------
       )
 
-
     (define (pp-update-stats-line! stats line)
       (cond
        ((not stats) (values))
@@ -383,16 +392,19 @@
               (update-indent
                (lambda (compare)
                  (lambda (count)
-                   (if (not count) indent (compare indent count)))))
-              )
+                   (if (not count) indent (compare indent count))
+                   ))))
           (update (lambda (len) (max len (string-length str)))
-           stats =>pp-line-buffer-max-len)
+           stats =>pp-line-buffer-max-len
+           )
           (cond
            ((empty-line? line)
-            (update (lambda (count) (+ 1 count)) stats =>pp-line-buffer-zero-count))
+            (update (lambda (count) (+ 1 count)) stats =>pp-line-buffer-zero-count)
+            )
            (else
             (update (lambda (len) (if (> len 0) (min len strlen) strlen))
-             stats =>pp-line-buffer-min-len)))
+             stats =>pp-line-buffer-min-len
+             )))
           (update (lambda (count) (+ count strlen)) stats =>pp-line-buffer-char-count)
           (update (update-indent min) stats =>pp-line-buffer-min-indent)
           (update (update-indent max) stats =>pp-line-buffer-max-indent)
@@ -408,13 +420,15 @@
          (lambda (_ line stats) (pp-update-stats-line! stats line))
          stats line-buffer)
         (set!pp-line-buffer-stats line-buffer stats)
-        stats))
+        stats
+        ))
 
 
     (define (%buffered-flush pp)
       (let*((line-buffer (pp-state-line-buffer pp))
             (port (pp-state-output-port pp))
-            (str (if (output-port? port) (get-output-string port) "")))
+            (str (if (output-port? port) (get-output-string port) ""))
+            )
         (cond
          ((or (not port) (pp-state-start-of-line? pp)) (values))
          ((equal? "" str) (values))
@@ -431,7 +445,8 @@
             (set!pp-state-output-port pp #f)
             (pp-line-buffer-append! line-buffer line)
             (pp-update-stats-line! (pp-line-buffer-stats line-buffer) line)
-            (values))))))
+            (values)
+            )))))
 
 
     (define buffered-line-break
@@ -444,17 +459,19 @@
         (let ((port (pp-state-output-port pp)))
           (cond
            ((or (pp-state-start-of-line? pp) (not port))
-            (buffered-write-line pp *empty-line*))
+            (buffered-write-line pp *empty-line*)
+            )
            (else
             (newline port)
-            (%buffered-flush pp))))))
-
+            (%buffered-flush pp)
+            )))))
 
     (define buffered-finalize
       (lambda (pp)
         (let ((line-buffer (pp-state-line-buffer pp)))
           (%buffered-flush pp)
-          line-buffer)))
+          line-buffer
+          )))
 
 
     (define buffered-first-indent
@@ -466,10 +483,11 @@
       (lambda (pp)
         (let ((line-buffer (pp-state-line-buffer pp)))
           (unless (pp-state-output-port pp)
-            (set!pp-state-output-port pp (open-output-string)))
+            (set!pp-state-output-port pp (open-output-string))
+            )
           (set!pp-line-buffer-indent line-buffer (pp-state-indent pp))
-          (set!pp-line-buffer-indent-char line-buffer (pp-state-indent-char pp)))
-        ))
+          (set!pp-line-buffer-indent-char line-buffer (pp-state-indent-char pp))
+          )))
 
 
     (define buffered-write-line
@@ -485,61 +503,63 @@
           (cond
            ((not port)
             (pp-line-buffer-append! line-buffer line)
-            (pp-update-stats-line! (pp-line-buffer-stats line-buffer) line))
+            (pp-update-stats-line! (pp-line-buffer-stats line-buffer) line)
+            )
            (else
             (pp-display-line line port)
             (when stats
               (update
                (lambda count
-                 (apply + (pp-line-indent line) (string-length (pp-line-string line)) count))
-               stats =>pp-line-buffer-char-count)))
-           ))
-        ))
-
+                 (apply + (pp-line-indent line) (string-length (pp-line-string line)) count)
+                 )
+               stats =>pp-line-buffer-char-count
+               )))))))
 
     (define (finalize-output-string pp)
       (let*((port (pp-state-output-port pp))
-            (str (get-output-string port)))
+            (str (get-output-string port))
+            )
         (close-port port)
         (set!pp-state-output-port pp #f)
-        str))
-
+        str
+        ))
 
     (define (dont-finalize-port pp) (values))
-
 
     (define (immediate-line-break pp)
       ;; Procedure used to construct the line breaking procedure for an
       ;; output port pretty printer. If the output is to a string buffer,
       ;; pass the string buffer as an argument to this function, the
       ;; content of the buffer will be retrieved and returned during finalization.
-      (newline (pp-state-output-port pp)))
-
+      (newline (pp-state-output-port pp))
+      )
 
     (define (immediate-first-indent pp)
       (let ((port   (pp-state-output-port pp))
             (indent (pp-state-indent pp))
-            (char   (pp-state-indent-char pp)))
+            (char   (pp-state-indent-char pp))
+            )
         (let loop ((i 0))
           (if (>= i indent)
               (values)
               (begin
                 (write-char char port)
-                (loop (+ 1 i)))))))
-
+                (loop (+ 1 i))
+                )))))
 
     (define (immediate-write-line pp line)
       ;; This function is used to write a <PP-LINE-TYPE> of object to the
       ;; output. When writing to ports, the given line is rendered to a
       ;; string.
       ;;------------------------------------------------------------------
-      (pp-display-line line (pp-state-output-port pp)))
-
+      (pp-display-line line (pp-state-output-port pp))
+      )
 
     (define (%line-break pp)
       ;; Run the line breaking function currently installed in the state.
       ((pp-state-line-break pp) pp)
-      (set!pp-state-start-of-line pp #t))
+      (set!pp-state-start-of-line pp #t)
+      )
 
     (define (%check-indent pp)
       ;; Check if we are at the start of the line, and if so, indent.
@@ -548,17 +568,20 @@
         ((pp-state-first-indent pp) pp)
         (set!pp-state-start-of-line pp #f)
         )
-       (else (values))))
+       (else (values))
+       ))
 
     (define (%write-line pp line)
-      ((pp-state-write-line pp) pp line))
+      ((pp-state-write-line pp) pp line)
+      )
 
     (define (%finalize pp)
-      ((pp-state-finalize pp) pp))
+      ((pp-state-finalize pp) pp)
+      )
 
     (define (%run-pp pp pp-proc)
-      ((pretty-printer-procedure pp-proc) pp))
-
+      ((pretty-printer-procedure pp-proc) pp)
+      )
 
     (define print-to-buffer
       ;; Construct a pretty printer state that captures lines of printed
@@ -574,17 +597,18 @@
          (let ((buffer
                 (cond
                  ((integer? init)
-                  (new-line-buffer stats init))
+                  (new-line-buffer stats init)
+                  )
                  ((pp-line-buffer-type? init) init)
-                 (else (error "takes a buffer or size as an argument, instead got" init))))
-               )
+                 (else (error "takes a buffer or size as an argument, instead got" init))
+                 )))
            (make<pp-state>
             buffered-line-break
             buffered-first-indent
             buffered-write-line
             buffered-finalize
-            buffer #f 0 #\space #t)))))
-
+            buffer #f 0 #\space #t
+            )))))
 
     (define print-to-port
       ;; Construct a pretty printer state that prints directly to a
@@ -603,14 +627,15 @@
                 ((eq? #t sink) (values (current-output-port) dont-finalize-port))
                 ((port? sink)  (values sink dont-finalize-port))
                 ((output-port? sink) (values sink dont-finalize-port))
-                (else (error "takes a port (or #t or #f) as an argument, instead got" sink))))
-              )
+                (else (error "takes a port (or #t or #f) as an argument, instead got" sink))
+                )))
            (make<pp-state>
             immediate-line-break
             immediate-first-indent
             immediate-write-line
             finalize
-            #f port 0 #\space #t)))))
+            #f port 0 #\space #t
+            )))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -622,7 +647,8 @@
       ;; `DISPLAY`.
       (%quoted str)
       pp-quoted-type?
-      (str pp-unquote))
+      (str pp-unquote)
+      )
 
     (define (qstr arg)
       ;; Wrap an argument in a <LITERAL-TYPE>, which has slightly
@@ -630,8 +656,9 @@
       ;; strings and characters are printed to the outut port using
       ;; Scheme `DISPLAY` rather than `WRITE.`
       (cond
-       ((pp-quoted-type? arg) (%quoted (pp-unquote arg))) 
-      (else (%quoted arg))))
+       ((pp-quoted-type? arg) (%quoted (pp-unquote arg)))
+       (else (%quoted arg))
+       ))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -643,7 +670,6 @@
       pp-type?
       (proc pretty-printer-procedure)
       )
-
 
     (define (%print pp arg)
       ;; Construct a closure that outputs the argument. Has a recursion
@@ -663,39 +689,47 @@
                  (cond
                   ((char=? c #\newline)
                    (%line-break pp)
-                   (set! do-check #t))
+                   (set! do-check #t)
+                   )
                   (else
                    (when do-check
                      (%check-indent pp)
-                     (set! do-check #f))
-                   (write-char c (pp-state-output-port pp)))))
-               arg))))))
+                     (set! do-check #f)
+                     )
+                   (write-char c (pp-state-output-port pp))
+                   )))
+               arg
+               ))))))
        ((number? arg)
         (lambda ()
           (%check-indent pp)
-          (display (number->string arg) (pp-state-output-port pp))))
+          (display (number->string arg) (pp-state-output-port pp))
+          ))
        ((pp-quoted-type? arg)
         (lambda ()
           (%check-indent pp)
-          (write (pp-unquote arg) (pp-state-output-port pp))))
+          (write (pp-unquote arg) (pp-state-output-port pp))
+          ))
        ((char?    arg)
         (lambda ()
           (%check-indent pp)
           (write-char arg (pp-state-output-port pp))
           (when (char=? arg #\newline)
-            (%line-break pp))))
+            (%line-break pp)
+            )))
        ((not      arg) #f)
        ((pp-type? arg) (lambda () (%run-pp pp arg)))
        ((pp-line-type? arg) (%write-line pp arg))
        ((pp-line-buffer-type? arg)
         (pp-fold-lines
          (lambda (_i line _accum) (%write-line pp line))
-         #f arg))
+         #f arg
+         ))
        (else
         (lambda ()
           (%check-indent pp)
-          (write arg (pp-state-output-port pp))))))
-
+          (write arg (pp-state-output-port pp))
+          ))))
 
     (define (print . args)
       ;; Pretty-print each argument.
@@ -721,15 +755,16 @@
       (make<pp>
        (lambda (pp)
          (let ((old-indent (pp-state-indent pp))
-               (old-char   (pp-state-indent-char pp)))
+               (old-char   (pp-state-indent-char pp))
+               )
            (let loop ((args args))
              (cond
               ((null? args) (values))
               (else
                (let ((proc (%print pp (car args))))
                  (when proc (proc))
-                 (loop (cdr args))))))))))
-
+                 (loop (cdr args))
+                 ))))))))
 
     (define (repeat count . args)
       ;; Repeatedly print `ARG` `COUNT` number of times.
@@ -746,16 +781,17 @@
                     (cond
                      ((string? arg) (lambda () (display arg (pp-state-output-port pp))))
                      ((char?   arg) (lambda () (write-char arg (pp-state-output-port pp))))
-                     (else (%print pp arg))))
-                   (else (lambda () (%run-pp pp (apply print args))))))
-                 )
+                     (else (%print pp arg))
+                     ))
+                   (else (lambda () (%run-pp pp (apply print args))))
+                   )))
              (when proc
                (%check-indent pp)
                (let loop ((i 0))
                  (cond
                   ((>= i count) (values))
-                  (else (proc) (loop (+ 1 i))))))))))))
-
+                  (else (proc) (loop (+ 1 i)))
+                  )))))))))
 
     (define (indent-by indent-inc . args)
       ;; Increase the indendataion level by `N` and pretty print each
@@ -767,22 +803,22 @@
           ((null? args) (values))
           (else
            (let ((old-indent (pp-state-indent pp))
-                 (old-char   (pp-state-indent-char pp)))
+                 (old-char   (pp-state-indent-char pp))
+                 )
              (set!pp-state-indent pp (+ old-indent indent-inc))
              (%run-pp pp (apply print args))
              (set!pp-state-indent pp old-indent)
-             (set!pp-state-indent-char pp old-char)))))))
-
+             (set!pp-state-indent-char pp old-char)
+             ))))))
 
     (define (newline-indent)
       ;; Write a newline to the buffer, then indent using the current
       ;; indentation level set by `INDENT-BY`.
       ;;------------------------------------------------------------------
-      (make<pp> %line-break))
-
+      (make<pp> %line-break)
+      )
 
     (define line-break newline-indent)
-
 
     (define force-write-indent
       ;; Force write the current indentation to the current line. Takes
@@ -797,14 +833,16 @@
          (make<pp>
           (lambda (pp)
             (%run-pp pp
-             (force-write-indent (pp-state-indent pp) (pp-state-indent-char pp))))))
+             (force-write-indent (pp-state-indent pp) (pp-state-indent-char pp))
+             ))))
         ((n)
          (make<pp>
           (lambda (pp)
             (cond
              ((char?    n) (force-write-indent (pp-state-indent pp) n))
              ((integer? n) (force-write-indent n (pp-state-indent-char pp)))
-             (else (error "write-indent takes an integer, a char or both" n))))))
+             (else (error "write-indent takes an integer, a char or both" n))
+             ))))
         ((indent char)
          (make<pp>
           (lambda (pp)
@@ -814,8 +852,8 @@
                ((>= i indent) (values))
                (else
                 (write-char char (pp-state-output-port pp))
-                (loop (+ 1 i))))))))))
-
+                (loop (+ 1 i))
+                ))))))))
 
     (define (bracketed indent-inc open close . args)
       ;; Print every argument in `ARGS` in between running the `OPEN` and
@@ -825,14 +863,14 @@
       (make<pp>
        (lambda (pp)
          (%run-pp pp (print open))
-         (%run-pp pp (indent-by indent-inc (apply print args) (print close))))))
-
+         (%run-pp pp (indent-by indent-inc (apply print args) (print close)))
+         )))
 
     (define (form indent-inc . args)
       ;; Calls `BRACKETED` with round brackets
       ;;------------------------------------------------------------------
-      (bracketed indent-inc #\( #\) (apply join-by #\space args)))
-
+      (bracketed indent-inc #\( #\) (apply join-by #\space args))
+      )
 
     (define (join-by joint . args)
       ;; Print each argument in `ARGS`, but in between each argument
@@ -842,18 +880,31 @@
          (cond
           ((null? args) (values))
           (else
-           (%run-pp pp (print (car args)))
-           (let loop ((args (cdr args)))
+           (let skipf ((args args))
              (cond
               ((null? args) (values))
               (else
-               (%run-pp pp (print joint (car args)))
-               (loop (cdr args))))))))))
-
+               (let ((item (car args)))
+                 (cond
+                  ((not item) (skipf (cdr args)))
+                  (else
+                   (%run-pp pp (print item))
+                   (let loop ((args (cdr args)))
+                     (cond
+                      ((null? args) (values))
+                      (else
+                       (let ((item (car args)))
+                         (cond
+                          ((not item) (loop (cdr args)))
+                          (else
+                           (%run-pp pp (print joint item))
+                           (loop (cdr args))
+                           )))))))))))))))))
 
     (define (join-lines . args)
       ;; Print each argument in `ARGS` delimited by a line break.
-      (apply join-by (newline-indent) args))
+      (apply join-by (newline-indent) args)
+      )
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -870,9 +921,10 @@
                  ((integer? sink) (print-to-buffer #f sink))
                  ((eq? #t sink) (print-to-port #t))
                  ((eq? #f sink) (print-to-port #f))
-                 (else "incorrect type for first argument" sink)))
-               )
+                 (else "incorrect type for first argument" sink)
+                 )))
            (%run-pp pp proc)
-           (%finalize pp)))))
+           (%finalize pp)
+           ))))
 
     ))
