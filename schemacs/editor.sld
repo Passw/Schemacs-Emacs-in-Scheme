@@ -48,7 +48,9 @@
           pp-state-indent
           pp-line-indent-char
           pp-line-indent
-          pp-line-string)
+          pp-line-string
+          display-lines
+          )
     (only (schemacs ui rectangle)
           rect2D  point2D  size2D
           )
@@ -322,6 +324,7 @@
       (case-lambda
         ((handle) (new-buffer handle #f))
         ((handle keymap)
+         (display ";;;----------- new-buffer ------------------;;;\n");;DEBUG
          (let*((keymap (or keymap (*default-buffer-local-keymap*)))
                (this (make<buffer> #f keymap handle #f))
                (view ((*impl/new-buffer-view*) this))
@@ -346,9 +349,10 @@
       (view        line-display-view          set!line-display-view)
       )
 
-    (define (new-line-display parent prompt)
-      (let*((prompt-var prompt)
-            (input-var (state-var (text-editor "")))
+    (define (new-line-display parent prompt-str)
+      (display ";;;----------- new-line-display ------------------;;;\n");;DEBUG
+      (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
+            (input-var (state-var string=? ""))
             (this (make<line-display-type> parent prompt-var input-var #f))
             (widget
              (div-pack
@@ -356,28 +360,30 @@
               (view-type this)
               (properties 'wrapping: #t)
               (size2D expand enclose)
-              (use-vars (list input-var) (lambda (o) o))
+              (and prompt-var (pack-elem enclose (use-vars (list prompt-var) div)))
+              (pack-elem expand (use-vars (list input-var) text-editor))
               )))
         (set!line-display-view this widget)
         this
         ))
 
-    (define (new-echo-area parent) (new-line-display parent #f))
-
-    (define (new-minibuffer parent)
-      (new-line-display parent (state-var (div "")))
-      )
+    (define (new-echo-area  parent) (new-line-display parent #f))
+    (define (new-minibuffer parent) (new-line-display parent ""))
 
     (define (new-header-line parent-window st)
       (new-mode-line parent-window (or st *header-line-format*))
       )
 
     (define (new-mode-line parent-window st)
+      ;; A mode line is just a `use-vars` node that constructs a `div`
+      ;; node containing a variety of indicators for displaying
+      ;; informaion about the current window and the buffer it is
+      ;; displaying.
+      (display ";;;----------- new-mode-line ---------------;;;\n");;DEBUG
       (let ((st (or st (*mode-line-format*))))
         (use-vars
          (list st)
          (lambda (items) 
-           (display "; new-mode-line ") ;;DEBUG
            (let ((items
                   (and items
                        (map
@@ -388,14 +394,21 @@
                            ))
                         items
                         ))))
+             (cond ;;DEBUG
+              (items ;;DEBUG
+               (display "; use-vars mode-line") (newline) (display-lines items) (newline) ;;DEBUG
+               ) ;;DEBUG
+              (else (display "; use-vars mode-line #f\n"));;DEBUG
+              ) ;;DEBUG
              ((mode-line-display-items parent-window) items)
              )))))
 
-    (define *header-line-format* (make-parameter (state-var #f)))
+    (define *header-line-format* (make-parameter (state-var equal? #f)))
 
     (define *mode-line-format*
       (make-parameter
        (state-var
+        equal?
         (list
          (lambda (_) (if (*impl/is-graphical-display?*) " " "-"))
          (lambda (_) "-") ;; buffer encoding
@@ -415,8 +428,6 @@
 
     (define (mode-line-display-single parent-window stack item)
       (define (propertize elems props)
-        (display "; propertize elems: ") (write elems) (newline);;DEBUG
-        (display "; propertize props: ") (write props) (newline);;DEBUG
         (let*((elems (mode-line-collect-items parent-window '() elems))
               )
           (if props
@@ -454,7 +465,6 @@
         )))
 
     (define (mode-line-collect-items parent-window stack items)
-      (display ";;mode-line-collect-items ")(write items)(newline);;DEBUG
       (let loop ((stack stack) (items items))
         (cond
          ((pair? items)
@@ -473,7 +483,6 @@
       ;; `*IMPL/MODE-LINE-DISPLAY-ITEMS*`.
       ;;------------------------------------------------------------------
       (lambda (items)
-        (display "; mode-line-display-items ") (write items) (newline) ;;DEBUG
         (and items
              (apply
               div-pack cut-vertical
@@ -505,14 +514,10 @@
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
       ;;------------------------------------------------------------------
+      (display ";;;----------- new-window ------------------;;;\n");;DEBUG
       (let*((this (make<window> parent buffer keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
-            (_ (let () ;;DEBUG
-                 (display "header-line: ") (write header-line) (newline);;DEBUG
-                 (display "mode-line: ") (write mode-line) (newline);;DEBUG
-                 (display "buffer: ") (write buffer) (newline);;DEBUG
-                 )) ;;DEBUG
             (widget
              (div-pack
               cut-horizontal (view-type this)
@@ -523,6 +528,7 @@
         (set!window-mode-line   this mode-line)
         (set!window-header-line this header-line)
         (set!window-view        this widget)
+        (display ";;;----------- window constructed --------------;;;\n");;DEBUG
         this
         ))
 
@@ -711,6 +717,7 @@
     (define (new-frame editor init-buffer init-keymap)
       ;; "keymap" is the keymap for this local frame, which is a fallback
       ;; keymap used when no key matches the buffer local keymap.
+      (display ";;;------------ new-frame ------------------;;;\n");;DEBUG
       (let*((editor      (or editor (*the-editor-state*)))
             (init-buffer (or init-buffer (editor-messages editor)))
             (init-keymap
@@ -745,7 +752,7 @@
                (view-type this)
                (pack-elem
                 (size2D expand expand)
-                (use-vars (list layout) (lambda (o) (window-view o)))
+                (use-vars (list layout) window-view)
                 )
                (pack-elem lo-size (line-display-view echo-area))
                (pack-elem lo-size (line-display-view minibuffer))
@@ -755,6 +762,7 @@
         (set!winframe-echo-area       this echo-area)
         (set!winframe-minibuffer      this minibuffer)
         (set!winframe-view            this widget)
+        (display ";;;---------- frame constructed --------------;;;\n");;DEBUG
         this
         ))
 
@@ -1022,6 +1030,7 @@
       ;; using the Scheme environment object constructed by this (schemacs
       ;; editor) library as the editor state itself, with all fields of
       ;; <editor-type> redefined as parameters in this environment.
+      (display ";;;----------- new-editor ------------------;;;\n");;DEBUG
       (let*((msgs           (new-buffer "*Messages*"))
             (buffer-table   (new-table 63))
             (winframe-table (new-table 15))
@@ -1047,6 +1056,7 @@
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
         (lens-set widget     this =>editor-view)
         (*impl/current-editor-closure* this)
+        (display ";;;----------- editor consturcted --------------;;;\n");;DEBUG
         this
         ))
 

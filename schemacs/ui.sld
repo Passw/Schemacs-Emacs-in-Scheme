@@ -63,7 +63,7 @@
           new-constructor
           )
     (only (schemacs vbal) ;;(schemacs vbal)
-          vbal-type?  plist->vbal  vbal-copy  vbal-assq
+          vbal-type?  alist->vbal  vbal-copy  vbal-assq
           vbal-length  vbal-for-each
           print-vbal-with
           )
@@ -808,7 +808,7 @@
       ;; process, for example a Gtk+ based GUI and an ANSI
       ;; video-terminal-based GUI.
       ;;------------------------------------------------------------------
-      (plist->vbal
+      (alist->vbal
        (let loop ((elems elems))
          (cond
           ((null? elems) '())
@@ -905,7 +905,7 @@
                  (cond
                   ((use-vars-type? elem) (apply-use-vars elem))
                   ((div-monad-type? elem) (run-div-monad parent elem))
-                  ((or (div-record-type? elem) (floater-type? elem) (cast elem)))
+                  ((or (div-record-type? elem) (floater-type? elem)) elem)
                   (else (error "not a valid div constructor" elem))
                   ))
                 (return (cast return))
