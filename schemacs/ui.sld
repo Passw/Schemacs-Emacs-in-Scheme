@@ -63,14 +63,14 @@
           new-constructor
           )
     (only (schemacs vbal) ;;(schemacs vbal)
-          vbal-type?  alist->vbal  vbal-copy  vbal-assq
+          vbal-type?  plist->vbal  vbal-copy  vbal-assq
           vbal-length  vbal-for-each
           print-vbal-with
           )
     (only (schemacs ui rectangle)
           rect2D-type?  rect2D  copy-rect2D  print-rect2D
           size2D-type?  size2D  copy-2D      rect2D-size
-          point2D-type?  print-point2D
+          point2D  point2D-type?  print-point2D
           )
     (only (schemacs lens)
           record-unit-lens  lens  update
@@ -79,6 +79,7 @@
     (only (schemacs pretty)
           pretty  print  qstr  line-break  form
           join-by  join-lines
+          display-lines
           )
     )
   (export
@@ -130,7 +131,10 @@
       (proc div-monad-proc)
       )
 
-    (define (%run-div-monad parent m) ((div-monad-proc m) parent))
+    (define (%run-div-monad parent m)
+      (display "; monad step: ") (write (div-monad-proc m)) (newline);;DEBUG
+      ((div-monad-proc m) parent)
+      )
 
     (define (run-div-monad parent o)
       ;; This procedure is very useful for implementing low-level the
@@ -150,19 +154,38 @@
       ;; still need to check for `USE-VARS-TYPE?` on the `DIV-CONTENT`
       ;; of the `DIV` value applied to it by this `DIV-RESOLVER`.
       ;;------------------------------------------------------------------
-      (let loop ((o o) (depth 0) (is-from-var #f))
-        (cond
-         ((< 4 depth) (error "div resolution exceeded maximum recursion depth" o))
-         ((div-monad-type? o)
-          (loop (%run-div-monad parent o) (+ 1 depth) is-from-var)
-          )
-         ((use-vars-type? o)
-          (loop (use-vars-value o) (+ 1 depth) #t)
-          )
-         ((div-record-type? o) (set!div-from-var o is-from-var) o)
-         ((floater-type? o) (set!floater-from-var o is-from-var) o)
-         (else o)
-         )))
+      (cond
+       ((div-monad-type? o) (div-resolve o (%run-div-monad parent o)))
+       ((use-vars-type? o)
+        (let ((return (apply-use-vars o)))
+          (cond
+           ((div-monad-type? return)
+            (div-resolve return (%run-div-monad parent return))
+            )
+           (else (div-resolve o return))
+           )))
+       (else (error "not a `div-monad-type?` value" o))
+       ))
+
+    (define (div-resolve from o)
+      ;; Ensure that the value `O` has resolved to a `DIV` node, and
+      ;; is not a `use-vars-type?` or `div-monad-type?`. The `FROM`
+      ;; argument should be the `use-vars-type?` or `div-monad-type?`
+      ;; that produced the argument `O`.
+      (cond
+       ((or (div-record-type? o) (floater-type? o)) o)
+       ((or (string? o) (number? o))
+        (%content->div o)
+        )
+       ((use-vars-type? o)
+        (error "resolved to use-vars rather than `DIV` node" from o)
+        )
+       ((div-monad-type? o)
+        (error "recursive div constructor" from o)
+        )
+       (else
+        (error "resolved to unknown type" from o)
+        )))
 
     ;;================================================================
 
@@ -443,12 +466,20 @@
     (define (apply-use-vars uses)
       (let loop ((vars (use-vars-state-vars uses)) (args '()))
         (cond
+         ((pair? vars)
+          (loop (cdr vars) (cons (state-var-value (car vars)) args))
+          )
          ((null? vars)
-          (let ((return
-                 (run-div-monad
-                  (use-vars-parent uses)
-                  (apply (use-vars-procedure uses) (reverse args))
-                  )))
+          (let*((return (apply (use-vars-procedure uses) (reverse args)))
+                (return
+                 (cond
+                  ((div-monad-type? return)
+                   (%run-div-monad (use-vars-parent uses) return)
+                   )
+                  (else return)
+                  ))
+                (return (div-resolve uses return))
+                )
             (set!use-vars-value uses return)
             (cond
              ((div-record-type? return) (set!div-from-var return #t))
@@ -457,9 +488,6 @@
              )
             return
             ))
-         ((pair? vars)
-          (loop (cdr vars) (cons (state-var-value (car vars)) args))
-          )
          (else (error "not a list of variables" vars))
          )))
 
@@ -780,15 +808,15 @@
       ;; process, for example a Gtk+ based GUI and an ANSI
       ;; video-terminal-based GUI.
       ;;------------------------------------------------------------------
-      (alist->vbal
+      (plist->vbal
        (let loop ((elems elems))
          (cond
           ((null? elems) '())
           (else
            (let*((key (car elems))
                  (elems (cdr elems))
-                 (val (if (null? elems) #f (car elems)))
-                 (elems (cdr elems))
+                 (val (and (not (null? elems)) (car elems)))
+                 (elems (if (null? elems) '() (cdr elems)))
                  )
              (cons (cons key val) (loop elems))
              ))))))
@@ -863,79 +891,58 @@
        (else vec)
        ))
 
-    (define (construct-content-list content-type? parent elems)
+    (define (construct-content-list cast parent elems)
       ;; Step through a list of div-monad procedures, evaluate each
       ;; one, and gather it's content into a list. Return two values:
       ;; the length of the list, and the list of `DIV` elements.
       ;;--------------------------------------------------------------
       (define count 0)
-      (define (resolve-elem resume next elem)
-        (let*((result
-               (cond
-                ((div-monad-type? elem)
-                 (div (run-div-monad parent elem))
-                 )
-                ((use-vars-type? elem) (apply-use-vars elem))
-                (else elem)
-                )))
-          (cond
-           ((content-type? result)
+      (define (resolve-elem elem)
+        (cond
+         ((not elem) #f)
+         (else
+          (let*((return
+                 (cond
+                  ((use-vars-type? elem) (apply-use-vars elem))
+                  ((div-monad-type? elem) (run-div-monad parent elem))
+                  ((or (div-record-type? elem) (floater-type? elem) (cast elem)))
+                  (else (error "not a valid div constructor" elem))
+                  ))
+                (return (cast return))
+                )
             (set! count (+ 1 count))
-            (cons result (resume next))
-            )
-           ((not result) (resume next))
-           (else
-            (error
-             "div-monad returned element of incorrect type"
-             content-type? elem result
-             )))))
+            return
+            ))))
       (define (gather-vec resume next vec)
         (let ((len (vector-length vec)))
           (let loop ((i 0))
             (cond
-             ((< i len) (resolve-elem loop (+ 1 i) (vector-ref vec i)))
+             ((< i len)
+              (cons (resolve-elem (vector-ref vec i)) (loop (+ 1 i)))
+              )
              (else (resume next))
              ))))
       (define (gather-list resume next elems)
         (let loop ((elems elems))
           (cond
            ((null? elems) (resume next))
-           ((pair? elems) (resolve-elem loop (cdr elems) (car elems)))
+           ((pair? elems)
+            (cons (resolve-elem (car elems)) (loop (cdr elems)))
+            )
            (else (error "not a list" elems))
            )))
       (define (loop elems)
         (cond
          ((null? elems) '())
          ((pair? elems)
-          (let ((div-constr (car elems))
+          (let*((elem (car elems))
                 (next (cdr elems))
                 )
             (cond
-             ((not div-constr) (loop next))
-             ((content-type? div-constr)
-              (set! count (+ 1 count))
-              (cons div-constr (loop next))
-              )
-             ((pair? div-constr) (gather-list loop next div-constr))
-             ((vector? div-constr) (gather-vec loop next div-constr))
-             ((use-vars-type? div-constr)
-              (apply-use-vars div-constr)
-              (resolve-elem loop next div-constr)
-              )
-             ((div-monad-type? div-constr)
-              (let ((result (run-div-monad parent div-constr)))
-                (cond
-                 ((not result) (loop next))
-                 ((content-type? result) (set! count (+ 1 count)) (cons result (loop next)))
-                 ((pair? result) (gather-list loop next result))
-                 ((null? result) (loop next))
-                 ((not result) (loop next))
-                 ((vector? result) (gather-vec loop next result))
-                 ;;(else (error "div constructor returned non-DIV type" result div-constr))
-                 )))
-             (else
-              (error "not a valid div constructor" div-constr)
-              ))))
+             ((pair? elem) (gather-list loop next elem))
+             ((vector? elem) (gather-vec loop next elem))
+             (else (cons (resolve-elem elem) (loop next)))
+             )))
          ((vector? elems) (gather-vec loop '() elems))
          (else (error "not a list" elems))
          ))
@@ -943,9 +950,9 @@
         (values count divs)
         ))
 
-    (define (construct-content content-type? parent elems)
+    (define (construct-content cast parent elems)
       (let*-values
-          (((count divs) (construct-content-list content-type? parent elems))
+          (((count divs) (construct-content-list cast parent elems))
            ((vec) (make-vector count))
            )
         (vector-fill-list! vec 0 divs)
@@ -1152,7 +1159,7 @@
                ((< y-index ymax)
                 (let-values
                     (((len elems)
-                      (construct-content-list div-record-type? parent elems)
+                      (construct-content-list cast-to-div-record parent elems)
                       ))
                   (let x-loop ((x-index 0) (elems elems))
                     (cond
@@ -1400,6 +1407,7 @@
     (define div-pack-type? (div-type-check pack-record-type?))
 
     (define (copy-div-pack copy-ref o)
+      (display "; copy-div-pack ") (write o) (newline);;DEBUG
       (make<div-pack>
        (div-pack-orientation o)
        (div-pack-from o)
@@ -1519,8 +1527,7 @@
            (else size)
            )
           elem
-          ))
-        ))
+          ))))
 
     (define div-pack
       ;; Constructs a `DIV` in which elements are packed next to each
@@ -1549,26 +1556,27 @@
              (let ((pack (div-content o)))
                (cond
                 ((or (div-monad-type? val) (use-vars-type? val))
-                 (%pack o enclose val) o
-                 )
+                 (%pack o enclose val)
+                 o)
                 ((cut-orientation? val)
                  (cond
                   ((not (div-pack-orientation pack))
-                   (set!div-pack-orientation pack val) o
-                   )
+                   (set!div-pack-orientation pack val)
+                   o)
                   (else
                    (error "orientation flag specified more than once" val)
                    )))
                 ((pack-direction? val)
                  (cond
                   ((not (div-pack-from pack))
-                   (set!div-pack-from pack val) o
-                   )
-                  (else (error "pack-from flag specified more than once" val))
-                  ))
+                   (set!div-pack-from pack val)
+                   o)
+                  (else
+                   (error "pack-from flag specified more than once" val)
+                   )))
                 ((div-pack-flag? val)
-                 (set!div-pack-flags pack val) o
-                 )
+                 (set!div-pack-flags pack val)
+                 o)
                 ((size2D-type? val) (%pack o val #f) o)
                 ((rect2D-type? val) (%pack o (rect2D-size val) #f) o)
                 (else (%pack o enclose val) o)
@@ -1583,9 +1591,16 @@
              )
            (make<div-monad>
             (lambda (parent)
-              (let ((subdivs-vec
+              (display "; div-pack finalize, subdivs: ") (write (div-pack-subdivs pack)) (newline);;DEBUG
+              (display "; -- finalize subdivs:") (newline);;DEBUG
+              (let ((p (div-pack-subdivs pack))) ;;DEBUG
+                (when (vector? p)                ;;DEBUG
+                  (display "; ^^WARNING: subdivs is a vector\n") ;;DEBUG
+                  (display-lines p) ;;DEBUG
+                  ))                ;;DEBUG
+              (let*((subdivs-vec
                      (construct-content
-                      div-record-type? parent
+                      cast-to-div-record parent
                       (reverse (div-pack-subdivs pack))
                       ))
                     (sizes-vec
@@ -1683,6 +1698,22 @@
 
     (define div-space-type? (div-type-check space-record-type?))
 
+    (define (cast-to-div-record o)
+      (cond
+       ((div-record-type? o) o)
+       ((floater-type? o) (floater-div o))
+       (else (error "cannot cast to `DIV` node type" o))
+       ))
+
+    (define (cast-to-floater o)
+      (cond
+       ((div-record-type? o)
+        (make<floater> (rect2D (point2D 0 0) (size2D enclose)) 0 #f o)
+        )
+       ((floater-type? o) o)
+       (else (error "cannot cast to floater node type" o))
+       ))
+
     (define (copy-div-space copy-ref o)
       (make<div-space>
        (div-space-outer-align o)
@@ -1771,7 +1802,7 @@
             (let*((space (div-content o))
                   (elems
                    (construct-content
-                    floater-type? parent
+                    cast-to-floater parent
                     (reverse (div-space-elements space))
                     )))
               ;; <TODO> sort the elements by their z-index.
@@ -1810,7 +1841,7 @@
           ((integer? val) (set!floater-z-index flo val) flo)
           ((div-record-type? val) (set!floater-div flo val) flo)
           ((div-monad-type? val) (set!floater-div flo val) flo)
-          ((use-vars-type? val) (apply-use-vars val) (set!floater-div flo val) flo)
+          ((use-vars-type? val) (set!floater-div flo val) flo)
           (else
            (error "value cannot be used to construct floating div" val)
            )))

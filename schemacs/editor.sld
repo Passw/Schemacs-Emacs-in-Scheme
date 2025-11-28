@@ -25,10 +25,12 @@
           make-hash-table  default-hash
           )
     (only (schemacs lens)
-          view record-unit-lens lens-set update =>hash-key!)
+          view record-unit-lens lens-set update =>hash-key!
+          )
     (only (schemacs editor command)
           command-type? command-procedure
-          new-command show-command apply-command)
+          new-command show-command apply-command
+          )
     (only (schemacs eval) eval-string)
     (prefix (schemacs keymap) km:)
     (prefix (schemacs editor-impl) *impl/)
@@ -54,11 +56,11 @@
     (only (schemacs ui)
           run-div-monad  enclose  expand
           state-var  use-vars  =>state-var-value*!
-          div  view-type  properties
+          div  view-type  properties  =>div-properties*!
           div-pack  pack-elem  cut-horizontal  cut-vertical
-          div-space   floater
+          div-space   floater  print-div
           tiled-windows  text-editor
-          use-vars-value;;DEBUG
+          use-vars-value ;;DEBUG
           ))
 
   (export
@@ -375,13 +377,19 @@
         (use-vars
          (list st)
          (lambda (items) 
-           (display "; new-mode-line ");;DEBUG
-           (write items);;DEBUG
-           (newline);;DEBUG
-           items
-           );;DEBUG
-         )
-        ))
+           (display "; new-mode-line ") ;;DEBUG
+           (let ((items
+                  (and items
+                       (map
+                        (lambda (item)
+                          (cond
+                           ((procedure? item) (item parent-window))
+                           (else item)
+                           ))
+                        items
+                        ))))
+             ((mode-line-display-items parent-window) items)
+             )))))
 
     (define *header-line-format* (make-parameter (state-var #f)))
 
@@ -406,6 +414,19 @@
             ))))))
 
     (define (mode-line-display-single parent-window stack item)
+      (define (propertize elems props)
+        (display "; propertize elems: ") (write elems) (newline);;DEBUG
+        (display "; propertize props: ") (write props) (newline);;DEBUG
+        (let*((elems (mode-line-collect-items parent-window '() elems))
+              )
+          (if props
+              (apply
+               div-pack cut-vertical
+               (and (pair? props) (apply properties props))
+               elems
+               )
+              #f
+              )))
       (cond
        ((or (eq? #t item) (eq? #f item)) stack)
        ((procedure? item)
@@ -414,31 +435,26 @@
           ))
        ((eq? 'separator item) (cons 'separator stack))
        ((pair? item)
-        (cond
-         ((or (eq? 'propertize: (car item)) (eq? ':propertize (car item)))
+        (let ((head (car item))
+              (tail (cdr item))
+              )
           (cond
-           ((not (null? (cdr item)))
-            (cons
-             (cons
-              'propertize:
-              (cons
-               (mode-line-display-single parent-window '() (cadr item))
-               (cddr item)
-               ))
-             stack
+           ((or (eq? 'propertize: head) (eq? ':propertize head))
+            (cond
+             ((not (null? tail))
+              (cons (propertize (car tail) (cdr tail)) stack)
+              )
+             (else #f)
              ))
-           (else
-            (mode-line-collect-items parent-window stack item)
-            )))
-         (else stack)
-         ))
+           (else (mode-line-collect-items parent-window stack item))
+           )))
        ((string? item) (cons (div item) stack))
        (else
         (error "unknown mode-line item" item)
         )))
 
     (define (mode-line-collect-items parent-window stack items)
-      (display ";;mode-line-collect-items ")(write items)(newline)
+      (display ";;mode-line-collect-items ")(write items)(newline);;DEBUG
       (let loop ((stack stack) (items items))
         (cond
          ((pair? items)
@@ -446,7 +462,8 @@
            (mode-line-display-single parent-window stack (car items))
            (cdr items)
            ))
-         (else (reverse stack))
+         (else
+          (reverse stack))
          )))
 
     (define (mode-line-display-items parent-window)
@@ -456,12 +473,12 @@
       ;; `*IMPL/MODE-LINE-DISPLAY-ITEMS*`.
       ;;------------------------------------------------------------------
       (lambda (items)
-        (display "; mode-line-display-items ") (write items) (newline);;DEBUG
+        (display "; mode-line-display-items ") (write items) (newline) ;;DEBUG
         (and items
-         (apply
-          div-pack cut-vertical
-          (mode-line-collect-items parent-window '() items)
-          ))))
+             (apply
+              div-pack cut-vertical
+              (mode-line-collect-items parent-window '() items)
+              ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -484,24 +501,6 @@
       (view         window-view          set!window-view)
       )
 
-    (define (showlines elems);;DEBUG
-      (let loop ((i 0) (elems elems));;DEBUG
-        (cond;;DEBUG
-         ((pair? elems);;DEBUG
-          (cond;;DEBUG
-           ((< i 10) (write-string "     "));;DEBUG
-           ((< i 100) (write-string "    "));;DEBUG
-           ((< i 1000) (write-string "   "));;DEBUG
-           ((< i 10000) (write-string "  "));;DEBUG
-           ((< i 100000) (write-string " "));;DEBUG
-           (else (values));;DEBUG
-           );;DEBUG
-          (write i) (display ": ") (write (car elems)) (newline);;DEBUG
-          (loop (+ 1 i) (cdr elems));;DEBUG
-          );;DEBUG
-         (else (values));;DEBUG
-         )));;DEBUG
-
     (define (new-window parent buffer keymap)
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
@@ -509,10 +508,17 @@
       (let*((this (make<window> parent buffer keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
+            (_ (let () ;;DEBUG
+                 (display "header-line: ") (write header-line) (newline);;DEBUG
+                 (display "mode-line: ") (write mode-line) (newline);;DEBUG
+                 (display "buffer: ") (write buffer) (newline);;DEBUG
+                 )) ;;DEBUG
             (widget
              (div-pack
               cut-horizontal (view-type this)
-              header-line buffer mode-line
+              header-line
+              (view buffer =>buffer-view)
+              mode-line
               )))
         (set!window-mode-line   this mode-line)
         (set!window-header-line this header-line)
@@ -719,11 +725,12 @@
             (minibuffer      #f)
             (dispatch        (make-parameter #f))
             (prompt          '())
-            (view            #f)
+            (widget          #f)
             (this
              (make<winframe>
-              editor  init-window  layout  modal-key-state  init-keymap
-              echo-area  minibuffer  dispatch  prompt  view
+              editor  init-window  layout  modal-key-state
+              init-keymap  echo-area  minibuffer  dispatch
+              prompt  widget
               ))
             (init-window (new-window this init-buffer init-keymap))
             (echo-area   (new-echo-area this))
@@ -738,7 +745,7 @@
                (view-type this)
                (pack-elem
                 (size2D expand expand)
-                (use-vars (list layout) (lambda (o) o))
+                (use-vars (list layout) (lambda (o) (window-view o)))
                 )
                (pack-elem lo-size (line-display-view echo-area))
                (pack-elem lo-size (line-display-view minibuffer))
@@ -1021,20 +1028,24 @@
             (this
              (make<editor>
               #f                        ; editor-cell
-              buffer-table              ; buffer table
-              winframe-table            ; frame table
+              buffer-table
+              winframe-table
               (new-table 15)            ; process table
               (*default-keymap*)        ; base-keymap
-              msgs                      ; messages minibuffer
+              msgs                      ; messages buffer
               0                         ; counter
               #f                        ; view
               ))
-            (view       ((*impl/new-editor-view*) this))
-            (_          (set!editor-view this view))
-            (init-frame (new-frame this msgs #f)) ; initial frame
-            )
+            (init-frame     (new-frame this msgs #f))
+            (widget
+             (div-space
+              (floater
+               (rect2D 0 0 expand expand)
+               (view init-frame =>winframe-view)
+               ))))
         (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
+        (lens-set widget     this =>editor-view)
         (*impl/current-editor-closure* this)
         this
         ))
@@ -1384,11 +1395,11 @@
         (*default-keymap*)
         )))
 
-    ;;--------------------------------------------------------------------
-    ;; TODO: fix bug, the call to `EXIT-MINIBUFFER-WITH-RETURN` does not
-    ;; restore the window correctly, somehow the minibuffer keymap is
-    ;; still used to respond to key events after calling this function.
-
+    ;;----------------------------------------------------------------
+    ;; TODO: fix bug, the call to `EXIT-MINIBUFFER-WITH-RETURN` does
+    ;; not restore the window correctly, somehow the minibuffer keymap
+    ;; is still used to respond to key events after calling this
+    ;; function.
     ;;----------------------------------------------------------------
 
     (define *the-editor-state* (make-parameter (new-editor)))
@@ -1397,4 +1408,5 @@
       (editor-view (*the-editor-state*))
       )
 
+    ;;----------------------------------------------------------------
     ))

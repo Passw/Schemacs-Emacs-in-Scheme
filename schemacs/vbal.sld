@@ -12,7 +12,7 @@
           ))
   (export
    vbal-type?  vbal-length  vbal-copy
-   alist->vbal  vbal->vector  vbal->alist
+   alist->vbal  vbal->vector  vbal->alist  plist->vbal  vbal->plist
    vbal-find  vbal-assoc  vbal-assq  vbal-assv
    vbal-ref  vbal-set!  vbal-key-set!  vbal-value-set!
    vbal-map  vbal-map!  vbal-for-each
@@ -49,6 +49,22 @@
            (else (make<vbal> vec))
            ))))
 
+    (define (plist->vbal elems)
+      (let*((len (length elems))
+            (len (if (odd? len) (+ 1 len) len))
+            (vec (make-vector len))
+            )
+        (let loop ((i 0) (elems elems))
+          (cond
+           ((null? elems)
+            (when (odd? i) (vector-set! vec i #f))
+            (make<vbal> vec)
+            )
+           (else
+            (vector-set! vec i (car elems))
+            (loop (+ 1 i) (cdr elems))
+            )))))
+
     (define (vbal->alist vbal)
       (let*((vec (vbal->vector vbal))
             (len (vector-length vec))
@@ -62,6 +78,10 @@
              ))
            (else '())
            ))))
+
+    (define (vbal->plist vbal)
+      (vector->list (vbal->vector vbal))
+      )
 
     (define (vbal-find pred vbal)
       ;; Takes a predicate `PRED` and for each association in `VBAL`
