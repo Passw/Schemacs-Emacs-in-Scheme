@@ -1048,10 +1048,8 @@
             (init-frame     (new-frame this msgs #f))
             (widget
              (div-space
-              (floater
-               (rect2D 0 0 expand expand)
-               (view init-frame =>winframe-view)
-               ))))
+              (view init-frame =>winframe-view)
+              )))
         (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
         (lens-set widget     this =>editor-view)

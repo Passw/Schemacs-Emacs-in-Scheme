@@ -105,6 +105,7 @@
       ;; library.
       ;;--------------------------------------------------------------
       (cond
+       ((null? elems) (display "'()\n"))
        ((pair? elems)
         (let loop ((i 0) (elems elems))
           (cond

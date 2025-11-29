@@ -95,7 +95,10 @@
       ;; the Application window is closed and the Gtk event loop halts.
       (cond
        ((application:register? *gtk-application-object* #f)
-        (let*((top (if (div-monad-type? top) (run-div-monad #f top) top))
+        (let*((top (if (or (div-monad-type? top) (use-vars-type? top))
+                       (run-div-monad  top)
+                       top
+                       ))
               (top (if (div-type? top) top
                        (error "not a graphical `DIV` element" top)
                        ))
@@ -461,10 +464,8 @@
         (when (procedure? action)
           (gi:connect
            wref button:clicked
-           (lambda _ (div-event-handler
-                 (lambda _
-                   (action)
-                   #t)))))
+           (lambda _ (div-event-handler (lambda _ (action) #t)))
+           ))
         wref
         ))
 
