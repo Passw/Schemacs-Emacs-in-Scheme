@@ -32,7 +32,6 @@
     (let*((on-button-push (lambda () (display "OK\n")))
           (example
            (run-div-monad
-            #f
             (push-button
              (widget 'example)
              (properties
@@ -51,7 +50,7 @@
 (test-assert
     (assert-error
      (lambda ()
-       (run-div-monad #f
+       (run-div-monad
         (div
          (widget 'example)
          (cons 75600 #f)
@@ -67,7 +66,6 @@
               (with-exception-handler (lambda (err) (halt err))
                 (lambda ()
                   (run-div-monad
-                   #f
                    (div-pack
                     (pack-elem (div (content "correct")))
                     (content "incorrect")
@@ -81,7 +79,7 @@
 
 (test-assert
     (let*((testdiv
-           (run-div-monad #f
+           (run-div-monad
             (div-pack
              cut-horizontal from-start
              (pack-elem (div (content "example"))))
@@ -98,7 +96,7 @@
     (let*((sizes '(enclose expand enclose))
           (o (lambda (str) (div (content str))))
           (testdiv
-           (run-div-monad #f
+           (run-div-monad
             (div-grid
              (x-sizes sizes)
              (y-sizes sizes)
@@ -121,7 +119,7 @@
 
 (test-assert
     (let*((testdiv
-           (run-div-monad #f
+           (run-div-monad
             (div-space
              (floater
               1 (rect2D 20 20 32 32)
@@ -280,12 +278,12 @@
   )
 
 (test-assert
-    (let*((packed (run-div-monad #f (simple-pack-test))))
+    (let*((packed (run-div-monad (simple-pack-test))))
       (check-simple-packed packed)
       ))
 
 (test-assert
-    (let*((o (run-div-monad #f (div (simple-pack-test))))
+    (let*((o (run-div-monad (div (simple-pack-test))))
           (packed (div-content o))
           )
       (check-simple-packed (div-content o))

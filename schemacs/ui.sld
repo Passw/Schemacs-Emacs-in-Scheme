@@ -131,50 +131,79 @@
       (proc div-monad-proc)
       )
 
-    (define (%run-div-monad parent m)
-      (display "; monad step: ") (write (div-monad-proc m)) (newline);;DEBUG
-      ((div-monad-proc m) parent)
+    (define (%%run-div-monad log-output parent m)
+      ((div-monad-proc m) log-output parent)
       )
 
-    (define (run-div-monad parent o)
-      ;; This procedure is very useful for implementing low-level the
-      ;; drawing code that draw DIV trees. This procedure takes a
-      ;; `PROC` and returns a new procedure which takes a `DIV`
-      ;; object. The returned procedure will perform some basic
-      ;; operations on any `DIV` applied to it to ensure that the
-      ;; `DIV` is actually a `DIV`, before pasing the `DIV` to the
-      ;; `PROC` procedure passed as an argument to
-      ;; `DIV-RESOLVER`. These operations ensure that the object
-      ;; received is in fact a `DIV`, and if it is a `DIV-MONAD-TYPE?`
-      ;; or `USE-VARS-TYPE?`, it attempts to resolve these objects to
-      ;; a `DIV` before applying `PROC`.
-      ;;
-      ;; Note that this does not resolve `DIV`s which contain
-      ;; `USE-VARS-TYPE?` values as their content, so your `PROC` may
-      ;; still need to check for `USE-VARS-TYPE?` on the `DIV-CONTENT`
-      ;; of the `DIV` value applied to it by this `DIV-RESOLVER`.
-      ;;------------------------------------------------------------------
+    (define (%run-div-monad log-output parent o)
       (cond
-       ((div-monad-type? o) (div-resolve o (%run-div-monad parent o)))
+       ((div-monad-type? o)
+        (when log-output
+          (display "PROC " log-output) ;;LOG
+          (write o log-output) ;;LOG
+          (newline log-output) ;;LOG
+          )
+        (div-resolve log-output o (%%run-div-monad log-output parent o)))
        ((use-vars-type? o)
-        (let ((return (apply-use-vars o)))
+        (let ((return (apply-use-vars log-output o)))
           (cond
            ((div-monad-type? return)
-            (div-resolve return (%run-div-monad parent return))
+            (when log-output
+              (display "VAR->PROC " log-output) ;;LOG
+              (write return log-output) ;;LOG
+              (newline log-output) ;;LOG
+              )
+            (div-resolve log-output return (%%run-div-monad log-output parent return))
             )
-           (else (div-resolve o return))
+           (else (div-resolve log-output o return))
            )))
        (else (error "not a `div-monad-type?` value" o))
        ))
 
-    (define (div-resolve from o)
+    (define run-div-monad
+      ;; This procedure takes a procedure of type `div-monad-type?`
+      ;; and constructs a `DIV` tree. It takes three arguments:
+      ;;
+      ;;  1. (optional), and need not be passed as an argument at all,
+      ;;     but if a value is given it must be an `output-port?` for
+      ;;     logging the construction of the tree object, useful for
+      ;;     debugging.
+      ;;
+      ;;  2. (optional) the parent `DIV` tree to which the new `DIV`
+      ;;     tree will be grafted.
+      ;;
+      ;;  3. (required) the `div-monad-type?` that was constructed by
+      ;;     one of `div`, `div-pack`, `div-space`, or `floater`. This
+      ;;     is what gets evaluated to produce the `DIV` tree.
+      ;;--------------------------------------------------------------
+      (case-lambda
+        ((o) (%run-div-monad #f #f o))
+        ((parent o)
+         (cond
+          ((output-port? parent) (%run-div-monad parent #f o))
+          (else (%run-div-monad #f parent o))
+          ))
+        ((log-output parent o) (%run-div-monad log-output parent o))
+        ))
+
+    (define (div-resolve log-output from o)
       ;; Ensure that the value `O` has resolved to a `DIV` node, and
       ;; is not a `use-vars-type?` or `div-monad-type?`. The `FROM`
       ;; argument should be the `use-vars-type?` or `div-monad-type?`
       ;; that produced the argument `O`.
       (cond
-       ((or (div-record-type? o) (floater-type? o)) o)
+       ((or (div-record-type? o) (floater-type? o))
+        (when log-output
+          (display "DIV " log-output) ;;LOG
+          (pretty log-output (indent 4 (%print-div 0 o))) ;;LOG
+          )
+        o)
        ((or (string? o) (number? o))
+        (when log-output
+          (display "DIV " log-output) ;;LOG
+          (write o log-output) ;;LOG
+          (newline log-output) ;;LOG
+          )
         (%content->div o)
         )
        ((use-vars-type? o)
@@ -228,13 +257,7 @@
                (cond
                 ((procedure? update-proc) update-proc)
                 ((div-monad-type? update-proc)
-                 (lambda (old-value)
-                   (cond
-                    ((div-record-type? old-value)
-                     (%run-div-monad (div-parent old-value) update-proc)
-                     )
-                    (else (%run-div-monad #f update-proc))
-                    )))
+                 (lambda (old-value) update-proc))
                 (else (error "not a procedure" update-proc))
                 )))
           ;; return a thunk
@@ -248,8 +271,10 @@
                   (set!state-var-value var new-val) ;; Always update the state value.
                   (unless (and test-eq ((state-var-equality-test var) old-val new-val))
                     ;; Enqueue this state var to dispatch updates,
-                    ;; unless the values are equal in which case there
-                    ;; is no need to enqueue DIV tree update.
+                    ;; unless the values are equal (or if equality
+                    ;; testing has been explicitly disabled) in which
+                    ;; case there is no need to enqueue DIV tree
+                    ;; update.
                     (push-to-var-list var)
                     )
                   (values)
@@ -291,7 +316,7 @@
         new
         ))
 
-    (define (div-event-handler proc)
+    (define (div-event-handler log-output proc)
       ;; This procedure is used to implemnent the Schemacs UI
       ;; semantics in lower-level GUI toolkits. Whenever an event
       ;; handler is installed, for example into a push button, that
@@ -329,11 +354,11 @@
                ((null? box) result)
                (else
                 (let ((stvar (car box)))
-                  (div-dispatch-updates div-run-update stvar)
+                  (div-dispatch-updates log-output div-run-update stvar)
                   (loop (cdr box))
                   ))))))))
 
-    (define (div-dispatch-updates div-run-update state-var)
+    (define (div-dispatch-updates log-output div-run-update state-var)
       ;; After an update to state variables, every `USES-VAR` instance
       ;; in the DIV tree that is subscribed to those variables needs
       ;; to be evaluated again with the new values of the state variables.
@@ -344,7 +369,7 @@
          (else
           (let*((usevar (car var-users))
                 (old-value (use-vars-value usevar))
-                (new-value (apply-use-vars usevar))
+                (new-value (apply-use-vars log-output usevar))
                 )
             (div-run-update old-value new-value)
             (loop (cdr var-users))
@@ -438,12 +463,12 @@
         )
        (else
         (make<div-monad>
-         (lambda (parent)
+         (lambda (log-output parent)
            (let ((usevar (make<use-vars> parent state-vars proc #f)))
              (let loop ((state-vars state-vars))
                (cond
                 ((null? state-vars)
-                 (apply-use-vars usevar)
+                 (apply-use-vars log-output usevar)
                  usevar
                  )
                 (else
@@ -463,22 +488,27 @@
       (use-vars (list state-var) state-var-value)
       )
 
-    (define (apply-use-vars uses)
+    (define (apply-use-vars log-output uses)
       (let loop ((vars (use-vars-state-vars uses)) (args '()))
         (cond
          ((pair? vars)
           (loop (cdr vars) (cons (state-var-value (car vars)) args))
           )
          ((null? vars)
+          (when log-output
+            (display "VAR " log-output) ;;LOG
+            (write (use-vars-procedure uses) log-output) ;;LOG
+            (newline log-output) ;;LOG
+            )
           (let*((return (apply (use-vars-procedure uses) (reverse args)))
                 (return
                  (cond
                   ((div-monad-type? return)
-                   (%run-div-monad (use-vars-parent uses) return)
+                   (%%run-div-monad log-output (use-vars-parent uses) return)
                    )
                   (else return)
                   ))
-                (return (div-resolve uses return))
+                (return (div-resolve log-output uses return))
                 )
             (set!use-vars-value uses return)
             (cond
@@ -488,7 +518,7 @@
              )
             return
             ))
-         (else (error "not a list of variables" vars))
+         (else (error "not a proper list of variables" vars))
          )))
 
     ;;================================================================
@@ -589,7 +619,7 @@
       (write-char #\) port)
       )
 
-    (define (print-div o)
+    (define (%print-div depth o)
       (let*-values
           (((cont) (div-content o))
            ((constr print-content)
@@ -597,7 +627,7 @@
              ((div-pack-type?  cont) (values "div-pack"  print-div-pack))
              ((div-grid-type?  cont) (values "div-grid"  print-div-grid))
              ((div-space-type? cont) (values "div-space" print-div-space))
-             (else (values "div" (lambda (o) (and o (qstr o)))))
+             (else (values "div" (lambda (_ o) (and o (qstr o)))))
              ))
            ((props) (div-properties o))
            ((vtype) (div-view-type o))
@@ -629,22 +659,28 @@
          (and vtype (print (print-div-view-type vtype) (line-break)))
          ;; now write the properties list
          (and props
-          (print
-           (form
-            1 "properties" (line-break)
-            (print-vbal-with
-             (lambda (key val)
-               (print
-                (if (symbol? key) (print #\' key) (qstr key))
-                "  " (qstr val) (line-break)
-                ))
-             props
-             ))
-           (line-break)
-           ))
+              (print
+               (form
+                1 "properties" (line-break)
+                (print-vbal-with
+                 (lambda (key val)
+                   (print
+                    (if (symbol? key) (print #\' key) (qstr key))
+                    "  " (qstr val) (line-break)
+                    ))
+                 props
+                 ))
+               (line-break)
+               ))
          ;; now write the content
-         (print-content cont)
+         (if (> 0 depth) (print-content (- depth 1) cont) "...")
          )))
+
+    (define print-div
+      (case-lambda
+        ((o) (print-div #f o))
+        ((depth o) (print-div depth o))
+        ))
 
     (define expand
       ;; keyword: `EXPAND` used as argument to `SIZE2D` procedure,
@@ -852,7 +888,7 @@
               ((string? init) (put-content o init) o)
               ((number? init) (put-content o (number->string init)) o)
               ((div-monad-type? init) (put-content o init) o)
-              ((use-vars-type? init) (apply-use-vars init) (put-content o init))
+              ((use-vars-type? init) (put-content o init))
               ((div-pack-type? init)
                (put-content o (copy-div-pack (*default-copy-widget-ref*) init)) o
                )
@@ -866,11 +902,13 @@
               )))
        (lambda (o) ;; <- finalize
          (make<div-monad>
-          (lambda (parent)
+          (lambda (log-output parent)
             (set!div-parent o parent)
             (let ((cont (div-content o)))
               (cond
-               ((div-monad-type? cont) (set!div-content o (run-div-monad parent cont)) o)
+               ((div-monad-type? cont)
+                (set!div-content o (%run-div-monad log-output parent cont))
+                o)
                (else o)
                )))))))
 
@@ -891,7 +929,7 @@
        (else vec)
        ))
 
-    (define (construct-content-list cast parent elems)
+    (define (construct-content-list log-output parent cast elems)
       ;; Step through a list of div-monad procedures, evaluate each
       ;; one, and gather it's content into a list. Return two values:
       ;; the length of the list, and the list of `DIV` elements.
@@ -903,8 +941,8 @@
          (else
           (let*((return
                  (cond
-                  ((use-vars-type? elem) (apply-use-vars elem))
-                  ((div-monad-type? elem) (run-div-monad parent elem))
+                  ((use-vars-type? elem) (apply-use-vars log-output elem))
+                  ((div-monad-type? elem) (%run-div-monad log-output parent elem))
                   ((or (div-record-type? elem) (floater-type? elem)) elem)
                   (else (error "not a valid div constructor" elem))
                   ))
@@ -950,9 +988,9 @@
         (values count divs)
         ))
 
-    (define (construct-content cast parent elems)
+    (define (construct-content log-output parent cast elems)
       (let*-values
-          (((count divs) (construct-content-list cast parent elems))
+          (((count divs) (construct-content-list log-output parent cast elems))
            ((vec) (make-vector count))
            )
         (vector-fill-list! vec 0 divs)
@@ -1136,7 +1174,7 @@
       (or (not f) (eq? f increasing) (eq? f decreasing))
       )
 
-    (define (%grid-fill parent ylbl xdir ydir xmax ymax subdiv-vec ranks)
+    (define (%grid-fill log-output parent ylbl xdir ydir xmax ymax subdiv-vec ranks)
       (let ((adjust-x (xdir xmax))
             (adjust-y (ydir ymax))
             )
@@ -1159,7 +1197,7 @@
                ((< y-index ymax)
                 (let-values
                     (((len elems)
-                      (construct-content-list cast-to-div-record parent elems)
+                      (construct-content-list log-output parent cast-to-div-record elems)
                       ))
                   (let x-loop ((x-index 0) (elems elems))
                     (cond
@@ -1196,7 +1234,7 @@
              (set!div-grid-subdivs
               grid
               (make<div-monad>
-               (lambda (parent)
+               (lambda (log-output parent)
                  (let*((major-dir (or major-dir increasing))
                        (minor-dir (or minor-dir increasing))
                        (xsizes (div-grid-x-sizes grid))
@@ -1212,11 +1250,11 @@
                          )))
                    (if row-major
                        (%grid-fill
-                        parent 'row    major-dir minor-dir
+                        log-output parent 'row    major-dir minor-dir
                         xmax ymax subdiv-vec ranks
                         )
                        (%grid-fill
-                        parent 'column minor-dir major-dir
+                        log-output parent 'column minor-dir major-dir
                         ymax xmax subdiv-vec ranks
                         ))))))
              o
@@ -1292,11 +1330,19 @@
              ))
        (lambda (o) ;; <- finalize
          (make<div-monad>
-          (lambda (parent)
+          (lambda (log-output parent)
             (let*((grid  (div-content o))
                   (monad (div-grid-subdivs grid))
-                  (vec   (and monad (%run-div-monad parent monad)))
-                  )
+                  (monad
+                   (if (div-monad-type? monad)
+                       (%%run-div-monad log-output parent monad)
+                       monad
+                       ))
+                  (vec
+                   (if (or (div-monad-type? monad) (use-vars-type? monad))
+                       (%run-div-monad log-output parent monad)
+                       monad
+                       )))
               (set!div-grid-subdivs grid vec) o
               ))))))
 
@@ -1349,7 +1395,7 @@
        cont
        ))
 
-    (define (print-div-grid cont)
+    (define (print-div-grid depth cont)
       (define xs (div-grid-x-sizes cont))
       (define xs-len (vector-length xs))
       (define vec (div-grid-subdivs cont))
@@ -1365,7 +1411,7 @@
          ((>= i len) '())
          ((< x xs-len)
           (cons
-           (print-div (vector-ref vec i))
+           (%print-div depth (vector-ref vec i))
            (x-loop (+ 1 i) (+ 1 x))
            ))
          (else '())
@@ -1407,7 +1453,6 @@
     (define div-pack-type? (div-type-check pack-record-type?))
 
     (define (copy-div-pack copy-ref o)
-      (display "; copy-div-pack ") (write o) (newline);;DEBUG
       (make<div-pack>
        (div-pack-orientation o)
        (div-pack-from o)
@@ -1496,9 +1541,7 @@
       (record-updater
        div-pack-type?
        (lambda (o)
-         (let*((pack (div-content o))
-               (elem (if (div-monad-type? elem) (%run-div-monad o elem) elem))
-               )
+         (let*((pack (div-content o)))
            (set!div-pack-subdiv-sizes
             pack (cons size (div-pack-subdiv-sizes pack))
             )
@@ -1590,17 +1633,10 @@
              (set!div-pack-from pack 'from-start)
              )
            (make<div-monad>
-            (lambda (parent)
-              (display "; div-pack finalize, subdivs: ") (write (div-pack-subdivs pack)) (newline);;DEBUG
-              (display "; -- finalize subdivs:") (newline);;DEBUG
-              (let ((p (div-pack-subdivs pack))) ;;DEBUG
-                (when (vector? p)                ;;DEBUG
-                  (display "; ^^WARNING: subdivs is a vector\n") ;;DEBUG
-                  (display-lines p) ;;DEBUG
-                  ))                ;;DEBUG
+            (lambda (log-output parent)
               (let*((subdivs-vec
                      (construct-content
-                      cast-to-div-record parent
+                      log-output parent cast-to-div-record
                       (reverse (div-pack-subdivs pack))
                       ))
                     (sizes-vec
@@ -1646,7 +1682,7 @@
        cont
        ))
 
-    (define (print-div-pack cont)
+    (define (print-div-pack depth cont)
       ;; NOTE: flags and orientation are written by a special rule in
       ;; the `%write-div` procedure.
       (let*((sizes (div-pack-subdiv-sizes cont))
@@ -1661,7 +1697,7 @@
              (cons
               (form
                1 "pack-elem" (vector-ref sizes i) (line-break)
-               (print-div (vector-ref subdivs i))
+               (%print-div depth (vector-ref subdivs i))
                )
               (loop (+ 1 i))
               ))
@@ -1798,11 +1834,11 @@
           ))
        (lambda (o)
          (make<div-monad>
-          (lambda (parent)
+          (lambda (log-output parent)
             (let*((space (div-content o))
                   (elems
                    (construct-content
-                    cast-to-floater parent
+                    log-output parent cast-to-floater
                     (reverse (div-space-elements space))
                     )))
               ;; <TODO> sort the elements by their z-index.
@@ -1847,8 +1883,8 @@
            )))
        (lambda (flo)
          (make<div-monad>
-          (lambda (parent)
-            (let ((div (run-div-monad parent (floater-div flo))))
+          (lambda (log-output parent)
+            (let ((div (%run-div-monad log-output parent (floater-div flo))))
               (cond
                ((not div) flo)
                ((or (not div) (div-record-type? div))
@@ -1915,7 +1951,7 @@
        cont
        ))
 
-    (define (print-div-space cont)
+    (define (print-div-space depth cont)
       (let*((outer (div-space-outer-align cont))
             (inner (div-space-inner-align cont))
             )
@@ -1928,20 +1964,21 @@
               (form 1 "inner-align" inner (line-break))
               )
          (map
-          print-floater
+          (print-floater depth)
           (vector->list (div-space-elements cont))
           ))))
 
-    (define (print-floater flo)
-      (let ((z (floater-z-index flo))
-            (r (floater-rect flo))
-            (cont (floater-div flo))
-            )
-        (form
-         1 "floater" z (line-break)
-         (print-rect2D r) (line-break)
-         (print-div (floater-div flo))
-         )))
+    (define (print-floater depth)
+      (lambda (flo)
+        (let ((z (floater-z-index flo))
+              (r (floater-rect flo))
+              (cont (floater-div flo))
+              )
+          (form
+           1 "floater" z (line-break)
+           (print-rect2D r) (line-break)
+           (%print-div depth (floater-div flo))
+           ))))
 
     ;;----------------------------------------------------------------
     ;; Pre-defined view types
@@ -2192,3 +2229,28 @@
 
     ;;----------------------------------------------------------------
     ))
+
+;; ** Should `USE-VARS` nodes exist in the `DIV` tree?
+;;
+;; Though `use-vars` nodes are used in the construction of a the `DIV`
+;; tree, should they always remain there even after the `DIV` tree has
+;; been constructed? The answer is "no".  The `DIV` nodes contain a
+;; boolean tag indicating whether it was constructed from a
+;; variable. If that node is tagged as variable, the rendering
+;; back-end can do the accounting necessary to make that part of the
+;; rendered tree more easily changed. But when a change occurs, and
+;; `run-div-monad` is applied to the monadic procedures that generate
+;; new `DIV` trees, the variables used during construction need to be
+;; resolved immediately.
+;;
+;; The monads that are applied when an event occurs will contain
+;; references to the `USE-VARS` variables within the closure itself,
+;; and these closures are themselves contained in the event handler
+;; code that is stored in the back-end. So it is not necessary to keep
+;; these `USE-VARS` nodes in the final tree computed by
+;; `run-div-monad`. Even if the old `USE-VARS` node is kept, the old
+;; `USE-VARS` node is replaced by a new one just like it as soon as
+;; `run-div-monad` is evaluated. So it is better to remove the
+;; `USE-VARS` nodes returned by `run-div-monad` so as not to
+;; complicate the rendering process with constant checks of the type
+;; of node.
