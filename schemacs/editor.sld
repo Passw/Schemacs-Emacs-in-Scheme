@@ -62,7 +62,7 @@
           div-pack  pack-elem  cut-horizontal  cut-vertical
           div-space   floater  print-div
           tiled-windows  text-editor
-          use-vars-value ;;DEBUG
+          use-vars-value
           ))
 
   (export
@@ -231,8 +231,8 @@
       (let*((winframe (selected-frame))
             (txt (get-minibuffer-text winframe))
             )
-        (display ";;minibuffer-prompt-resume ")(write txt)(newline) ;;DEBUG
-        (winframe-prompt-resume winframe txt)))
+        (winframe-prompt-resume winframe txt)
+        ))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -324,7 +324,6 @@
       (case-lambda
         ((handle) (new-buffer handle #f))
         ((handle keymap)
-         (display ";;;----------- new-buffer ------------------;;;\n");;DEBUG
          (let*((keymap (or keymap (*default-buffer-local-keymap*)))
                (this (make<buffer> #f keymap handle #f))
                (view ((*impl/new-buffer-view*) this))
@@ -350,7 +349,6 @@
       )
 
     (define (new-line-display parent prompt-str)
-      (display ";;;----------- new-line-display ------------------;;;\n");;DEBUG
       (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
             (input-var (state-var string=? ""))
             (this (make<line-display-type> parent prompt-var input-var #f))
@@ -379,7 +377,6 @@
       ;; node containing a variety of indicators for displaying
       ;; informaion about the current window and the buffer it is
       ;; displaying.
-      (display ";;;----------- new-mode-line ---------------;;;\n");;DEBUG
       (let ((st (or st (*mode-line-format*))))
         (use-vars
          (list st)
@@ -394,12 +391,6 @@
                            ))
                         items
                         ))))
-             (cond ;;DEBUG
-              (items ;;DEBUG
-               (display "; use-vars mode-line") (newline) (display-lines items) (newline) ;;DEBUG
-               ) ;;DEBUG
-              (else (display "; use-vars mode-line #f\n"));;DEBUG
-              ) ;;DEBUG
              ((mode-line-display-items parent-window) items)
              )))))
 
@@ -514,7 +505,6 @@
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
       ;;------------------------------------------------------------------
-      (display ";;;----------- new-window ------------------;;;\n");;DEBUG
       (let*((this (make<window> parent buffer keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
@@ -528,7 +518,6 @@
         (set!window-mode-line   this mode-line)
         (set!window-header-line this header-line)
         (set!window-view        this widget)
-        (display ";;;----------- window constructed --------------;;;\n");;DEBUG
         this
         ))
 
@@ -717,7 +706,6 @@
     (define (new-frame editor init-buffer init-keymap)
       ;; "keymap" is the keymap for this local frame, which is a fallback
       ;; keymap used when no key matches the buffer local keymap.
-      (display ";;;------------ new-frame ------------------;;;\n");;DEBUG
       (let*((editor      (or editor (*the-editor-state*)))
             (init-buffer (or init-buffer (editor-messages editor)))
             (init-keymap
@@ -762,7 +750,6 @@
         (set!winframe-echo-area       this echo-area)
         (set!winframe-minibuffer      this minibuffer)
         (set!winframe-view            this widget)
-        (display ";;;---------- frame constructed --------------;;;\n");;DEBUG
         this
         ))
 
@@ -853,7 +840,6 @@
       (case-lambda
         ((window) (select-window window #f))
         ((window norecord)
-         (display ";;select-window ")(write (view window =>window-buffer =>buffer-handle))(newline) ;;DEBUG
          ((*impl/select-window*) window)
          (lens-set window (selected-frame) =>winframe-selected-window)
          )))
@@ -943,8 +929,6 @@
       (let*((prompt-stack (view winframe =>winframe-prompt-stack))
             (prompt-item  (and (not (null? prompt-stack)) (car prompt-stack)))
             )
-        (display ";;winframe-prompt-resume ")(write return)(newline) ;;DEBUG
-        (debug-print-keymaps winframe) ;;DEBUG
         (cond
          ((minibuffer-prompt-type? prompt-item)
           (let ((prompt  (minibuffer-prompt-continuation     prompt-item))
@@ -1030,7 +1014,6 @@
       ;; using the Scheme environment object constructed by this (schemacs
       ;; editor) library as the editor state itself, with all fields of
       ;; <editor-type> redefined as parameters in this environment.
-      (display ";;;----------- new-editor ------------------;;;\n");;DEBUG
       (let*((msgs           (new-buffer "*Messages*"))
             (buffer-table   (new-table 63))
             (winframe-table (new-table 15))
@@ -1054,7 +1037,6 @@
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
         (lens-set widget     this =>editor-view)
         (*impl/current-editor-closure* this)
-        (display ";;;----------- editor consturcted --------------;;;\n");;DEBUG
         this
         ))
 
@@ -1078,7 +1060,6 @@
       ;; *dispatch-key-event* function handlers.
       (cond
        ((winframe-type? winframe)
-        (debug-print-keymaps winframe) ;;DEBUG
         (let*((state (window-get-or-reset-modal-state! winframe))
               (window (selected-window))
               )
@@ -1135,8 +1116,8 @@
     ;; then the GUI is constructed on top of this superstructure.
 
     (define (get-minibuffer-text frame)
-      (display ";;get-minibuffer-text\n") ;;DEBUG
-      ((*impl/get-minibuffer-text*) frame))
+      ((*impl/get-minibuffer-text*) frame)
+      )
 
     (define (exit-minibuffer-with-return return)
       ;; This procedure (or the `EXIT-MINIBUFFER` command) should be bound
@@ -1145,7 +1126,6 @@
       ;; saved which contains the stack of the procedure that called it,
       ;; this function resumes that continuation with the return value to
       ;; that procedure call given as an argument to this procedure.
-      (display ";;exit-minibuffer-with-return\n") ;;DEBUG
       (let ((winframe (selected-frame)))
         ((*impl/exit-minibuffer*) winframe)
         (winframe-prompt-resume winframe return)
