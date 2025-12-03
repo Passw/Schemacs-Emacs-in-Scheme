@@ -38,6 +38,7 @@
           )
     (prefix (schemacs ui text-buffer-impl) *impl/)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
+    (only (schemacs pretty) display-lines)
     (only (scheme case-lambda) case-lambda)
     (only (scheme char) char-upcase)
     (prefix (gi) gi:)
@@ -391,6 +392,7 @@
       ;; if `OUTER` is `#f` a new `GtkBox` must be constructed.
       (let*((cont (div-content o)))
         (cond
+         ((not cont) o)
          ((div-space-type? cont) (gtk-draw-div-space o outer cont))
          ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
          ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
@@ -431,6 +433,7 @@
             o)))))
 
     (define (gtk-draw-string o)
+      (display "; gtk-draw-string: ") (write o) (newline);;DEBUG
       (let ((label
              (gi:make
               <GtkLabel>

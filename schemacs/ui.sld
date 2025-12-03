@@ -62,15 +62,16 @@
           record-updater  record-type-tag  run-record-updater
           new-constructor
           )
-    (only (schemacs vbal) ;;(schemacs vbal)
+    (only (schemacs vbal)
           vbal-type?  alist->vbal  vbal-copy  vbal-assq
           vbal-length  vbal-for-each
           print-vbal-with
           )
     (only (schemacs ui rectangle)
-          rect2D-type?  rect2D  copy-rect2D  print-rect2D
-          size2D-type?  size2D  copy-2D      rect2D-size
-          point2D  point2D-type?  print-point2D
+          rect2D-type?  rect2D  copy-rect2D
+          size2D-type?  size2D  rect2D-size
+          point2D  point2D-type?  copy-2D
+          print-point2D  print-rect2D  print-size2D
           )
     (only (schemacs lens)
           record-unit-lens  lens  update
@@ -1005,7 +1006,7 @@
             (let ((result (resolve-elem (car elems)))
                   (elems (cdr elems))
                   )
-              (if (cons result (loop elems)) (loop elems))
+              (if result (cons result (loop elems)) (loop elems))
               ))
            (else (error "not a list" elems))
            )))
@@ -1019,8 +1020,10 @@
             (cond
              ((pair? elem) (gather-list loop next elem))
              ((vector? elem) (gather-vec loop next elem))
-             (else (cons (resolve-elem elem) (loop next)))
-             )))
+             (else
+              (let ((result (resolve-elem elem)))
+                (if result (cons result (loop next)) (loop next))
+                )))))
          ((vector? elems) (gather-vec loop '() elems))
          (else (error "not a list" elems))
          ))
@@ -1736,7 +1739,8 @@
             ((< i len)
              (cons
               (form
-               1 "pack-elem" (vector-ref sizes i) (line-break)
+               1 "pack-elem"
+               (print-size2D (vector-ref sizes i)) (line-break)
                (%print-div depth (vector-ref subdivs i))
                )
               (loop (+ 1 i))
@@ -2248,6 +2252,7 @@
       ;;--------------------------------------------------------------
       (apply div-pack (view-type tiled-windows) args)
       )
+
 
     (define (print-div-view-type vtype)
       (and vtype
