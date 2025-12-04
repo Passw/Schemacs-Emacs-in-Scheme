@@ -73,6 +73,9 @@
           point2D  point2D-type?  copy-2D
           print-point2D  print-rect2D  print-size2D
           )
+    (only (schemacs ui text-buffer)
+          buffer-type?
+          )
     (only (schemacs lens)
           record-unit-lens  lens  update
           =>view-only-lens  =>canonical
@@ -215,7 +218,7 @@
             (line-break)                   ;;LOG
             )))                            ;;LOG
         o)
-       ((or (not o) (string? o) (number? o))
+       ((or (not o) (string? o) (number? o) (buffer-type? o))
         (when log-output              ;;LOG
           (display "DIV " log-output) ;;LOG
           (write o log-output)        ;;LOG
@@ -921,6 +924,7 @@
              (cond
               ((string? init) (put-content o init) o)
               ((number? init) (put-content o (number->string init)) o)
+              ((buffer-type? init) (put-content o init) o)
               ((div-monad-type? init) (put-content o init) o)
               ((use-vars-type? init) (put-content o init))
               ((div-pack-type? init)

@@ -37,6 +37,7 @@
           tiled-windows
           )
     (prefix (schemacs ui text-buffer-impl) *impl/)
+    (prefix (schemacs editor) ed:)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
     (only (schemacs pretty) display-lines)
     (only (scheme case-lambda) case-lambda)
@@ -410,6 +411,9 @@
                 (wref
                  (cond
                   ((eq? ptype push-button) (gtk-draw-push-button cont props))
+                  ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
+                   (gtk-draw-text-editor cont props)
+                   )
                   (else (gtk-draw-string cont))
                   ))
                 (outer (gtk-prepare-outer-box o outer #f))
@@ -467,10 +471,107 @@
         (when (procedure? action)
           (gi:connect
            wref button:clicked
-           (lambda _ (div-event-handler (lambda _ (action) #t)))
-           ))
+           (lambda _
+             (gtk3-event-handler
+              (lambda () (div-event-handler (lambda _ (action) #t)))
+              ))))
         wref
         ))
+
+    (define (gtk-draw-text-editor buffer props)
+      (let*((on-key-event (prop-lookup 'on-key-event: props))
+            (wref
+             (gi:make
+              <GtkTextView>
+              #:buffer buffer
+              #:hexpand #t
+              #:vexpand #t
+              #:visible #t
+              )))
+        (gobject-ref wref)
+        (when (procedure? on-key-event)
+          (gi:connect
+           wref widget:key-press-event
+           (lambda (_textview event)
+             (gtk3-event-handler
+              (lambda () (gtk-key-press-event-handler on-key-event event))
+              ))))
+        wref
+        ))
+
+    (define (gtk-key-press-event-handler on-key-event event)
+      (let*-values
+          (((val-ok   keyval)    (event:get-keyval event))
+           ((code-ok  keycode)   (event:get-keycode event))
+           ((state-ok modifiers) (event:get-state event))
+           ((mod-bits)           (modifier-type->number modifiers))
+           ((unicode)            (gtk-keyval-normalize keyval))
+           )
+        ;; (format #t ;;DEBUG
+        ;;  ";;key-event (keyval: #x~x keycode: #x~x modifiers: ~s mod-bits: ~s unicode: ~a)\n" ;;DEBUG
+        ;;  keyval keycode modifiers mod-bits unicode) ;;DEBUG
+        ;; Example output of the above format statement after pressing space bar:
+        ;;     (key-event #x20 #x41 ())
+        (cond
+         ((and (= 0 mod-bits) (char=? unicode #\null))
+          ;; Ignored because this is a key press of a modifier without an
+          ;; accompanying printing character.
+          #t)
+         (else
+          (let*((mod-list (modifier-type->list modifiers))
+                (km-index (km:keymap-index (gtk-keymod->keymap-mod mod-list unicode)))
+                )
+            ;;(pretty (print ";;keymap-index " (km:keymap-index-print km-index) (line-break)));;DEBUG
+            (gtk3-event-handler (lambda () (on-key-event km-index)))
+            ;; Must return #t to prevent this event from propagating up
+            ;; the widget tree to the parent TextView object and
+            ;; triggering the default event handler.
+            #t)))))
+
+
+    (define (gtk-keymod->keymap-mod mod-list keyval)
+      ;; This function is responsible for constructing keyboard modifier
+      ;; symbols from a modifier mask taken from a key event. Modifier
+      ;; masks can also be returned with mouse events. See also
+      ;; "GTK-KEYVAL-NORMALIZE".
+      (let loop ((mod-list mod-list) (keyval keyval))
+        (cond
+         ((null? mod-list) (list keyval))
+         (else
+          (let ((mod (car mod-list)))
+            (cond
+             ((eq? mod 'shift-mask)
+              (loop (cdr mod-list) (char-upcase keyval))
+              )
+             ((or (eq? mod 'alt-mask) (eq? 'mod1-mask))
+              (cons 'meta (loop (cdr mod-list) keyval))
+              )
+             ((eq? mod 'control-mask)
+              (cons 'control (loop (cdr mod-list) keyval))
+              )
+             (else
+              (format #t ";; unknown Gtk key modifier symbol \"~a\"\n" mod)
+              (loop (cdr mod-list) keyval)
+              )))))))
+
+    (define (gtk-keyval-normalize keyval)
+      ;; This function is responsible for decoding the "keyval" portion of
+      ;; a key event to a character or string, which are the keys that are
+      ;; NOT modifiers like "Control" or "Alt." If a character is
+      ;; returned, there is an ASCII character associated with the key
+      ;; pressed, such as a letter or number keys, enter, delete, or
+      ;; escape.  If a string is returned, the string is a symbol of the
+      ;; key on the keyboard that was pressed, which might be (for
+      ;; example) an arrow key, backspace, or a function key. See also
+      ;; "GTK-KEYMOD->KEYMAP-MOD"
+      (let ((norm-keyval (keyval-to-unicode keyval)))
+        (cond
+         ((and (<= keyval #x8000) (> norm-keyval 0))
+          (integer->char norm-keyval)
+          )
+         (else
+          (integer->char (keyval-to-unicode keyval))
+          ))))
 
     (define (%gtk-set-widget-width-height wid w h)
       (cond
@@ -975,6 +1076,10 @@
            )
         (thunk)
         ))
+
+    (define (gtk3-event-handler proc)
+      (parameterized-gtk-api (lambda () (div-event-handler proc)))
+      )
 
     ;;----------------------------------------------------------------
 

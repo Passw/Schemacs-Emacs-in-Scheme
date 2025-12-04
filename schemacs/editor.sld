@@ -907,7 +907,8 @@
     (define-record-type <editor-type>
       ;; The editor state.
       (make<editor>
-       cell buftab frametab proctab keymap messages counter view)
+       cell buftab frametab proctab keymap messages counter view
+       )
       editor-type?
       (cell      editor-cell)
       (buftab    editor-buffer-table    set!editor-buffer-table)
@@ -916,7 +917,8 @@
       (keymap    editor-base-keymap     set!editor-base-keymap)
       (messages  editor-messages        set!editor-messages)
       (counter   editor-obj-counter     set!editor-obj-counter)
-      (view      editor-view            set!editor-view))
+      (view      editor-view            set!editor-view)
+      )
 
     (define =>editor-buffer-table
       (record-unit-lens editor-buffer-table set!editor-buffer-table '=>editor-buffer-table)
@@ -993,8 +995,11 @@
          (cond
           ((string? name) (view editor-state =>editor-buffer-table (=>hash-key! name)))
           ((buffer-type? name) name)
-          (else (error "not a string or buffer-type" name))))
-        ((name) (get-buffer name (*old-impl/current-editor-closure*)))))
+          (else (error "not a string or buffer-type" name))
+          ))
+        ((name)
+         (get-buffer name (*old-impl/current-editor-closure*))
+         )))
 
     (define (key-event-handler winframe key-path)
       ;; Begin a stateful lookup of the key path in all of the keymaps in
