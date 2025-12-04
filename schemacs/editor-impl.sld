@@ -16,9 +16,6 @@
     )
 
   (export
-   cell-factory*
-   make<cell-factory> is<cell-factory-type>?
-   factory-make-cell factory-set!cell-value
    new-buffer-view*
    delete-char*
    new-mode-line-view*
@@ -49,19 +46,6 @@
    )
 
   (begin
-
-    (define-record-type <cell-factory-type>
-      (make<cell-factory> make-cell set!cell-value)
-      is<cell-factory-type>?
-      (make-cell       factory-make-cell)
-      (set!cell-value  factory-set!cell-value))
-
-    (define cell-factory*
-      (make-parameter
-       (make<cell-factory>
-        (lambda _ #f)
-        (lambda _ #f))))
-
 
     (define is-graphical-display?* (make-parameter #f))
 

@@ -33,12 +33,8 @@
           )
     (only (schemacs eval) eval-string)
     (prefix (schemacs keymap) km:)
-    (prefix (schemacs editor-impl) *impl/)
-    (only (schemacs editor-impl)
-          make<cell-factory>
-          factory-make-cell
-          factory-set!cell-value
-          )
+    (prefix (schemacs editor-impl) *old-impl/)
+    (prefix (schemacs ui text-buffer-impl) *impl/)
     (only (schemacs pretty)
           pretty make<pp-state>
           print line-break bracketed qstr
@@ -69,7 +65,7 @@
    ;; A quick note on naming: names delimited with asterisks,
    ;; e.g. *default-keymap* are parameter objects. Asterisk-delimited
    ;; names beginning with "impl/..." for example
-   ;; *IMPL/NEW-WINFRAME-VIEW* are parameters that SHOULD be
+   ;; *OLD-IMPL/NEW-WINFRAME-VIEW* are parameters that SHOULD be
    ;; parameterized by the user interface backend, but are typically
    ;; parameterized with procedures that do nothing by default.
 
@@ -79,8 +75,7 @@
    buffer-type?  buffer-cell
    =>buffer-handle  =>buffer-view  =>buffer-local-keymap
    *default-buffer-local-keymap*
-   current-buffer
-   selected-buffer
+   current-buffer  selected-buffer
 
    ;; -------------- Mode Lines --------------
    ;; This includes the echo area
@@ -116,7 +111,7 @@
    exit-minibuffer
    focus-minibuffer
    clear-minibuffer
-   eval-minibuffe
+   eval-minibuffer
    minibuffer-prompt-resume
    exit-minibuffer-with-return
 
@@ -137,9 +132,7 @@
    print-exception-message
    self-insert-keymap  self-insert-command
    delete-char delete-backward-char
-   *unbound-key-index*   unbound-key-index-handler
-   *waiting-key-index*   waiting-key-index-handler
-   *dispatch-key-event*  dispatch-key-event-handler
+   unbound-key-index  waiting-key-index  dispatch-key-event
    insert  get-buffer  read-from-minibuffer
    eval-expression-string  eval-expression
    print-to-buffer
@@ -178,26 +171,29 @@
                (key        (km:modal-lookup-state-key-index state))
                (on-success (lambda (c) c))
                (on-fail    (lambda () #f))
-               (c (if (not key) #f
-                      (km:keymap-index-to-char key #f on-success on-fail)))
-               )
-           (key-event-self-insert uarg c)))
+               (c (and key
+                       (km:keymap-index-to-char
+                        key #f on-success on-fail
+                        ))))
+           (key-event-self-insert uarg c)
+           ))
         ((uarg c)
          (let*((winframe (selected-frame))
                (window   (winframe-selected-window winframe))
-               (cmd      (*impl/self-insert-command*))
+               (cmd      (*old-impl/self-insert-command*))
                )
            (cond
             ((not cmd) #f)
             ((not c) #f)
             ((procedure?    cmd) (cmd window c) #t)
             ((command-type? cmd) ((command-procedure cmd) window c) #t)
-            (else (error "*self-insert-command* does not contain a procedure" cmd))
-            )))))
+            (else
+             (error "*self-insert-command* does not contain a procedure" cmd)
+             ))))))
 
     (define self-insert-command
       ;; This is an actual command (not just a procedure) that calls the
-      ;; procedured stored in the *impl/self-insert-command* parameter
+      ;; procedured stored in the *old-impl/self-insert-command* parameter
       ;; which must be overloaded by the low-level implementation of the
       ;; editor.
       ;;
@@ -216,7 +212,6 @@
  buffer of the current window."
        ))
 
-
     (define self-insert-layer
       ;; This is the `SELF-INSERT-COMMAND` wrapped in a
       ;; `KM:<KEYMAP-INDEX-PREDICATE-TYPE>` layer. When defining keymaps,
@@ -224,8 +219,8 @@
       ;; translate to self-inserting characters. Control characters are
       ;; not considered self-inserting by this layer.
       ;;------------------------------------------------------------------
-      (km:new-self-insert-keymap-layer #f (lambda (c) self-insert-command) (lambda () #f)))
-
+      (km:new-self-insert-keymap-layer #f (lambda (c) self-insert-command) (lambda () #f))
+      )
 
     (define (minibuffer-prompt-resume)
       (let*((winframe (selected-frame))
@@ -233,36 +228,6 @@
             )
         (winframe-prompt-resume winframe txt)
         ))
-
-    ;; -------------------------------------------------------------------------------------------------
-
-    ;; (define init-cell-actor
-    ;;   ;; Use this function to parameterize cell-factory* so that objects
-    ;;   ;; initialized by this module can construct Goblins cell actors and
-    ;;   ;; keep a reference to these cells within their record data types.
-    ;;   (make<cell-factory>
-    ;;    (case-lambda
-    ;;      (() (spawn ^cell))
-    ;;      ((init-value) (spawn ^cell init-value)))
-    ;;    $))
-
-    (define make<cell>
-      ;; This function is not exported, it is used internally to
-      ;; initialize cells for the various objects initialized by the
-      ;; various "new-___" object constructor functions.
-      (case-lambda
-        (()
-         (let ((factory (*impl/cell-factory*)))
-           ((factory-make-cell factory))))
-        ((init-value)
-         (let ((factory (*impl/cell-factory*)))
-           ((factory-make-cell factory) init-value)))))
-
-    (define (set!cell-value cell value)
-      ;; This function is not exported, it is used internally to update
-      ;; cells for the various "new-___" object constructors functions.
-      (let ((factory (*impl/cell-factory*)))
-        ((factory-set!cell-value factory) cell value)))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -289,14 +254,14 @@
 
     (define (insert string-or-char)
       (let ((buffer (window-buffer (selected-window))))
-        ((*impl/insert-into-buffer*) buffer string-or-char)
+        ((*old-impl/insert-into-buffer*) buffer string-or-char)
         ))
 
     (define delete-char
       (new-command
        "delete-char"
        (lambda () (apply-command delete-char 1 #f))
-       (lambda args (apply (*impl/delete-char*) args))
+       (lambda args (apply (*old-impl/delete-char*) args))
        "Takes 2 arguments, an integer number of characters to delete after
     the cursor (negative integers delete before the cursor), followed by a
     boolean indicating whether the deleted characters should be copied to
@@ -307,16 +272,15 @@
       (new-command
        "delete-backward-char"
        (lambda () (apply-command delete-char -1 #f))
-       (lambda args (apply (*impl/delete-char*) args))
+       (lambda args (apply (*old-impl/delete-char*) args))
        "Delete the previous N characters (following if N is negative).
     If Transient Mark mode is enabled, the mark is active, and N is 1,
     delete the text in the region and deactivate the mark instead.
     To disable this, set option 'delete-active-region' to nil."
        ))
 
-
     (define new-buffer
-      ;; Construct a `<BUFFER-TYPE>`, calling `*IMPL/NEW-BUFFER-VIEW*` to
+      ;; Construct a `<BUFFER-TYPE>`, calling `*OLD-IMPL/NEW-BUFFER-VIEW*` to
       ;; construct the actual text buffer. In Gtk back-ends, the
       ;; GtkTextBuffer object is constructed and stored in the
       ;; <BUFFER-TYPE> that is created and by this procedure.
@@ -326,9 +290,9 @@
         ((handle keymap)
          (let*((keymap (or keymap (*default-buffer-local-keymap*)))
                (this (make<buffer> #f keymap handle #f))
-               (view ((*impl/new-buffer-view*) this))
+               (buffer-ref ((*impl/new-buffer*)))
                )
-           (set!buffer-view this view)
+           (set!buffer-view this buffer-ref)
            this
            ))))
 
@@ -349,7 +313,7 @@
       )
 
     (define (new-line-display parent prompt-str)
-      (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
+      (let*((prompt-var (state-var string=? prompt-str))
             (input-var (state-var string=? ""))
             (this (make<line-display-type> parent prompt-var input-var #f))
             (widget
@@ -401,7 +365,7 @@
        (state-var
         equal?
         (list
-         (lambda (_) (if (*impl/is-graphical-display?*) " " "-"))
+         (lambda (_) (if (*old-impl/is-graphical-display?*) " " "-"))
          (lambda (_) "-") ;; buffer encoding
          (lambda (_) ":") ;; end of line style
          (lambda (_) "-") ;; buffer file is writable ("%" in read-only mode)
@@ -471,7 +435,7 @@
       ;; Loop over the `ITEMS` (or `*MODE-LINE-FORMAT*` if no `ITEMS` are
       ;; given, or if `ITEMS` is #f) and collect strings, collect all
       ;; strings into a list, call the back-end function
-      ;; `*IMPL/MODE-LINE-DISPLAY-ITEMS*`.
+      ;; `*OLD-IMPL/MODE-LINE-DISPLAY-ITEMS*`.
       ;;------------------------------------------------------------------
       (lambda (items)
         (and items
@@ -508,11 +472,27 @@
       (let*((this (make<window> parent buffer keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
+            (buffer (or buffer ((*impl/new-buffer*))))
+            (bufview (state-var buffer))
             (widget
              (div-pack
               cut-horizontal (view-type this)
               header-line
-              (view buffer =>buffer-view)
+              (use-vars
+               (list bufview)
+               (lambda (buffer)
+                 (text-editor
+                  (content (buffer-view buffer))
+                  (properties
+                   'on-key-event:
+                   (lambda (key-path)
+                     (parameterize
+                         ((selected-frame parent)
+                          (selected-window this)
+                          (current-buffer buffer)
+                          )
+                       (key-event-handler parent key-path)
+                       ))))))
               mode-line
               )))
         (set!window-mode-line   this mode-line)
@@ -608,6 +588,7 @@
                   )
               (unless (not state)
                 (set!winframe-modal-state winframe state)
+                ;; TODO: write the modal state into the echo area
                 )
               state
               )))))
@@ -615,29 +596,16 @@
         (error "not <winframe-type> data" winframe)
         )))
 
-    (define (unbound-key-index-handler key-index)
+    (define (unbound-key-index key-index)
       (format-message
        "~s is undefined\n"
        (km:keymap-index->list key-index)
        ))
 
-    (define *unbound-key-index*
-      ;; This event handlers is parameterized should it ever become
-      ;; necessary to override it, but usually the default procedure
-      ;; UNBOUND-KEY-INDEX-HANDLER does the job well enough.
-      (make-parameter unbound-key-index-handler))
+    (define (waiting-key-index key-path keymap)
+      (format-message "~s-" (km:keymap-index->list (force key-path))))
 
-    (define (waiting-key-index-handler key-path keymap)
-      (format-message "~s-"
-                      (km:keymap-index->list (force key-path))))
-
-    (define *waiting-key-index*
-      ;; This event handlers is parameterized should it ever become
-      ;; necessary to override it, but usually the default procedure
-      ;; WAITING-KEY-INDEX-HANDLER does the job well enough.
-      (make-parameter waiting-key-index-handler))
-
-    (define (dispatch-key-event-handler key-path action)
+    (define (dispatch-key-event key-path action)
       ;; This is the default action for the `*DISPATCH-KEY-EVENT*`
       ;; parameter which is called to actually execute a command once it
       ;; that command has been looked up in a keymap in response to a key
@@ -650,30 +618,14 @@
       ;; control to the input event loop after prompting the end user by
       ;; showing the minibuffer.
       ;;------------------------------------------------------------------
-      (let ((apply-action
-             (cond
-              ((command-type? action) (lambda () ((command-procedure action)) #f))
-              ((procedure?    action) (lambda () (action) #f))
-              (else
-               (error "cannot dispatch key event to non command type"
-                      (force key-path) action))))
-            (winframe (selected-frame))
-            )
-        (cond
-         (winframe
-          (call/cc
-           (lambda (cont)
-             (parameterize
-                 (((winframe-event-dispatch winframe) cont))
-               (apply-action)))))
-         (else
-          (apply-action)))))
-
-    (define *dispatch-key-event*
-      ;; This event handlers is parameterized should it ever become
-      ;; necessary to override it, but usually the default procedure
-      ;; DISPATCH-KEY-EVENT-HANDLER does the job well enough.
-      (make-parameter dispatch-key-event-handler))
+      (cond
+       ((command-type? action) ((command-procedure action)) #f)
+       ((procedure?    action) (action) #f)
+       (else
+        (error
+         "cannot dispatch key event to non command type"
+         (force key-path) action
+         ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -737,7 +689,7 @@
               (rect2D 0 0 expand expand)
               (div-pack
                cut-horizontal
-               (view-type this)
+               (view-type winframe-type?)
                (pack-elem
                 (size2D expand expand)
                 (use-vars (list layout) window-view)
@@ -840,7 +792,7 @@
       (case-lambda
         ((window) (select-window window #f))
         ((window norecord)
-         ((*impl/select-window*) window)
+         ((*old-impl/select-window*) window)
          (lens-set window (selected-frame) =>winframe-selected-window)
          )))
 
@@ -945,15 +897,10 @@
 
     ;; -------------------------------------------------------------------------------------------------
 
-    (define (selected-frame) (*impl/selected-frame*))
-    (define (selected-window) (view (selected-frame) =>winframe-selected-window))
-    (define (current-buffer) (*impl/current-buffer*))
+    (define selected-frame (make-parameter #f))
+    (define selected-window (make-parameter #f))
+    (define current-buffer (make-parameter #f))
     (define selected-buffer current-buffer)
-    ;; These are global variables from the point of view of Emacs
-    ;; Lisp. They are parameters in this library, and are parameterized
-    ;; by the GUI provider library. These APIs are exposed in the
-    ;; (SCHEMACS EDITOR) library, but as procedures which cannot modify
-    ;; the parameter.
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -1005,7 +952,7 @@
         (set!editor-obj-counter editor (+ 1 i))
         i))
 
-    (define (current-editor) (*impl/current-editor-closure*))
+    (define (current-editor) (*old-impl/current-editor-closure*))
 
     (define (new-editor)
       ;; Construct a new text editor state.
@@ -1036,7 +983,7 @@
         (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
         (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
         (lens-set widget     this =>editor-view)
-        (*impl/current-editor-closure* this)
+        (*old-impl/current-editor-closure* this)
         this
         ))
 
@@ -1047,7 +994,7 @@
           ((string? name) (view editor-state =>editor-buffer-table (=>hash-key! name)))
           ((buffer-type? name) name)
           (else (error "not a string or buffer-type" name))))
-        ((name) (get-buffer name (*impl/current-editor-closure*)))))
+        ((name) (get-buffer name (*old-impl/current-editor-closure*)))))
 
     (define (key-event-handler winframe key-path)
       ;; Begin a stateful lookup of the key path in all of the keymaps in
@@ -1060,38 +1007,39 @@
       ;; *dispatch-key-event* function handlers.
       (cond
        ((winframe-type? winframe)
-        (let*((state (window-get-or-reset-modal-state! winframe))
-              (window (selected-window))
-              )
+        (let*((state (window-get-or-reset-modal-state! winframe)))
           (cond
-           ((not state)
-            ((*unbound-key-index*) (selected-window) key-path))
+           ((not state) (unbound-key-index key-path))
            ((km:modal-lookup-state-type? state)
             (let ((is-waiting
                    (km:modal-lookup-state-step!
                     state key-path
-                    (lambda (key-path action) ((*dispatch-key-event*) key-path action))
-                    (lambda (key-path keymap) ((*waiting-key-index*)  key-path keymap))
-                    (lambda (key-path)        ((*unbound-key-index*)  key-path)))))
+                    dispatch-key-event
+                    waiting-key-index
+                    unbound-key-index
+                    )))
               (unless is-waiting (set!winframe-modal-state winframe #f))
-              is-waiting))
+              is-waiting
+              ))
            (else
             (error
              "unknown object in modal-state-keymap field of window"
-             state window)))))
+             state window
+             )))))
        (else
-        (error "key event handler must be provided a window frame" winframe))))
+        (error "key event handler must be provided a window frame" winframe)
+        )))
 
     (define (clear-echo-area winframe)
-      ((*impl/clear-echo-area*) winframe))
+      ((*old-impl/clear-echo-area*) winframe))
 
     (define (display-in-echo-area winframe str)
       (let*((editor (winframe-parent-editor winframe))
             (msgbuf (editor-messages editor))
             )
         (clear-echo-area winframe)
-        ((*impl/display-in-echo-area*) winframe str)
-        ((*impl/insert-into-buffer*) msgbuf str)
+        ((*old-impl/display-in-echo-area*) winframe str)
+        ((*old-impl/insert-into-buffer*) msgbuf str)
         ))
 
     (define (format-message msgstr . objlist)
@@ -1101,22 +1049,22 @@
         (display-in-echo-area winframe str)))
 
     (define (is-buffer-changed? window)
-      ;; Takes a window, calls *IMPL/IS-BUFFER-modified?* on the buffer
+      ;; Takes a window, calls *OLD-IMPL/IS-BUFFER-modified?* on the buffer
       ;; that the window is currently displaying
       ;; ------------------------------------------------------------------
-      ((*impl/is-buffer-modified?*) (view window =>window-buffer)))
+      ((*old-impl/is-buffer-modified?*) (view window =>window-buffer)))
 
     ;; TODO: when constructing the editor, frames, windows, and buffers,
     ;; make the construction happen in two passes. First, the record data
     ;; types are all constructed. Then a second function is called,
     ;; something like "init-views", which then evaluates the view
-    ;; *impl/...* function for the editor and all of its sub fields. The
+    ;; *old-impl/...* function for the editor and all of its sub fields. The
     ;; idea is that the whole editor data structure should exist in its
     ;; entirity as early as possible, as a kind of "superstructure", and
     ;; then the GUI is constructed on top of this superstructure.
 
     (define (get-minibuffer-text frame)
-      ((*impl/get-minibuffer-text*) frame)
+      ((*old-impl/get-minibuffer-text*) frame)
       )
 
     (define (exit-minibuffer-with-return return)
@@ -1127,7 +1075,7 @@
       ;; this function resumes that continuation with the return value to
       ;; that procedure call given as an argument to this procedure.
       (let ((winframe (selected-frame)))
-        ((*impl/exit-minibuffer*) winframe)
+        ((*old-impl/exit-minibuffer*) winframe)
         (winframe-prompt-resume winframe return)
         ))
 
@@ -1143,10 +1091,10 @@
     (define (focus-minibuffer winframe prompt init-input)
       ;; Move the keyboard focus to the minibuffer.
       (lens-set (winframe-minibuffer winframe) winframe =>winframe-selected-window)
-      ((*impl/focus-minibuffer*) winframe prompt init-input))
+      ((*old-impl/focus-minibuffer*) winframe prompt init-input))
 
     (define (clear-minibuffer window)
-      ((*impl/clear-minibuffer*) window))
+      ((*old-impl/clear-minibuffer*) window))
 
 
     (define simple-read-minibuffer
@@ -1258,7 +1206,7 @@
        ))
 
     (define (command-error-default-function data context signal)
-      ((*impl/command-error-default-function*) data context signal)
+      ((*old-impl/command-error-default-function*) data context signal)
       )
 
     (define command-error-function
@@ -1343,7 +1291,7 @@
           buffer-write-line
           buffer-print-finalize
           buffer                      ;;line-buffer
-          (*impl/insert-into-buffer*) ;;output-port
+          (*old-impl/insert-into-buffer*) ;;output-port
           indent
           indent-char
           #f ;;start-of-line
