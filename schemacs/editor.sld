@@ -34,7 +34,7 @@
     (only (schemacs eval) eval-string)
     (prefix (schemacs keymap) km:)
     (prefix (schemacs editor-impl) *old-impl/)
-    (prefix (schemacs ui text-buffer-impl) *impl/)
+    (prefix (schemacs ui text-buffer) impl/)
     (only (schemacs pretty)
           pretty make<pp-state>
           print line-break bracketed qstr
@@ -163,6 +163,15 @@
     ;; -------------------------------------------------------------------------------------------------
     ;; Keymaps defined prior to launching the programming editor GUI.
 
+    (define (uarg->integer uarg)
+      (cond
+       ((eq? #t uarg) 4)
+       ((eq? #f uarg) 0)
+       ((integer? uarg) uarg)
+       ((number? uarg) (round uarg))
+       (error "U-argument cannot be cast to integer" uarg)
+       ))
+
     (define key-event-self-insert
       (case-lambda
         ((uarg)
@@ -178,18 +187,12 @@
            (key-event-self-insert uarg c)
            ))
         ((uarg c)
-         (let*((winframe (selected-frame))
-               (window   (winframe-selected-window winframe))
-               (cmd      (*old-impl/self-insert-command*))
-               )
-           (cond
-            ((not cmd) #f)
-            ((not c) #f)
-            ((procedure?    cmd) (cmd window c) #t)
-            ((command-type? cmd) ((command-procedure cmd) window c) #t)
-            (else
-             (error "*self-insert-command* does not contain a procedure" cmd)
-             ))))))
+         (let ((buf (current-buffer)))
+           (let loop ((c (uarg->integer uarg)))
+             (cond
+              ((< 0 c) (insert-char buf c))
+              (else #f)
+              ))))))
 
     (define self-insert-command
       ;; This is an actual command (not just a procedure) that calls the
@@ -284,13 +287,13 @@
       ;; construct the actual text buffer. In Gtk back-ends, the
       ;; GtkTextBuffer object is constructed and stored in the
       ;; <BUFFER-TYPE> that is created and by this procedure.
-      ;; ------------------------------------------------------------------
+      ;;------------------------------------------------------------------
       (case-lambda
         ((handle) (new-buffer handle #f))
         ((handle keymap)
          (let*((keymap (or keymap (*default-buffer-local-keymap*)))
                (this (make<buffer> #f keymap handle #f))
-               (buffer-ref ((*impl/new-buffer*)))
+               (buffer-ref (new-buffer))
                )
            (set!buffer-view this buffer-ref)
            this
@@ -304,27 +307,49 @@
       ;; things like the echo area, the minibuffer, the mode line, and the
       ;; header line. In the Gtk backend, these are all GtkFlowBox widgets
       ;; containing one or more GtkLabel widgets.
-      (make<line-display-type> parent prompt-var input-var view)
+      (make<line-display-type> parent prompt-var buffer view)
       line-display-type?
       (parent      line-display-parent-frame  set!line-display-parent-frame)
       (prompt-var  line-display-prompt-var    set!line-display-prompt-var)
-      (input-var   line-display-input-var     set!line-display-input-var)
+      (buffer      line-display-buffer        set!line-display-buffer)
       (view        line-display-view          set!line-display-view)
       )
 
     (define (new-line-display parent prompt-str)
-      (let*((prompt-var (state-var string=? prompt-str))
-            (input-var (state-var string=? ""))
-            (this (make<line-display-type> parent prompt-var input-var #f))
+      (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
+            (buffer     (impl/new-buffer))
+            (this       (make<line-display-type> parent prompt-var buffer #f))
             (widget
              (div-pack
               cut-vertical
               (view-type this)
               (properties 'wrapping: #t)
               (size2D expand enclose)
-              (and prompt-var (pack-elem enclose (use-vars (list prompt-var) div)))
-              (pack-elem expand (use-vars (list input-var) text-editor))
-              )))
+              (and prompt-var
+                   (pack-elem
+                    (size2D enclose)
+                    (use-vars (list prompt-var) div)
+                    ))
+              (pack-elem
+               expand
+               (text-editor
+                buffer
+                (properties
+                 'on-key-event:
+                 (cond
+                  (prompt-str
+                   (lambda (key-path)
+                     (let*((window (winframe-selected-window parent)))
+                       (parameterize
+                           ((selected-frame parent)
+                            (selected-window window)
+                            (current-buffer (window-buffer window))
+                            )
+                         (key-event-handler
+                          parent (*default-minibuffer-keymap*) key-path
+                          )))))
+                  (else #f)
+                  )))))))
         (set!line-display-view this widget)
         this
         ))
@@ -472,7 +497,7 @@
       (let*((this (make<window> parent buffer keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
-            (buffer (or buffer ((*impl/new-buffer*))))
+            (buffer (or buffer (impl/new-buffer)))
             (bufview (state-var buffer))
             (widget
              (div-pack
@@ -489,10 +514,15 @@
                      (parameterize
                          ((selected-frame parent)
                           (selected-window this)
-                          (current-buffer buffer)
+                          (current-buffer (window-buffer this))
                           )
-                       (key-event-handler parent key-path)
-                       ))))))
+                       (key-event-handler
+                        parent (collect-keymaps winframe) key-path
+                        )))
+                   'on-get-focus:
+                   (lambda ignore-args
+                     (set!winframe-selected-window parent this) #t
+                     )))))
               mode-line
               )))
         (set!window-mode-line   this mode-line)
@@ -564,7 +594,17 @@
           ))
         #t))
 
-    (define (window-get-or-reset-modal-state! winframe)
+    (define (collect-keymaps winframe)
+      (let*((window   (winframe-selected-window  winframe))
+            (buffer   (window-buffer             window))
+            (frmkmap  (winframe-local-keymap     winframe))
+            (winkmap  (window-local-keymap       window))
+            (bufkmap  (buffer-local-keymap       buffer))
+            )
+        (km:keymap bufkmap winkmap frmkmap)
+        ))
+
+    (define (window-get-or-reset-modal-state! winframe keymap)
       ;; Prepare for a new key event. Get the current modal-lookup-state
       ;; for the window, if it does not exist, try to create a new
       ;; modal-lookup-state by gathering all of the keymaps from the
@@ -578,14 +618,10 @@
           (cond
            ((km:modal-lookup-state-type? state) state)
            (else
-            (let*((window   (winframe-selected-window  winframe))
-                  (buffer   (window-buffer             window))
-                  (frmkmap  (winframe-local-keymap     winframe))
-                  (winkmap  (window-local-keymap       window))
-                  (bufkmap  (buffer-local-keymap       buffer))
-                  (init-km  (km:keymap bufkmap winkmap frmkmap))
-                  (state (and (not (null? init-km)) (km:new-modal-lookup-state init-km)))
-                  )
+            (let*((state
+                   (and keymap (not (null? keymap))
+                        (km:new-modal-lookup-state keymap)
+                        )))
               (unless (not state)
                 (set!winframe-modal-state winframe state)
                 ;; TODO: write the modal state into the echo area
@@ -1001,7 +1037,7 @@
          (get-buffer name (*old-impl/current-editor-closure*))
          )))
 
-    (define (key-event-handler winframe key-path)
+    (define (key-event-handler winframe keymaps key-path)
       ;; Begin a stateful lookup of the key path in all of the keymaps in
       ;; the context of the given frame, including the keymap for the
       ;; currently focused buffer, the window-local keymap, and the
@@ -1012,7 +1048,7 @@
       ;; *dispatch-key-event* function handlers.
       (cond
        ((winframe-type? winframe)
-        (let*((state (window-get-or-reset-modal-state! winframe)))
+        (let*((state (window-get-or-reset-modal-state! winframe keymaps)))
           (cond
            ((not state) (unbound-key-index key-path))
            ((km:modal-lookup-state-type? state)
@@ -1029,7 +1065,7 @@
            (else
             (error
              "unknown object in modal-state-keymap field of window"
-             state window
+             state winframe
              )))))
        (else
         (error "key event handler must be provided a window frame" winframe)
@@ -1295,7 +1331,7 @@
           buffer-first-indent
           buffer-write-line
           buffer-print-finalize
-          buffer                      ;;line-buffer
+          buffer                          ;;line-buffer
           (*old-impl/insert-into-buffer*) ;;output-port
           indent
           indent-char
@@ -1305,14 +1341,15 @@
     ;; -------------------------------------------------------------------------------------------------
 
     (define default-keymap
-      (km:keymap '*default-keymap*
-                 (km:alist->keymap-layer
-                  `(((#\backspace) . ,delete-backward-char)
-                    ((#\delete)    . ,delete-char)
-                    ((meta #\:)    . ,eval-expression)
-                    ))
-                 self-insert-layer
-                 ))
+      (km:keymap
+       '*default-keymap*
+       (km:alist->keymap-layer
+        `(((#\backspace) . ,delete-backward-char)
+          ((#\delete)    . ,delete-char)
+          ((meta #\:)    . ,eval-expression)
+          ))
+       self-insert-layer
+       ))
 
     (define *default-keymap*
       ;; The keymap for all keys that are not pressed simultaneously with
