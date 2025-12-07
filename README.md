@@ -27,6 +27,17 @@ code.
 
 ## How to help contribute code
 
+### Code of Conduct
+
+We respectfully ask all contributors to this project adhere to the
+principles stated in the [Code of Conduct
+(CoC)](../../../wiki/CodeOfConduct.md), so please be sure you read and
+understand this agreement before asking to contribute. The CoC is
+currently based on the [Contributor Covenant 3.0 Code of
+Conduct](https://www.contributor-covenant.org/version/3/0/code_of_conduct/).
+
+### First steps toward contributing to Schemacs
+
 There are many tasks to complete, many of which are fairly simple to
 do even for people with not a lot of experience using the Scheme
 programming lanugage, as long as you can get the code in this project
