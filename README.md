@@ -14,7 +14,7 @@ Although this project is still incomplete and experimental, the goals of this pr
 ### Sub-goals
 
 - contribute patches upstream to the Guile Scheme Emacs Lisp compiler
-- provide a cross-platform GUI library like [Racket/GUI](https://docs.racket-lang.org/gui/ ) or [McCLIM](https://mcclim.common-lisp.dev/ )
+- provide a cross-platform GUI library like [Racket/GUI](https://docs.racket-lang.org/gui/) or [McCLIM](https://mcclim.common-lisp.dev/)
 - be able to develop Schemacs from within it's own editor, create pull requests in Git.
 
 ## The Wiki
@@ -40,14 +40,14 @@ Conduct](https://www.contributor-covenant.org/version/3/0/code_of_conduct/).
 
 There are many tasks to complete, many of which are fairly simple to
 do even for people with not a lot of experience using the Scheme
-programming lanugage, as long as you can get the code in this project
+programming language, as long as you can get the code in this project
 to run on your Scheme implementation.  See the
 ["How to build"](#how-to-build), ["How to run"](#how-to-run), and
 ["How to hack"](#how-to-hack) sections below.
 
 As of right now, the most important long-term issue to work on is
 [#30 "*Get Emacs Regression Tests (ERT) to evaluate on the `cl-lib.el`*"](https://codeberg.org/ramin_hal9001/schemacs/issues/30).
-Please refer to that issue for details, but breifly
+Please refer to that issue for details, but briefly
 here is what must be done: first try running the `elisp-tests.scm`
 test program in your Scheme REPL...
 
@@ -61,8 +61,8 @@ perfectly well in GNU Emacs Lisp, any error in Schemacs while evaluating
 these tests is an implementation bug that must be corrected.
 
 If you find a bug, check if has already been recorded in the
-[list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues ),
-and if anyone is already assigned to wokring on it. If it is unassigned,
+[list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues),
+and if anyone is already assigned to working on it. If it is unassigned,
 please comment on the issue that you would like to begin working on a
 patch! You may also open a new issue if the bug seems not to have been
 recorded yet, but please wait until you receive a reply from the
@@ -73,7 +73,7 @@ If you want to contribute, but are not interested in working on the
 Emacs Lisp interpreter part of the Schemacs project, please feel free to
 contact the author (contact details on
 [Codeberg.org](https://codeberg.org/ramin_hal9001)) after reading
-through the [list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues ),
+through the [list of open issues](https://codeberg.org/ramin_hal9001/schemacs/issues),
 or reading over the [**feature wish list**](../../../wiki/WishList.md) document.
 
 ## How to build
@@ -81,15 +81,15 @@ or reading over the [**feature wish list**](../../../wiki/WishList.md) document.
 As of right now, this project only runs on Guile Scheme, although
 certain libraries (`lens.sld`, `pretty.sld`, `keymap.sld`) can build
 and run on other Schemes. The only GUI available right now is for
-[Guile-GI](https://github.com/spk121/guile-gi ), but the Editor is
+[Guile-GI](https://github.com/spk121/guile-gi), but the Editor is
 designed specifically to be able to run on other Scheme platforms with
 other GUI toolkits. All platform specific calls are parameterized.
 
 ### Scheme Requirements
 
-- [Guile 3](https://www.gnu.org/software/guile )
+- [Guile 3](https://www.gnu.org/software/guile)
 
-- [Guile-GI](https://github.com/spk121/guile-gi ) must be built and
+- [Guile-GI](https://github.com/spk121/guile-gi) must be built and
   installed in a directory path that is listed in the `%load-path`.
 
 ### C Requirements for Guile-GI
@@ -99,7 +99,7 @@ other GUI toolkits. All platform specific calls are parameterized.
 - `libgdk`
 - `libgtk3`
 
-[Guile 3](https://www.gnu.org/software/guile ) usually installs from
+[Guile 3](https://www.gnu.org/software/guile) usually installs from
 source using `autotools` on any Linux or BSD operating system provided
 the above developer dependency packages are installed. Installing with
 `autotools` installs all Guile modules in the site-local package
@@ -225,7 +225,7 @@ passed and which have failed, if any.
 Whenever you make a change to the source code of a Scheme library, be
 sure to run the tests for that library. The tests in `./run-tests.scm`
 require your Scheme implementation to provide
-[SRFI-64](https://srfi.schemers.org/srfi-64/srfi-64.html ), without
+[SRFI-64](https://srfi.schemers.org/srfi-64/srfi-64.html), without
 this language extension (sorry, MIT Scheme users) you will have to run
 each test case by hand by copy-pasting each test form into your REPL.
 
@@ -261,7 +261,7 @@ with the record types provided within.
 
 Lenses are useful enough to be separated into it's own separate source
 code package. See the documentation for Functional Lenses in its own
-[source code repository](https://codeberg.org/ramin_hal9001/schemacs-lens ).
+[source code repository](https://codeberg.org/ramin_hal9001/schemacs-lens).
 
 
 ### Platform-independent record types
@@ -274,7 +274,7 @@ to render the view of a "buffer" or "window."
 
 ## Other resources
 
-- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/schemacs/ )
+- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/schemacs/)
 
 ## Contributors welcome!
 
