@@ -36,8 +36,13 @@
           labeled-group  text-editor  canvas  composite
           tiled-windows
           )
+    (rename (schemacs ui)
+            (div-set-focus*  *impl/div-set-focus*)
+            (is-graphical-display?* *impl/is-graphical-display?*)
+            )
     (prefix (schemacs ui text-buffer-impl) *impl/)
     (prefix (schemacs editor) ed:)
+    (prefix (schemacs keymap) km:)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
     (only (schemacs pretty) display-lines)
     (only (scheme case-lambda) case-lambda)
@@ -50,20 +55,33 @@
     (prefix (ice-9 eval-string) guile:)
     )
   (export
-   gtk-draw-div
+   main  gtk-draw-div
    *gtk-application-object*
-   *main-app-window*
+   *gtk-selected-window*
    )
 
   (begin
     ;;----------------------------------------------------------------
 
-    (define *main-app-window*
-      (let ((win #f))
-        (case-lambda
-          (() win)
-          ((val) (set! win val) val)
-          )))
+    (define (gtk-is-graphical-display?) #t)
+
+    (define-record-type <gtk-global-state-type>
+      (make<gtk-global-state> msgbuf)
+      gtk-global-state-type?
+      (msgbuf  gtk-global-messages-buffer  set!gtk-global-messages-buffer)
+      )
+
+    (define gtk-global-state
+      (make<gtk-global-state> #f)
+      )
+
+    (define (gtk-global-get-messages-buffer)
+      (gtk-global-messages-buffer gtk-global-state)
+      )
+
+    (define *default-window-title* "Schemacs")
+
+    (define *gtk-selected-window* (make-parameter #f))
 
     (define (on-main-loop-start window-name window-size top)
       ;; Construct an event handler that is handles the application
@@ -71,23 +89,8 @@
       ;; procedure that renders the content of a `div` constructed by
       ;; the `TOP` monad, and also sets the application window's title
       ;; to `WINDOW-NAME` and initializes it's size to `WINDOW-SIZE`.
-      (lambda (app)
-        (let*((top (gtk-draw-content top #f))
-              (app-win
-               (gi:make
-                <GtkApplicationWindow>
-                #:application *gtk-application-object*
-                #:default-width  (size2D-width window-size)
-                #:default-height (size2D-height window-size)
-                #:hexpand #f
-                #:vexpand #f
-                #:title window-name
-                #:child (gtk-get-outer-widget (view top =>div-widget*!))
-                )))
-          (gobject-ref app-win)
-          (*main-app-window* app-win)
-          (widget:show-all app-win)
-          )))
+      (lambda (app) (gtk-draw-content top #f))
+      )
 
     (define (gtk-draw-div top)
       ;; This is the entrypoint into the program. Apply a `div`
@@ -134,6 +137,12 @@
           (application:run *gtk-application-object* (command-line))
           ))
        (else (error "failed to register Gtk application" *gtk-application-object*))
+       ))
+
+    (define (main . scheme-args)
+      ;; TODO: handle scheme-args
+      (parameterized-gtk-api
+       (lambda () (gtk-draw-div (apply ed:main scheme-args)))
        ))
 
     ;;================================================================
@@ -384,120 +393,42 @@
         ))
 
     ;;================================================================
+    ;; Gtk event handler infrastructure
 
-    (define (gtk-draw-content o outer)
-      ;; Draw a `div` type `O`. In Gtk, every drawn `div` is placed in
-      ;; it's own `GtkBox` so that if a state variable changes the
-      ;; `div`, it can be modified in the widget tree by replacing
-      ;; itself in the `GtkBox`. The `OUTER` argument is the `GtkBox`,
-      ;; if `OUTER` is `#f` a new `GtkBox` must be constructed.
-      (let*((cont (div-content o)))
+    (define (gtk-set-event-handler wref gtk-signal action)
+      (gi:connect
+       wref gtk-signal
+       (lambda (wref event)
+         (gtk3-event-handler (lambda () (action event)))
+         )))
+
+    (define (gtk-widget-set-event-handlers wref props)
+      (let*((on-key-event   (prop-lookup 'on-key-event:   props))
+            (on-focus-event (prop-lookup 'on-focus-event: props))
+            (on-focus-in    (prop-lookup 'on-focus-in:    props))
+            (on-focus-out   (prop-lookup 'on-focus-out:   props))
+            (lazy           (lambda (proc . args) (lambda _ (apply proc args))))
+            (set-handler
+             (lambda (signal action) (gtk-set-event-handler wref signal action))
+             ))
         (cond
-         ((not cont) o)
-         ((div-space-type? cont) (gtk-draw-div-space o outer cont))
-         ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
-         ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
-         ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) outer))
+         ((procedure? on-focus-event)
+          (set-handler widget:focus-in-event  (lazy on-focus-event #t))
+          (set-handler widget:focus-out-event (lazy on-focus-event #f))
+          )
          (else
-          (let*((cont-str
-                 (cond
-                  ((string? cont) cont)
-                  (else
-                   (call-with-port (open-output-string)
-                     (lambda (port) (write cont port) (get-output-string port))
-                     ))))
-                (props (view o =>div-properties*!))
-                (ptype (div-view-type o))
-                (wref
-                 (cond
-                  ((eq? ptype push-button) (gtk-draw-push-button cont props))
-                  ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
-                   (gtk-draw-text-editor cont props)
-                   )
-                  (else (gtk-draw-string cont))
-                  ))
-                (outer (gtk-prepare-outer-box o outer #f))
-                )
-            (cond
-             (outer
-              (container:add outer wref)
-              (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
-              )
-             (else
-              (lens-set wref o =>div-widget*!)
-              ))
-            (lens-set gtk-div-delete o =>div-on-delete*!)
-            (update
-             ;; if the front-end developer has already set an updater
-             ;; function, do not replace it. Otherwise use
-             ;; `gtk-div-updater` as the updater.
-             (lambda (old-updater) (or old-updater gtk-div-updater))
-             o =>div-on-update*!
-             )
-            o)))))
-
-    (define (gtk-draw-string o)
-      (display "; gtk-draw-string: ") (write o) (newline);;DEBUG
-      (let ((label
-             (gi:make
-              <GtkLabel>
-              #:label o
-              #:visible #t
-              #:halign 'start
-              #:valign 'start
-              #:selectable #t
-              #:has-default #f
-              #:focus-on-click #t ;; TODO: set this to #t but select none until click
-              #:can-default #f
-              #:vexpand #f
-              #:hexpand #f
-              )))
-        (gobject-ref label)
-        label
-        ))
-
-    (define (gtk-draw-push-button label props)
-      (let*((action (prop-lookup 'on-button-push: props))
-            (wref
-             (gi:make
-              <GtkButton>
-              #:label label
-              #:visible #t
-              #:sensitive (procedure? action)
-              #:vexpand #f
-              #:hexpand #f
-              )))
-        (gobject-ref wref)
-        (when (procedure? action)
-          (gi:connect
-           wref button:clicked
-           (lambda _
-             (gtk3-event-handler
-              (lambda () (div-event-handler (lambda _ (action) #t)))
-              ))))
-        wref
-        ))
-
-    (define (gtk-draw-text-editor buffer props)
-      (let*((on-key-event (prop-lookup 'on-key-event: props))
-            (wref
-             (gi:make
-              <GtkTextView>
-              #:buffer buffer
-              #:hexpand #t
-              #:vexpand #t
-              #:visible #t
-              )))
-        (gobject-ref wref)
+          (when (procedure? on-focus-in)
+            (set-handler widget:focus-in-event  (lazy on-focus-in))
+            )
+          (when (procedure? on-focus-out)
+            (set-handler widget:focus-out-event (lazy on-focus-out))
+            )))
         (when (procedure? on-key-event)
-          (gi:connect
-           wref widget:key-press-event
-           (lambda (_textview event)
-             (gtk3-event-handler
-              (lambda () (gtk-key-press-event-handler on-key-event event))
-              ))))
-        wref
-        ))
+          (set-handler
+           (gi:make <signal> #:name "key-press-event")
+           (lambda (event)
+             (gtk-key-press-event-handler on-key-event event)
+             )))))
 
     (define (gtk-key-press-event-handler on-key-event event)
       (let*-values
@@ -573,6 +504,9 @@
           (integer->char (keyval-to-unicode keyval))
           ))))
 
+    ;;----------------------------------------------------------------
+    ;; Gtk widgets accounting for size
+
     (define (%gtk-set-widget-width-height wid w h)
       (cond
        ((and (number? w) (number? h))
@@ -618,6 +552,144 @@
            (%gtk-set-widget-width-height wid w h)
            ))
         ((wid w h) (%gtk-set-widget-width-height wid w h))
+        ))
+
+    ;;================================================================
+    ;; Gtk widget rendering
+
+    (define (gtk-draw-content o outer)
+      ;; Draw a `div` type `O`. In Gtk, every drawn `div` is placed in
+      ;; it's own `GtkBox` so that if a state variable changes the
+      ;; `div`, it can be modified in the widget tree by replacing
+      ;; itself in the `GtkBox`. The `OUTER` argument is the `GtkBox`,
+      ;; if `OUTER` is `#f` a new `GtkBox` must be constructed.
+      (cond
+       ((floater-type? o)
+        ;; If a floater is not conained within a `div-space` node,
+        ;; then it should be treated as an application window.
+        (let*((flo o)
+              (o (floater-div flo))
+              (rect (floater-rect flo))
+              (size (rect2D-size rect))
+              (props (and (div-record-type? o) (view o =>div-properties*!)))
+              (title (prop-lookup 'title: props))
+              (win-wref
+               (gi:make
+                <GtkApplicationWindow>
+                #:application *gtk-application-object*
+                #:title (or title *default-window-title*)
+                ))
+              (child (gtk-draw-content o #f))
+              )
+          (gobject-ref win-wref)
+          (container:add win-wref (gtk-get-outer-widget child))
+          (lens-set win-wref o =>div-widget*!)
+          (widget:show-all win-wref)
+          flo))
+       (else
+        ;; Otherwise, the node type and content must be inspected to
+        ;; determine how to render it. 
+        (let*((cont (div-content o)))
+          (cond
+           ((not cont) o)
+           ((div-space-type? cont) (gtk-draw-div-space o outer cont))
+           ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
+           ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
+           ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) outer))
+           (else
+            (let*((cont-str
+                   (cond
+                    ((string? cont) cont)
+                    (else
+                     (call-with-port (open-output-string)
+                       (lambda (port) (write cont port) (get-output-string port))
+                       ))))
+                  (props (view o =>div-properties*!))
+                  (ptype (div-view-type o))
+                  (wref
+                   (cond
+                    ((eq? ptype push-button) (gtk-draw-push-button cont props))
+                    ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
+                     (gtk-draw-text-editor cont props)
+                     )
+                    (else (gtk-draw-string cont props))
+                    ))
+                  (outer (gtk-prepare-outer-box o outer #f))
+                  )
+              (cond
+               (outer
+                (container:add outer wref)
+                (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
+                )
+               (else
+                (lens-set wref o =>div-widget*!)
+                ))
+              (lens-set gtk-div-delete o =>div-on-delete*!)
+              (update
+               ;; if the front-end developer has already set an updater
+               ;; function, do not replace it. Otherwise use
+               ;; `gtk-div-updater` as the updater.
+               (lambda (old-updater) (or old-updater gtk-div-updater))
+               o =>div-on-update*!
+               )
+              o)))))))
+
+    (define (gtk-draw-string o props)
+      (display "; gtk-draw-string: ") (write o) (newline) ;;DEBUG
+      (let ((wref
+             (gi:make
+              <GtkLabel>
+              #:label o
+              #:visible #t
+              #:halign 'start
+              #:valign 'start
+              #:selectable #t
+              #:has-default #f
+              #:focus-on-click #t ;; TODO: set this to #t but select none until click
+              #:can-default #f
+              #:vexpand #f
+              #:hexpand #f
+              )))
+        (gobject-ref wref)
+        (gtk-widget-set-event-handlers wref props)
+        wref
+        ))
+
+    (define (gtk-draw-push-button label props)
+      (let*((action (prop-lookup 'on-button-push: props))
+            (wref
+             (gi:make
+              <GtkButton>
+              #:label label
+              #:visible #t
+              #:sensitive (procedure? action)
+              #:vexpand #f
+              #:hexpand #f
+              )))
+        (gobject-ref wref)
+        (gtk-widget-set-event-handlers wref props)
+        (when (procedure? action)
+          (gi:connect
+           wref button:clicked
+           (lambda _
+             (gtk3-event-handler
+              (lambda () (div-event-handler (lambda _ (action) #t)))
+              ))))
+        wref
+        ))
+
+    (define (gtk-draw-text-editor buffer props)
+      (let*((wref
+             (gi:make
+              <GtkTextView>
+              #:buffer buffer
+              #:hexpand #t
+              #:vexpand #t
+              #:visible #t
+              )))
+        (gobject-ref wref)
+        (gtk-widget-set-event-handlers wref props)
+        wref
         ))
  
     ;;----------------------------------------------------------------
@@ -1000,9 +1072,9 @@
           (let*((props (get-output-string port))
                 (style (text-tag:new props))
                 )
-            (display "; new GtkTextTag object with properties: ");;DEBUG
-            (write result);;DEBUG
-            (newline);;DEBUG
+            (display "; new GtkTextTag object with properties: ") ;;DEBUG
+            (write props) ;;DEBUG
+            (newline)      ;;DEBUG
             (gobject-ref props)
             style
             ))))
@@ -1064,15 +1136,21 @@
              (else (values))
              ))))))
 
+    (define (gtk-delete-from-cursor buffer to)
+      (display "; to: ") (write to) (newline);;DEBUG
+      )
+
     (define (parameterized-gtk-api thunk)
       (parameterize
-          ((*impl/buffer-type?*     gtk-buffer-type?)
-           (*impl/new-buffer*       gtk-new-buffer)
-           (*impl/style-type?*      gtk-style-type?)
-           (*impl/new-style*        gtk-new-style)
-           (*impl/buffer-length*    gtk-buffer-length)
-           (*impl/text-load-port*   gtk-text-load-port)
-           (*impl/text-dump-port*   gtk-text-dump-port)
+          ((*impl/is-graphical-display?* gtk-is-graphical-display?)
+           (*impl/buffer-type?*          gtk-buffer-type?)
+           (*impl/new-buffer*            gtk-new-buffer)
+           (*impl/style-type?*           gtk-style-type?)
+           (*impl/new-style*             gtk-new-style)
+           (*impl/buffer-length*         gtk-buffer-length)
+           (*impl/text-load-port*        gtk-text-load-port)
+           (*impl/text-dump-port*        gtk-text-dump-port)
+           (*impl/delete-from-cursor*    gtk-delete-from-cursor)
            )
         (thunk)
         ))
@@ -1146,7 +1224,7 @@
         (gi-repo:load-by-name "Gtk" "TextView")
         (gi-repo:load-by-name "Gtk" "DeleteType")
         (gi-repo:load-by-name "Gtk" "Viewport")
-        (gi-repo:load-by-name "Gtk" "Widget") ;; show-all
+        (gi-repo:load-by-name "Gtk" "Widget") ;; show-all, key-press-event
         (gi-repo:load-by-name "Gtk" "Window")
         (gi-repo:load-by-name "Gtk" "Box")
         (gi-repo:load-by-name "Gtk" "HBox")

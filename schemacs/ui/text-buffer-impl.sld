@@ -6,8 +6,9 @@
     (scheme case-lambda)
     )
   (export
-   new-buffer*  buffer-type?*  new-style*  style-type?*
+   new-buffer*  buffer-type?*
    buffer-length*  text-load-port*  text-dump-port*
+   new-style*  style-type?*
    get-cursor-index*  set-cursor-index*
    move-cursor-index*  set-cursor-position*
    index->line-column*  get-end-of-line*  get-start-of-line*
@@ -34,26 +35,6 @@
       ;; structure.
       ;;--------------------------------------------------------------
       (make-parameter (lambda () (error "`new-buffer` not defined"))))
-
-    (define style-type?*
-      ;; Returns `#t` only if the applied argument `STYLE` is an
-      ;; implementation-specific opaque data type used to style text
-      ;; data in an implementation-specific opaque data type `BUFFER`
-      ;; with which this `STYLE` data can be used must cause the
-      ;; predicate in the `buffer-type?*` parameter to return `#t`
-      ;; when applied to it that predicate.
-      ;;--------------------------------------------------------------
-      (make-parameter (lambda (style) #f))
-      )
-
-    (define new-style*
-      ;; Create a new implementation-specific `style` opaque data
-      ;; structure from an association list of properties.
-      ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (props)
-         (error "`new-style` not defined" props)
-         )))
 
     (define buffer-length*
       ;; Get the number of characters there are in the given `BUFFER`.
@@ -90,6 +71,26 @@
       (make-parameter
        (lambda (buffer filepath flags)
          (error "`text-dump-port` not defined" buffer filepath flags)
+         )))
+
+    (define style-type?*
+      ;; Returns `#t` only if the applied argument `STYLE` is an
+      ;; implementation-specific opaque data type used to style text
+      ;; data in an implementation-specific opaque data type `BUFFER`
+      ;; with which this `STYLE` data can be used must cause the
+      ;; predicate in the `buffer-type?*` parameter to return `#t`
+      ;; when applied to it that predicate.
+      ;;--------------------------------------------------------------
+      (make-parameter (lambda (style) #f))
+      )
+
+    (define new-style*
+      ;; Create a new implementation-specific `style` opaque data
+      ;; structure from an association list of properties.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (props)
+         (error "`new-style` not defined" props)
          )))
 
     (define get-cursor-index*

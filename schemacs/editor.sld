@@ -23,6 +23,7 @@
     (only (srfi 28) format)
     (only (schemacs hash-table)
           make-hash-table  default-hash
+          hash-table-ref/default  hash-table-set!
           )
     (only (schemacs lens)
           view record-unit-lens lens-set update =>hash-key!
@@ -52,13 +53,13 @@
           )
     (only (schemacs vbal) alist->vbal)
     (only (schemacs ui)
-          run-div-monad  enclose  expand
+          run-div-monad  enclose  expand  content
           state-var  use-vars  =>state-var-value*!
           div  view-type  properties  =>div-properties*!
           div-pack  pack-elem  cut-horizontal  cut-vertical
           div-space   floater  print-div
           tiled-windows  text-editor
-          use-vars-value
+          use-vars-value  div-set-focus!  is-graphical-display?
           ))
 
   (export
@@ -69,13 +70,14 @@
    ;; parameterized by the user interface backend, but are typically
    ;; parameterized with procedures that do nothing by default.
 
-   main  *the-editor-state*
+   main
 
    ;; ---------------- Buffers ----------------
    buffer-type?  buffer-cell
    =>buffer-handle  =>buffer-view  =>buffer-local-keymap
    *default-buffer-local-keymap*
    current-buffer  selected-buffer
+   messages-buffer  generate-new-buffer-name
 
    ;; -------------- Mode Lines --------------
    ;; This includes the echo area
@@ -115,17 +117,6 @@
    minibuffer-prompt-resume
    exit-minibuffer-with-return
 
-   ;; ---------------- Editor ----------------
-   editor-type?  new-editor
-   =>editor-buffer-table
-   =>editor-winframe-table
-   =>editor-proc-table
-   =>editor-base-keymap
-   =>editor-minibuffer
-   =>editor-view
-   editor-messages
-   current-editor
-
    ;; ---------------- Front-end API ----------------
    new-self-insert-keymap  key-event-self-insert
    default-keymap
@@ -157,8 +148,8 @@
          ((procedure? *default*) (*default*))
          (else (error "argument not a <keymap-type>" *default*))
          ))
-       (else (error "argument not a <keymap-type>" km-arg))))
-
+       (else (error "argument not a <keymap-type>" km-arg))
+       ))
 
     ;; -------------------------------------------------------------------------------------------------
     ;; Keymaps defined prior to launching the programming editor GUI.
@@ -190,7 +181,7 @@
          (let ((buf (current-buffer)))
            (let loop ((c (uarg->integer uarg)))
              (cond
-              ((< 0 c) (insert-char buf c))
+              ((< 0 c) (impl/insert-char buf c))
               (else #f)
               ))))))
 
@@ -235,15 +226,11 @@
     ;; -------------------------------------------------------------------------------------------------
 
     (define-record-type <buffer-type>
-      (make<buffer> cell keymap handle view)
+      (make<buffer> keymap handle view)
       buffer-type?
-      (cell    buffer-cell)
       (keymap  buffer-local-keymap  set!buffer-local-keymap)
       (handle  buffer-handle        set!buffer-handle)
       (view    buffer-view          set!buffer-view)
-      ;; NOTE: the view ^ here, in Gtk, is a GtkTextBuffer, not a
-      ;; GtkTextView. A GtkTextView is functionally equivalent to an
-      ;; Emacs "window".
       )
 
     (define =>buffer-handle
@@ -255,16 +242,66 @@
     (define =>buffer-view
       (record-unit-lens buffer-view set!buffer-view '=>buffer-view))
 
-    (define (insert string-or-char)
-      (let ((buffer (window-buffer (selected-window))))
-        ((*old-impl/insert-into-buffer*) buffer string-or-char)
+    (define-record-type <buffer-table-type>
+      (make<buffer-table> counter messages hash-table)
+      buffer-table-type?
+      (counter     buffer-table-counter  set!buffer-table-counter)
+      (messages    buffer-table-messages  set!buffer-table-messages)
+      (hash-table  buffer-table-hash-table)
+      )
+
+    (define *buffer-table*
+      (make-parameter (make<buffer-table> 0 #f (make-hash-table string=?)))
+      )
+
+    (define (buffer-table-next-count! bt)
+      (let ((count (+ 1 (buffer-table-counter bt))))
+        (set!buffer-table-counter bt count)
+        count
         ))
+
+    (define (generate-new-buffer-name name)
+      (let*((bt (*buffer-table*))
+            (ht (buffer-table-hash-table bt))
+            (count (if name 1 (buffer-table-next-count! bt)))
+            (name (or name "Buffer"))
+            )
+        (let loop ((count count) (name name))
+          (let ((already-taken (hash-table-ref/default ht name #f)))
+            (cond
+             (already-taken
+              (loop
+               (+ 1 count)
+               (string-append name "-" (number->string count))
+               ))
+             (else name)
+             )))))
+
+    (define (messages-buffer)
+      (let*((bt (*buffer-table*))
+            (messages (buffer-table-messages bt))
+            )
+        (cond
+         (messages messages)
+         (else
+          (let*((messages (new-buffer "*Messages*")))
+            (set!buffer-table-messages bt messages)
+            messages
+            )))))
+
+    (define (insert string-or-char)
+      (let ((buffer (current-buffer)))
+        (cond
+         ((char? string-or-char) (impl/insert-char buffer string-or-char))
+         ((string? string-or-char) (impl/insert-string buffer string-or-char))
+         (error "argument must be a string or char" string-or-char)
+         )))
 
     (define delete-char
       (new-command
        "delete-char"
        (lambda () (apply-command delete-char 1 #f))
-       (lambda args (apply (*old-impl/delete-char*) args))
+       (lambda args (impl/delete-from-cursor (current-buffer) 1))
        "Takes 2 arguments, an integer number of characters to delete after
     the cursor (negative integers delete before the cursor), followed by a
     boolean indicating whether the deleted characters should be copied to
@@ -275,7 +312,7 @@
       (new-command
        "delete-backward-char"
        (lambda () (apply-command delete-char -1 #f))
-       (lambda args (apply (*old-impl/delete-char*) args))
+       (lambda args (impl/delete-from-cursor (current-buffer) -1))
        "Delete the previous N characters (following if N is negative).
     If Transient Mark mode is enabled, the mark is active, and N is 1,
     delete the text in the region and deactivate the mark instead.
@@ -291,11 +328,12 @@
       (case-lambda
         ((handle) (new-buffer handle #f))
         ((handle keymap)
-         (let*((keymap (or keymap (*default-buffer-local-keymap*)))
-               (this (make<buffer> #f keymap handle #f))
-               (buffer-ref (new-buffer))
+         (let*((handle (generate-new-buffer-name handle))
+               (keymap (or keymap (*default-buffer-local-keymap*)))
+               (this (make<buffer> keymap handle (impl/new-buffer)))
+               (bt (*buffer-table*))
                )
-           (set!buffer-view this buffer-ref)
+           (hash-table-set! (buffer-table-hash-table bt) handle this)
            this
            ))))
 
@@ -390,7 +428,7 @@
        (state-var
         equal?
         (list
-         (lambda (_) (if (*old-impl/is-graphical-display?*) " " "-"))
+         (lambda (_) (if (is-graphical-display?) " " "-"))
          (lambda (_) "-") ;; buffer encoding
          (lambda (_) ":") ;; end of line style
          (lambda (_) "-") ;; buffer file is writable ("%" in read-only mode)
@@ -402,7 +440,9 @@
          (lambda (parent-window)
            (list
             'propertize:
-            (view parent-window =>window-buffer =>buffer-handle)
+            (view
+             parent-window =>window-buffer =>state-var-value*! =>buffer-handle
+             )
             '(weight: . "bold")
             ))))))
 
@@ -494,11 +534,12 @@
       ;; Construct a new ordinary window -- ordinary, that is, as opposed
       ;; to the window constructed specifically to contain the minibuffer.
       ;;------------------------------------------------------------------
-      (let*((this (make<window> parent buffer keymap #f #f #f))
+      (let*((buffer (or buffer (messages-buffer)))
+            (bufview (state-var buffer))
+            (keymap (keymap-arg-or-default keymap *default-window-local-keymap*))
+            (this (make<window> parent bufview keymap #f #f #f))
             (mode-line (new-mode-line this (*mode-line-format*)))
             (header-line (new-header-line this (*header-line-format*)))
-            (buffer (or buffer (impl/new-buffer)))
-            (bufview (state-var buffer))
             (widget
              (div-pack
               cut-horizontal (view-type this)
@@ -517,7 +558,7 @@
                           (current-buffer (window-buffer this))
                           )
                        (key-event-handler
-                        parent (collect-keymaps winframe) key-path
+                        parent (collect-keymaps parent) key-path
                         )))
                    'on-get-focus:
                    (lambda ignore-args
@@ -596,7 +637,7 @@
 
     (define (collect-keymaps winframe)
       (let*((window   (winframe-selected-window  winframe))
-            (buffer   (window-buffer             window))
+            (buffer   (view (window-buffer window) =>state-var-value*!))
             (frmkmap  (winframe-local-keymap     winframe))
             (winkmap  (window-local-keymap       window))
             (bufkmap  (buffer-local-keymap       buffer))
@@ -667,11 +708,9 @@
 
     (define-record-type <winframe-type>
       (make<winframe>
-       editor window layout modal keymap
-       echo minibuf dispatch prompt view
+       window  layout  modal  keymap  echo  minibuf  dispatch prompt  view
        )
       winframe-type?
-      (editor   winframe-parent-editor)
       (window   winframe-selected-window set!winframe-selected-window)
       (layout   winframe-layout          set!winframe-layout)
       (modal    winframe-modal-state     set!winframe-modal-state)
@@ -691,11 +730,10 @@
       ;; This is definitely a bug and should be reported.
       )
 
-    (define (new-frame editor init-buffer init-keymap)
+    (define (new-frame init-buffer init-keymap)
       ;; "keymap" is the keymap for this local frame, which is a fallback
       ;; keymap used when no key matches the buffer local keymap.
-      (let*((editor      (or editor (*the-editor-state*)))
-            (init-buffer (or init-buffer (editor-messages editor)))
+      (let*((init-buffer (or init-buffer (messages-buffer)))
             (init-keymap
              (keymap-arg-or-default
               init-keymap
@@ -711,7 +749,7 @@
             (widget          #f)
             (this
              (make<winframe>
-              editor  init-window  layout  modal-key-state
+              init-window  layout  modal-key-state
               init-keymap  echo-area  minibuffer  dispatch
               prompt  widget
               ))
@@ -828,9 +866,12 @@
       (case-lambda
         ((window) (select-window window #f))
         ((window norecord)
-         ((*old-impl/select-window*) window)
-         (lens-set window (selected-frame) =>winframe-selected-window)
-         )))
+         (let*((result (div-set-focus! (window-view window))))
+           (when result
+             (set!winframe-selected-window (selected-frame) window)
+             )
+           result
+           ))))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -931,111 +972,14 @@
          (else (error "no recursive edit prompt on the stack" prompt-stack))
          )))
 
-    ;; -------------------------------------------------------------------------------------------------
+    ;;----------------------------------------------------------------
 
     (define selected-frame (make-parameter #f))
     (define selected-window (make-parameter #f))
     (define current-buffer (make-parameter #f))
     (define selected-buffer current-buffer)
 
-    ;; -------------------------------------------------------------------------------------------------
-
-    (define-record-type <editor-type>
-      ;; The editor state.
-      (make<editor>
-       cell buftab frametab proctab keymap messages counter view
-       )
-      editor-type?
-      (cell      editor-cell)
-      (buftab    editor-buffer-table    set!editor-buffer-table)
-      (frametab  editor-winframe-table  set!editor-winframe-table)
-      (proctab   editor-proc-table      set!editor-proc-table)
-      (keymap    editor-base-keymap     set!editor-base-keymap)
-      (messages  editor-messages        set!editor-messages)
-      (counter   editor-obj-counter     set!editor-obj-counter)
-      (view      editor-view            set!editor-view)
-      )
-
-    (define =>editor-buffer-table
-      (record-unit-lens editor-buffer-table set!editor-buffer-table '=>editor-buffer-table)
-      )
-
-    (define =>editor-winframe-table
-      (record-unit-lens editor-winframe-table set!editor-winframe-table '=>editor-winframe-table)
-      )
-
-    (define =>editor-proc-table
-      (record-unit-lens editor-proc-table set!editor-proc-table '=>editor-proc-table)
-      )
-
-    (define =>editor-base-keymap
-      (record-unit-lens editor-base-keymap set!editor-base-keymap '=>editor-base-keymap)
-      )
-
-    (define =>editor-obj-counter
-      (record-unit-lens editor-obj-counter set!editor-obj-counter '=>editor-obj-counter)
-      )
-
-    (define =>editor-view
-      (record-unit-lens editor-view set!editor-view '=>editor-view)
-      )
-
-    (define (new-table size)
-      ;; TODO: make use of the `SIZE` parameter
-      (make-hash-table equal? default-hash)
-      )
-
-    (define (editor-get-next-obj-id editor)
-      (let ((i (editor-obj-counter editor)))
-        (set!editor-obj-counter editor (+ 1 i))
-        i))
-
-    (define (current-editor) (*old-impl/current-editor-closure*))
-
-    (define (new-editor)
-      ;; Construct a new text editor state.
-      ;;
-      ;; TODO: consider removing the <editor-type> entirely, and simply
-      ;; using the Scheme environment object constructed by this (schemacs
-      ;; editor) library as the editor state itself, with all fields of
-      ;; <editor-type> redefined as parameters in this environment.
-      (let*((msgs           (new-buffer "*Messages*"))
-            (buffer-table   (new-table 63))
-            (winframe-table (new-table 15))
-            (this
-             (make<editor>
-              #f                        ; editor-cell
-              buffer-table
-              winframe-table
-              (new-table 15)            ; process table
-              (*default-keymap*)        ; base-keymap
-              msgs                      ; messages buffer
-              0                         ; counter
-              #f                        ; view
-              ))
-            (init-frame     (new-frame this msgs #f))
-            (widget
-             (div-space
-              (view init-frame =>winframe-view)
-              )))
-        (lens-set msgs       this =>editor-buffer-table   (=>hash-key! (buffer-handle msgs)))
-        (lens-set init-frame this =>editor-winframe-table (=>hash-key! "main"))
-        (lens-set widget     this =>editor-view)
-        (*old-impl/current-editor-closure* this)
-        this
-        ))
-
-    (define get-buffer
-      (case-lambda
-        ((name editor-state)
-         (cond
-          ((string? name) (view editor-state =>editor-buffer-table (=>hash-key! name)))
-          ((buffer-type? name) name)
-          (else (error "not a string or buffer-type" name))
-          ))
-        ((name)
-         (get-buffer name (*old-impl/current-editor-closure*))
-         )))
+    ;;----------------------------------------------------------------
 
     (define (key-event-handler winframe keymaps key-path)
       ;; Begin a stateful lookup of the key path in all of the keymaps in
@@ -1075,12 +1019,10 @@
       ((*old-impl/clear-echo-area*) winframe))
 
     (define (display-in-echo-area winframe str)
-      (let*((editor (winframe-parent-editor winframe))
-            (msgbuf (editor-messages editor))
-            )
+      (let*((msgbuf (messages-buffer)))
         (clear-echo-area winframe)
         ((*old-impl/display-in-echo-area*) winframe str)
-        ((*old-impl/insert-into-buffer*) msgbuf str)
+        (impl/insert-string msgbuf str)
         ))
 
     (define (format-message msgstr . objlist)
@@ -1331,8 +1273,8 @@
           buffer-first-indent
           buffer-write-line
           buffer-print-finalize
-          buffer                          ;;line-buffer
-          (*old-impl/insert-into-buffer*) ;;output-port
+          buffer ;;line-buffer
+          insert ;;output-port
           indent
           indent-char
           #f ;;start-of-line
@@ -1373,18 +1315,14 @@
         (*default-keymap*)
         )))
 
-    ;;----------------------------------------------------------------
-    ;; TODO: fix bug, the call to `EXIT-MINIBUFFER-WITH-RETURN` does
-    ;; not restore the window correctly, somehow the minibuffer keymap
-    ;; is still used to respond to key events after calling this
-    ;; function.
-    ;;----------------------------------------------------------------
-
-    (define *the-editor-state* (make-parameter (new-editor)))
-
     (define (main . args)
-      (editor-view (*the-editor-state*))
-      )
+      ;; Calls `new-frame` and returns the `DIV` node that was
+      ;; constructed for it.
+      ;;--------------------------------------------------------------
+      ;; TODO: handle configuration variables and other arguments.
+      (let*((frame (new-frame #f #f)))
+        (winframe-view frame)
+        ))
 
     ;;----------------------------------------------------------------
     ))

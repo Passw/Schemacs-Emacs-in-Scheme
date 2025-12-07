@@ -28,6 +28,10 @@
       ;;
       ;;  2. the event value itself.
       ;;
+      ;; If the command is a wrapper around a Scheme procedure, store
+      ;; that Scheme procedure into the API field of this data
+      ;; structure.
+      ;;--------------------------------------------------------------
       (make<command> name procedure api docstr srctype srcloc srcstr)
       command-type?
       (name      command-name            set!command-name)

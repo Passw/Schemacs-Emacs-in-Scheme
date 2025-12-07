@@ -100,6 +100,8 @@
    div-prop-lookup  prop-lookup  variable-size?  expand  enclose
    for-each-div  draw-div-tree  div-run-update  div-delete
    *default-copy-widget-ref*
+   div-set-focus*  div-set-focus!
+   is-graphical-display?*  is-graphical-display?
    ;;------------------------------------------------------------------
    div-monad-type?  run-div-monad
    ;;------------------------------------------------------------------
@@ -591,7 +593,7 @@
         (or (and (div-record-type? o) (check-cont-type (div-content o)))
             (check-cont-type o)
             )))
- 
+
     (define (%content->div o) (make<div> #f #f #f #f equal? #f #f o #f #f))
 
     (define (%copy-div copy-widget-ref)
@@ -856,8 +858,13 @@
              )))
 
     (define (div-prop-lookup sym o)
-      (prop-lookup sym (div-properties o))
-      )
+      (prop-lookup
+       sym
+       (cond
+        ((div-record-type? o) (div-properties o))
+        ((floater-type? o) (div-properties (floater-div o)))
+        (else (error "not a `DIV` type" o))
+        )))
 
     (define (properties . elems)
       ;; An declarative way to define properties, the arguments
@@ -956,6 +963,7 @@
           (grid-record-type? a)
           (pack-record-type? a)
           (space-record-type? a)
+          (floater-type? a)
           ))
 
     (define (vector-fill-list! vec i elems)
@@ -1142,6 +1150,22 @@
         (lambda (o) o))
        constrs
        ))
+
+    (define div-set-focus*
+      (make-parameter
+       (lambda (o)
+         (error "`div-set-focus` not defined")
+         )))
+
+    (define (div-set-focus! o) ((div-set-focus*) o))
+
+    (define is-graphical-display?*
+      (make-parameter
+       (lambda ()
+         (error "`is-graphical-display?` not defined")
+         )))
+
+    (define (is-graphical-display?) ((is-graphical-display?*)))
 
     ;;================================================================
 

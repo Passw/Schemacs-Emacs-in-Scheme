@@ -7,11 +7,12 @@
   (export
     new-buffer  buffer-type?  new-style  style-type?
     buffer-length  text-load-port  text-dump-port
-   *text-load-buffer-size*
+    *text-load-buffer-size*
     get-cursor-index  set-cursor-index
     move-cursor-index  set-cursor-position
     index->line-column  get-end-of-line  get-start-of-line
     insert-string  insert-char  copy-string  get-char
+    delete-range  delete-from-cursor
     get-default-style  set-default-style
     get-text-style  set-text-style
     get-selection  set-selection
@@ -22,11 +23,11 @@
   (begin
     (define (new-buffer . args) (apply (new-buffer*) args))
     (define (buffer-type? . args) (apply (buffer-type?*) args))
-    (define (new-style . args) (apply (new-style*) args))
-    (define (style-type? . args) (apply (style-type?*) args))
     (define (buffer-length . args) (apply (buffer-length*) args))
     (define (text-load-port . args) (apply (text-load-port*) args))
     (define (text-dump-port . args) (apply (text-dump-port*) args))
+    (define (new-style . args) (apply (new-style*) args))
+    (define (style-type? . args) (apply (style-type?*) args))
     (define (get-cursor-index . args) (apply (get-cursor-index*) args))
     (define (set-cursor-index . args) (apply (set-cursor-index*) args))
     (define (move-cursor-index . args) (apply (move-cursor-index*) args))
