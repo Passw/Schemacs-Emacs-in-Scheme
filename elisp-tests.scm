@@ -68,8 +68,9 @@
                )
              #f)
             (else
-             (loop (cdr files) (+ 1 count)))))
-         ))))))
+             (display ";[OK] ") (display file) (newline)
+             (loop (cdr files) (+ 1 count))
+             )))))))))
 
 
 ;;(load-deps '("./elisp/test/lisp/emacs-lisp/cl-lib-tests.el"))

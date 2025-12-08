@@ -3,6 +3,7 @@
   (scheme case-lambda)
   (only (schemacs lens vector) mutable-vector-for-each)
   (only (srfi 64) test-begin test-end test-assert test-equal)
+  (only (srfi 69) hash-table->alist)
   (only (schemacs lexer) lexer-state lex-all)
   (schemacs elisp-eval parser)
   )
@@ -342,5 +343,96 @@
        (test-location-reporting
         "1:8" (lambda (port) (write-parser-location st port)))
        )))
+
+;;--------------------------------------------------------------------------------------------------
+;; Testing `elisp-fold-form`.
+
+(define (check-exact-members table elems)
+  (let loop ((elems elems))
+    (cond
+     ((null? elems)
+      (or (= 0 (hash-table-size table))
+          (error
+           "extraneous elements in table"
+           (hash-table->alist table)
+           )))
+     (else
+      (let ((head (car elems)))
+        (cond
+         ((eqv? head (hash-table-ref/default table head #f))
+          (hash-table-delete! table head)
+          (loop (cdr elems))
+          )
+         (else
+          (error
+           "expected element not found in table"
+           head (hash-table->alist table)
+           ))))))))
+
+(define (test-fold-form-proc expect-list expstr)
+  (let*((expr (elisp-read expstr))
+        (result (elisp-form-gather-symbols expr))
+        )
+    (check-exact-members result expect-list)
+    ))
+
+(test-equal 8
+  ((elisp-form-fold +) 0 (elisp-read "(1 2 '(3 ,4) `(,5 6))"))
+  )
+
+(test-assert
+    (test-fold-form-proc
+     '(one two four five)
+     "(one '(,seven) `(,two three ,four) five)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(two four seven)
+     "`(one '(,seven) `(,two three ,four) five)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(zero ,(one two) three)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(zero ,(one two) three)"
+     ))
+
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(zero (,(one two)) three)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(zero (three ,(one two)) four)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(zero ( ,(one two) three) four)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two)
+     "`(neg-one (zero ,(one two) three) four)"
+     ))
+
+(test-assert
+    (test-fold-form-proc
+     '(one two three four)
+     "(one '((,zero) neg-one) `(three ,two ,(three)) four)"
+     ))
 
 (test-end "schemacs_elisp-eval_parser")

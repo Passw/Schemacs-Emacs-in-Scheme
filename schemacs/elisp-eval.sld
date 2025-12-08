@@ -59,6 +59,7 @@
           elisp-form-type?  square-bracketed-form?
           elisp-form-start-loc  elisp-function-get-ref
           elisp-form-tokens  elisp-form-locations
+          elisp-form-fold
           )
     (only (schemacs elisp-eval environment)
           pure  pure*  pure*-typed  pure*-numbers  pure-raw
@@ -1949,7 +1950,8 @@
             (else (non-symbol-error sym))
             ))
           ))
-      (get-args (%unpack arg-exprs) '()))
+      (get-args (%unpack arg-exprs) '())
+      )
 
     ;;--------------------------------------------------------------------------------------------------
     ;; Procedures that operate on procedures. These are called by the
@@ -1960,7 +1962,8 @@
       (cond
        ((sym-type? name/sym) (viewer name/sym))
        ((symbol/string? name/sym)
-        (view st (=>env-obarray-key! (symbol->string name/sym))))
+        (view st (=>env-obarray-key! (symbol->string name/sym)))
+        )
        (else (eval-error "wrong type argument" name/sym 'expecting "symbol"))
        ))
 
