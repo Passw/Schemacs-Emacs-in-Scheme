@@ -313,8 +313,10 @@
      '(progn
        (defun test-closure-capture (a b)
          (let ((f (lambda (c) (+ a b c))))
-           (apply f '(1))))
-       (test-closure-capture 2 3))))
+           (funcall f 1)
+           ))
+       (test-closure-capture 2 3)
+       )))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Test `SETQ`, `LET`, and `LET*` special forms.
@@ -1016,20 +1018,21 @@ top: glo = top
       (defvar hook-test-var 0 "test hook functions")
       (defun test-hook-success+1 (&optional n)
         (unless n (setq n 1))
-           (setq hook-test-var (+ n hook-test-var))
+        (setq hook-test-var (+ n hook-test-var))
         t)
       (defun test-hook-failure+1 (&optional n)
         (unless n (setq n 1))
-           (setq hook-test-var (+ n hook-test-var))
+        (setq hook-test-var (+ n hook-test-var))
         nil)
       (defvar test-hook-A 'test-hook-success+1)
       (defvar test-hook-B 'test-hook-failure+1)
       (defvar test-hook-ABA
-        '(test-hook-success+1 test-hook-failure+1 test-hook-success+1))
+        '(test-hook-success+1 test-hook-failure+1 test-hook-success+1)
+        )
       (defvar test-hook-BAB
-        '(test-hook-failure+1 test-hook-success+1 test-hook-failure+1))
-      t)
-   ))
+        '(test-hook-failure+1 test-hook-success+1 test-hook-failure+1)
+        )
+      t)))
 
 (test-assert
     (test-run

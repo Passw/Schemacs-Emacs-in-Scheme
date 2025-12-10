@@ -21,6 +21,7 @@
           make-hash-table
           alist->hash-table
           hash-table->alist
+          hash-table-keys
           hash-table-set!
           hash-table-delete!
           hash-table-ref/default
@@ -59,7 +60,7 @@
           elisp-form-type?  square-bracketed-form?
           elisp-form-start-loc  elisp-function-get-ref
           elisp-form-tokens  elisp-form-locations
-          elisp-form-fold
+          list->elisp-form  elisp-form-gather-symbols
           )
     (only (schemacs elisp-eval environment)
           pure  pure*  pure*-typed  pure*-numbers  pure-raw
@@ -119,8 +120,8 @@
    eval-iterate-forms  elisp-eval-reset-stack!
 
    =>elisp-symbol!
-     ;; ^ lens on a string that looks-up a sym-type object by name in
-     ;; *the-environment*, which is very useful for debugging.
+   ;; ^ lens on a string that looks-up a sym-type object by name in
+   ;; *the-environment*, which is very useful for debugging.
 
    ;; Re-exporting symbols from (SCHEMACS ELISP-EVAL ENVIRONMENT):
    ;;------------------------------------------------------------
@@ -137,7 +138,7 @@
    *elisp-input-port*
    *elisp-output-port*
    *elisp-error-port*
-   
+
    ;; Symbol objects
    sym-type?  new-symbol
    =>sym-name  =>sym-value!  =>sym-function!  =>sym-plist!
@@ -432,9 +433,9 @@
            (define (run env)
              (define (setq-load-file-name val)
                (lens-set val env
-                (=>env-obarray-key! name)
-                (=>sym-value! name)
-                ))
+                         (=>env-obarray-key! name)
+                         (=>sym-value! name)
+                         ))
              (call-with-port port
                (lambda (port)
                  (setq-load-file-name filepath)
@@ -462,9 +463,9 @@
                                (with-exception-handler handler
                                  (lambda ()
                                    (eval-iterate-forms env parst
-                                    (lambda (form)
-                                      (eval-form form (env-get-location form))
-                                      )))))))))
+                                                       (lambda (form)
+                                                         (eval-form form (env-get-location form))
+                                                         )))))))))
                        )
                    (exec-run-hooks 'after-load-functions (list filepath))
                    (setq-load-file-name nil)
@@ -537,19 +538,19 @@
                (obj (view st (=>env-obarray-key! name)))
                )
            (and obj
-             (or (not sub)
-               (let ((subf-list
-                      (view obj
-                       (=>sym-plist! name)
-                       (=>hash-key! subfeature-key)
-                       )))
-                 (and subf-list
-                   (not
-                     (null?
-                      (view subf-list
-                       (=>find (lambda (a) (equal? a subname))))))
-                   )))
-             #t)
+                (or (not sub)
+                    (let ((subf-list
+                           (view obj
+                                 (=>sym-plist! name)
+                                 (=>hash-key! subfeature-key)
+                                 )))
+                      (and subf-list
+                           (not
+                            (null?
+                             (view subf-list
+                                   (=>find (lambda (a) (equal? a subname))))))
+                           )))
+                #t)
            ))))
 
     (define (elisp-featurep . args)
@@ -643,9 +644,9 @@
              ;; object, must contain a callable function.
              (let*((name (symbol->string hook))
                    (func (view st
-                          (=>env-symbol! name)
-                          (=>sym-function! name)
-                          ))
+                               (=>env-symbol! name)
+                               (=>sym-function! name)
+                               ))
                    )
                (cond
                 (func (%elisp-apply func args-list (view func =>lambda-location*!)))
@@ -679,8 +680,8 @@
                    (let*((name (symbol->string hook-name))
                          (hook
                           (view st
-                           (=>env-symbol! name)
-                           (=>sym-value! name)))
+                                (=>env-symbol! name)
+                                (=>sym-value! name)))
                          (result (second hook))
                          )
                      (recurse result first hook-list)
@@ -697,7 +698,7 @@
             ((symbol? hook-list) (first (list hook-list)))
             (else
              (eval-error "wrong type argument" hook-list
-              'expecting "symbol or symbol list"))
+                         'expecting "symbol or symbol list"))
             )))
         ))
 
@@ -772,13 +773,11 @@
        (else expr)
        ))
 
-
     (define elisp-eval-reset-stack!
       (case-lambda
         (() (elisp-eval-reset-stack! (*the-environment*)))
         ((env) (env-reset-stack! env))
         ))
-
 
     (define (i-push-stack-frame-eval-body interp)
       ;; This applies arguments to a `FUNC` which must be of type
@@ -795,13 +794,16 @@
            (else
             (let*((st (*the-environment*))
                   (old-stack (view st =>env-lexstack*!))
-                  (st (lens-set (list elstkfrm) st =>env-lexstack*!))
+                  (lexenv (view func =>lambda-lexenv!))
+                  (new-stack
+                   (if lexenv (list lexenv elstkfrm) (list elstkfrm))
+                   )
+                  (st (lens-set new-stack st =>env-lexstack*!))
                   (return ((interpret-body interp) (view func =>lambda-body*!))) ;; apply
                   )
               (lens-set old-stack st =>env-lexstack*!)
               return
               ))))))
-
 
     (define (i-scheme-lambda->elisp-lambda interp)
       ;; Constructs a Scheme procedure that takes Elisp arguments and
@@ -845,7 +847,6 @@
              ))
            (else (eval-error "wrong type argument" func 'expecting "function"))
            ))))
-
 
     (define (i-%elisp-apply interp)
       ;; This is the actual `APPLY` procedure for Emacs Lisp. The `HEAD`
@@ -1091,7 +1092,7 @@
        )
       debugger-state-type?
       (interp       debugger-interpreter)
-      (pause        debugger-pause          set!debugger-pause);;continuation used to pause evaluation
+      (pause        debugger-pause          set!debugger-pause) ;;continuation used to pause evaluation
       (step         debugger-stepper        set!debugger-stepper)
       (cur-form     debugger-current-form   set!debugger-current-form)
       (last-value   debugger-last-value     set!debugger-last-value)
@@ -1675,9 +1676,9 @@
                      ((sym expr)
                       (let ((result (eval-form expr)))
                         (loop more
-                          (cons (new-symbol (ensure-string sym) result) bound)
-                          (+ 1 size)
-                          )))
+                              (cons (new-symbol (ensure-string sym) result) bound)
+                              (+ 1 size)
+                              )))
                      ((sym expr extra ...)
                       (eval-error "bindings can have only one value form" binding-expr)
                       )
@@ -1762,8 +1763,8 @@
                (lens-set val sym =>sym-value*!)
                (when docstr
                  (lens-set docstr sym
-                  (=>sym-plist! (sym-name sym))
-                  (=>hash-key! variable-documentation)))
+                           (=>sym-plist! (sym-name sym))
+                           (=>hash-key! variable-documentation)))
                val
                ))
            (match expr
@@ -1820,7 +1821,6 @@
                 (args (eval-error "malformed arglist" args))
                 )))))))
 
-
     (define (eval-defalias sym-expr val-expr docstr)
       (let*((st (*the-environment*))
             (sym (eval-ensure-interned (eval-form sym-expr)))
@@ -1836,15 +1836,13 @@
                 ((command-type? val) val)
                 ((pair? val) val)
                 (else #f)
-                )))
-            )
+                ))))
         (cond
          ((not func) (eval-error "void function" val))
          ((not sym) (eval-error "wrong type argument" sym 'expecting "symbol"))
          (else
-          (lens-set! func sym =>sym-function*!))
-         )))
-
+          (lens-set! func sym =>sym-function*!)
+          ))))
 
     (define elisp-defalias
       (make<syntax>
@@ -1852,11 +1850,10 @@
          (match (cdr expr)
            ((sym-expr val-expr) (eval-defalias sym-expr val-expr #f))
            ((sym-expr val-expr docstr) (eval-defalias sym-expr val-expr docstr))
-           (any
-            (eval-error "wrong number of arguments" "defalias"
-             (length any) 'min 2 'max 3))
-           ))))
-
+           (any (eval-error
+                 "wrong number of arguments" "defalias"
+                 (length any) 'min 2 'max 3
+                 ))))))
 
     (define (set-function-body! func body-exprs)
       ;; This procedure scans through a `BODY-EXPR` for `DECLARE` and
@@ -1873,8 +1870,10 @@
                (((sym vals ...) args ...)
                 (cond
                  ((symbol? sym)
-                  (lens-set vals
-                   func =>lambda-declares*! (=>hash-key! (symbol->string sym)))
+                  (lens-set
+                   vals func
+                   =>lambda-declares*! (=>hash-key! (symbol->string sym))
+                   )
                   (loop args))
                  (else
                   (loop args) ;; ignored malformed declarations
@@ -1890,12 +1889,11 @@
            (cons any-expr (filter body-exprs)))
           ))
       (lens-set
-       (filter body-exprs)
+       (filter body-exprs) ;; <- TODO: this should be (list->elisp-form (filter body-exprs))
        func =>lambda-body*!
        )
       func
       )
-
 
     (define (defun-make-lambda kind arg-exprs body-expr)
       (define (non-symbol-error sym)
@@ -1908,14 +1906,42 @@
             ((string? docstr)
              (lens-set docstr func =>lambda-docstring*!)
              (set-function-body! func body-expr)
-             func)
-            (else
-             (set-function-body! func (cons docstr body-expr))
-             func)))
-          (body-expr
-           (set-function-body! func body-expr)
-           func)
-          ))
+             )
+            (else (set-function-body! func (cons docstr body-expr)))
+            ))
+          (body-expr (set-function-body! func body-expr))
+          )
+        (let*((capture-vars
+               (elisp-form-gather-symbols
+                (list->elisp-form (view func =>lambda-body*!))
+                string=? symbol->string
+                ))
+              (restvar (view func =>lambda-rest!))
+              (remove-captured
+               (lambda (args)
+                 (when args
+                   (for-each
+                    (lambda (arg) (hash-table-delete! capture-vars arg))
+                    (cond
+                     ((vector? args) (vector->list args))
+                     (else args)
+                     ))))))
+          (remove-captured (view func =>lambda-args!))
+          (remove-captured (view func =>lambda-optargs!))
+          (when restvar (hash-table-delete! capture-vars restvar))
+          (let ((env (*the-environment*)))
+            (for-each
+             (lambda (name)
+               (let ((sym (view env (=>env-symbol! name))))
+                 (cond
+                  (sym (hash-table-set! capture-vars name sym))
+                  (else (hash-table-delete! capture-vars name))
+                  )))
+             (hash-table-keys capture-vars)
+             )
+            (lens-set capture-vars func =>lambda-lexenv!)
+            func
+            )))
       (define (get-rest-args arg-exprs args optargs)
         (match arg-exprs
           (() (eval-error "invalid function, no argument declaration after &rest delimiter"))
@@ -1980,7 +2006,7 @@
         (let-values
             (((obj return)
               (update&view updater st
-               (=>env-obarray-key! (ensure-string name/sym)))))
+                           (=>env-obarray-key! (ensure-string name/sym)))))
           return
           ))))
 
@@ -2078,13 +2104,13 @@
     (define (eval-set st sym val)
       ;; TODO: check if `SYM` satisfies `SYMBOL?` or `SYM-TYPE?` and act accordingly.
       (update-on-symbol st sym
-       (lambda (obj)
-         (values (lens-set val obj (=>sym-value! (ensure-string sym))) val))))
+                        (lambda (obj)
+                          (values (lens-set val obj (=>sym-value! (ensure-string sym))) val))))
 
     (define (eval-get st sym prop)
       (view-on-symbol st sym
-       (lambda (obj)
-         (view obj (=>sym-plist! (ensure-string sym)) (=>hash-key! prop)))))
+                      (lambda (obj)
+                        (view obj (=>sym-plist! (ensure-string sym)) (=>hash-key! prop)))))
 
     (define (eval-put st sym prop val)
       (let ((prop (ensure-string prop)))
@@ -2093,8 +2119,8 @@
          (lambda (obj)
            (values
             (lens-set val obj
-             (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
-             (=>hash-key! prop))
+                      (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
+                      (=>hash-key! prop))
             val)
            ))))
 
@@ -2103,7 +2129,7 @@
 
     (define (eval-makunbound st sym)
       (update-on-symbol st sym
-       (lambda (obj) (values (lens-set #f obj (=>sym-value! sym)) obj))))
+                        (lambda (obj) (values (lens-set #f obj (=>sym-value! sym)) obj))))
 
     (define (eval-symbol-function st sym)
       (view-on-symbol st sym (lambda (obj) (view obj (=>sym-function! sym)))))
@@ -2114,11 +2140,11 @@
     (define (eval-fset st sym func)
       (let ((sym (ensure-string sym)))
         (update-on-symbol st sym
-         (lambda (obj)
-           (values
-            (lens-set (elisp->scheme func) obj (=>sym-function! sym))
-            func
-            )))))
+                          (lambda (obj)
+                            (values
+                             (lens-set (elisp->scheme func) obj (=>sym-function! sym))
+                             func
+                             )))))
 
     (define (eval-fmakunbound st sym)
       (view-on-symbol st sym (lambda (obj) (view st (=>env-obarray-key! sym)))))
@@ -2242,7 +2268,7 @@
           ))
         (any
          (eval-error "wrong number of arguments" "make-symbol"
-          (length any) 'expecting 1))
+                     (length any) 'expecting 1))
         ))
 
     (define elisp-symbol-name
@@ -2634,7 +2660,7 @@
           ))
         (any
          (eval-error "wrong number of arguments" "load"
-          (length any) 'min 1 'max 2))
+                     (length any) 'min 1 'max 2))
         ))
 
     ;;--------------------------------------------------------------------------------------------------
@@ -2762,9 +2788,9 @@
       ;; mapping strings (or symbols) to values. Any values satisfying the
       ;; predicate `LAMBDA-TYPE?` are automatically interned as functions
       ;; rather than ordinary values.
-       ;;------------------------------------------------------------------
+      ;;------------------------------------------------------------------
       (make-parameter
-       `(;; ---- beginning of association list ----
+       `( ;; ---- beginning of association list ----
 
          ,nil
          ,t
