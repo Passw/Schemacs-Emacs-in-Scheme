@@ -2097,20 +2097,25 @@
       ;; ignored.
       (let*((plist (plist-to-dict plist)))
         (when plist
-          (update-on-symbol st name (lambda (obj) (lens-set plist obj (=>sym-plist! name)))))
+          (update-on-symbol st name (lambda (obj) (lens-set plist obj (=>sym-plist! name))))
+          )
         plist
         ))
 
     (define (eval-set st sym val)
       ;; TODO: check if `SYM` satisfies `SYMBOL?` or `SYM-TYPE?` and act accordingly.
-      (update-on-symbol st sym
-                        (lambda (obj)
-                          (values (lens-set val obj (=>sym-value! (ensure-string sym))) val))))
+      (update-on-symbol
+       st sym
+       (lambda (obj)
+         (values (lens-set val obj (=>sym-value! (ensure-string sym))) val)
+         )))
 
     (define (eval-get st sym prop)
-      (view-on-symbol st sym
-                      (lambda (obj)
-                        (view obj (=>sym-plist! (ensure-string sym)) (=>hash-key! prop)))))
+      (view-on-symbol
+       st sym
+       (lambda (obj)
+         (view obj (=>sym-plist! (ensure-string sym)) (=>hash-key! prop))
+         )))
 
     (define (eval-put st sym prop val)
       (let ((prop (ensure-string prop)))
@@ -2118,9 +2123,11 @@
          st sym
          (lambda (obj)
            (values
-            (lens-set val obj
-                      (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
-                      (=>hash-key! prop))
+            (lens-set
+             val obj
+             (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
+             (=>hash-key! prop)
+             )
             val)
            ))))
 

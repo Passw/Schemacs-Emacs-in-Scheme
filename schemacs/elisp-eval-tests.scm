@@ -908,7 +908,8 @@
          (runfn 'fn-A)
          (printglo 'fn-b-let4)
          )
-       (printglo 'fn-B))
+       (printglo 'fn-B)
+       )
      (runfn 'fn-A)
      (printglo 'top)
      (setq glo "top")
@@ -916,8 +917,7 @@
      (runfn 'fn-B)
      (printglo 'top)
      (princ "------------------------------\n")
-     t))
-  )
+     t)))
 
 (define lexical-scope-test-expected-result
   "------------------------------
@@ -976,12 +976,14 @@ top: glo = top
 ")
 
 (test-equal (list #t lexical-scope-test-expected-result)
-  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test))
+  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test)
+  )
 
 (lens-set #f test-elisp-env =>env-lexical-mode?!)
 
 (test-equal (list #t dynamic-scope-test-expected-result)
-  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test))
+  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test)
+  )
 
 (lens-set #t test-elisp-env =>env-lexical-mode?!)
 

@@ -157,7 +157,7 @@
 
     (define-record-type <sym-type>
       ;; Symbol
-      (make<sym> name value func plist)
+      (%make<sym> name value func plist)
       sym-type?
       (name   sym-name)
       (value  sym-value     set!sym-value)
@@ -165,9 +165,12 @@
       (plist  sym-plist     set!sym-plist)
       )
 
+    (define (make<sym> name value func plist)
+      (%make<sym> name value func plist)
+      )
+
     (define nil (make<sym> "nil" '() #f '()))
     (define t   (make<sym> "t"   #t  #f '()))
-
 
     (define =>sym-name
       ;; The symbol name is the only read-only field. Setting or updating
@@ -176,12 +179,13 @@
       ;;------------------------------------------------------------------
       (let ((setter
              (lambda (sym name)
-               (make<sym> name (sym-value sym) (sym-function sym) (sym-plist sym)))
-             ))
+               (make<sym> name (sym-value sym) (sym-function sym) (sym-plist sym))
+               )))
         (unit-lens
          sym-name setter
          (default-unit-lens-updater sym-name setter)
-         '=>sym-name)))
+         '=>sym-name
+         )))
 
     (define (sym-name-equal? a b)
       (and
@@ -195,8 +199,8 @@
     (define =>sym-plist*! (record-unit-lens sym-plist set!sym-plist '=>sym-plist*!))
 
     (define (copy-symbol name sym)
-      (make<sym> name (sym-value sym) (sym-function sym) (sym-plist sym)))
-
+      (make<sym> name (sym-value sym) (sym-function sym) (sym-plist sym))
+      )
 
     (define new-symbol
       ;; Construct a new uninterned symbol object. You can pass an
@@ -210,9 +214,11 @@
         ((name val) (new-symbol name val #f))
         ((name val func)
          (cond
-          ((string? name) (make<sym> name val func #f))
-          (else (error "not a string" name))))))
-
+          ((string? name)
+           (make<sym> name val func #f)
+           )
+          (else (error "not a string" name))
+          ))))
 
     (define (new-symbol-value name val)
       ;; Construct a new uninterned symbol object with a given value. The
@@ -231,31 +237,34 @@
        ((command-type? val) (new-symbol name #f val))
        ((sym-type? val)
         (if (string? name)
-            (make<sym> name
+            (make<sym>
+             name
              (sym-value val)
              (sym-function val)
-             (sym-plist val))
+             (sym-plist val)
+             )
             (error "not a string" name)
             ))
        (else (new-symbol name val))
        ))
 
-
-    (define (sym-defun name func) (new-symbol name #f func))
-
+    (define (sym-defun name func)
+      (new-symbol name #f func)
+      )
 
     (define (blank-symbol? sym)
       (not (or (sym-value sym)
                (sym-function sym)
-               (sym-plist sym)))
-      )
+               (sym-plist sym)
+               )))
 
     (define (canon-sym name =>lens label)
       (unit-lens
        (lambda (sym) (if sym (view sym =>lens) #f))
        (lambda (sym val) (lens-set val (or sym (new-symbol name)) =>lens))
        (lambda (upd sym) (update&view upd (or sym (new-symbol name)) =>lens))
-       label))
+       label
+       ))
 
     (define (=>sym-value!    name) (canon-sym name =>sym-value*!    '=>sym-value!))
     (define (=>sym-function! name) (canon-sym name =>sym-function*! '=>sym-function!))
@@ -263,11 +272,13 @@
 
     (define (symbol/string? o)
       ;; A `SYMBOL?`, `STRING?`, or `SYM-TYPE?`
-      (or (symbol? o) (sym-type? o) (string? o)))
+      (or (symbol? o) (sym-type? o) (string? o))
+      )
 
     (define (any-symbol? o)
       ;; A `SYMBOL?` or `SYM-TYPE?`
-      (or (symbol? o) (sym-type? o)))
+      (or (symbol? o) (sym-type? o))
+      )
 
     (define (ensure-string name)
       ;; Convert a symbol to a string unless it is already a string and
@@ -299,8 +310,7 @@
       (proc syntax-eval)
       )
 
-    (define elisp-void-syntax
-      (make<syntax> (lambda _ #f)))
+    (define elisp-void-syntax (make<syntax> (lambda _ #f)))
 
     ;;--------------------------------------------------------------------
     ;; Lambdas of all kinds, including macros and built-ins
@@ -355,10 +365,10 @@
         ((kind args opts rest body) (new-lambda kind args opts rest body #f))
         ((kind args opts rest body docstr)
          (make<lambda> kind
-          (map ensure-string args)
-          (map ensure-string opts)
-          (if rest (ensure-string rest) #f)
-          docstr #f #f #f #f body))
+                       (map ensure-string args)
+                       (map ensure-string opts)
+                       (if rest (ensure-string rest) #f)
+                       docstr #f #f #f #f body))
         ))
 
     (define (lambda-copy-into! to from)
@@ -400,19 +410,22 @@
       (record-unit-lens
        elisp-eval-error-message
        set!elisp-eval-message
-       '=>elisp-eval-error-message))
+       '=>elisp-eval-error-message
+       ))
 
     (define =>elisp-eval-error-irritants
       (record-unit-lens
        elisp-eval-error-irritants
        set!elisp-eval-irritants
-       '=>elisp-eval-error-irritants))
+       '=>elisp-eval-error-irritants
+       ))
 
     (define =>elisp-eval-error-stack-trace
       (record-unit-lens
        elisp-eval-error-stack-trace
        set!elisp-eval-error-stack-trace
-       '=>elisp-eval-error-stack-trace))
+       '=>elisp-eval-error-stack-trace
+       ))
 
     (define (elisp-eval-error-equal? a b)
       (and
@@ -432,7 +445,8 @@
 
     (define (eval-error message . irritants)
       (eval-raise
-       (make<elisp-eval-error> message irritants #f)))
+       (make<elisp-eval-error> message irritants #f)
+       ))
 
     (define write-elisp-eval-error
       (case-lambda
@@ -503,8 +517,8 @@
              )
            (write-irritants (error-object-irritants err-obj))
            )
-          (else #f))
-         )))
+          (else #f)
+          ))))
 
     ;;--------------------------------------------------------------------
     ;; The stack
@@ -524,16 +538,14 @@
                  (loop (cdr bindings))
                  ))))))))
 
-
     (define (stack-lookup stack name)
       (let loop ((stack stack))
         (cond
          ((null? stack) #f)
          (else
           (let ((sym (view (car stack) (=>hash-key! name))))
-            (if sym sym (loop (cdr stack)))))
-         )))
-
+            (if sym sym (loop (cdr stack)))
+            )))))
 
     (define (stack-bind-top updater whole-stack name)
       ;; Apply a new `<SYM-TYPE>`object to the given `UPDATER` procedure
@@ -546,24 +558,25 @@
       ;; first `CONS` cell is created even if the hash table pointer does
       ;; not change, `SET-CAR!` is not used.
       (let-values (((sym return) (updater (new-symbol name))))
-       (cond
-        ((sym-type? sym)
-         (values
-          (cons
-           (lens-set sym (car whole-stack) (=>hash-key! name))
-           (cdr whole-stack))
-          return))
-        ((not sym) (values whole-stack return))
-        (else (error "updater returned non-sym-type value on name" name sym))
-        )))
-
+        (cond
+         ((sym-type? sym)
+          (values
+           (cons
+            (lens-set sym (car whole-stack) (=>hash-key! name))
+            (cdr whole-stack))
+           return))
+         ((not sym) (values whole-stack return))
+         (else (error "updater returned non-sym-type value on name" name sym))
+         )))
 
     (define (stack-update! updater whole-stack name newsym)
-      ;; The second value returned by the updater is wrapped in a list if
-      ;; successful, is #f if lookup fails. If the name is not bound, the
-      ;; `NEWSYM` thunk is applied to the same arguments that were applied
-      ;; to this procedure. If `NEWSYM` is `#F` no updates take place and
+      ;; The second value returned by the updater is wrapped in a list
+      ;; if successful, is #f if lookup fails. If the name is not
+      ;; bound, the `NEWSYM` thunk is applied no arguments to perform
+      ;; some stateful update, the returned values of `NEWSYM` are
+      ;; ignored. If `NEWSYM` is `#F` no updates take place and
       ;; `WHOLE-STACK` and `#F` are both returned as values.
+      ;;--------------------------------------------------------------
       (let loop ((stack whole-stack))
         (cond
          ((null? stack)
@@ -579,12 +592,13 @@
               (let-values (((updated-sym return) (updater sym)))
                 (unless (eq? sym updated-sym)
                   (hash-table-delete! hash (sym-name sym))
-                  (hash-table-set! hash name sym))
+                  (hash-table-set! hash name sym)
+                  )
                 (values whole-stack (list return))
                 ))
              (else
-              (error "non-symbol object bound to stack variable" name sym)))
-            )))))
+              (error "non-symbol object bound to stack variable" name sym)
+              )))))))
 
 
     (define (=>stack! name on-not-found)
@@ -593,7 +607,6 @@
             )
         (unit-lens getter (default-unit-lens-setter updater) updater `(=>stack! ,name))
         ))
-
 
     (define (elstkfrm-sym-intern! elstkfrm name val)
       (let*((name (ensure-string name))
@@ -611,7 +624,6 @@
          )
         elstkfrm
         ))
-
 
     (define (elstkfrm-from-args func args)
       ;; Construct a stack frame by binding arguments values to the
@@ -743,19 +755,19 @@
             )
            #t))))
 
-
     (define env-get-location
       (case-lambda
         ((obj) (env-get-location obj #f))
         ((obj chain)
          (get-location obj
-          (lambda (obj)
-            (cond
-             ((lambda-type? obj) (lambda-location obj))
-             ((stack-trace-frame-type? obj) (stack-trace-location obj))
-             ((pair? obj) (env-get-location (car obj)))
-             ((procedure? chain) (chain obj))
-             (else #f)))))))
+                       (lambda (obj)
+                         (cond
+                          ((lambda-type? obj) (lambda-location obj))
+                          ((stack-trace-frame-type? obj) (stack-trace-location obj))
+                          ((pair? obj) (env-get-location (car obj)))
+                          ((procedure? chain) (chain obj))
+                          (else #f)
+                          ))))))
 
     ;;--------------------------------------------------------------------
 
@@ -823,7 +835,7 @@
       ;;------------------------------------------------------------------
       (make<elisp-environment> env dyn lex flag trace depth trmax mode)
       elisp-environment-type?
-      (env   env-obarray   set!env-obarray)  ;;environment (obarray)
+      (env   env-obarray   set!env-obarray) ;;environment (obarray)
       (dyn   env-dynstack  set!env-dynstack) ;;dynamically bound variable stack frames
       (lex   env-lexstack  set!env-lexstack) ;;lexically bound variable stack frames
       (flag  env-stkflags  set!env-stkflags) ;;bits indicating stack frame type
@@ -838,29 +850,37 @@
     (define *elisp-error-port* (make-parameter (current-error-port)))
 
     (define =>env-dynstack*!
-      (record-unit-lens env-dynstack set!env-dynstack '=>env-dynstack*!))
+      (record-unit-lens env-dynstack set!env-dynstack '=>env-dynstack*!)
+      )
 
     (define =>env-lexstack*!
-      (record-unit-lens env-lexstack set!env-lexstack '=>env-lexstack*!))
+      (record-unit-lens env-lexstack set!env-lexstack '=>env-lexstack*!)
+      )
 
     (define =>env-obarray*!
-      (record-unit-lens env-obarray set!env-obarray '=>env-obarray*!))
+      (record-unit-lens env-obarray set!env-obarray '=>env-obarray*!)
+      )
 
     (define (=>env-obarray-key! name)
       (lens =>env-obarray*!
-            (=>canonical (=>hash-key! name) new-empty-obarray hash-table-empty?)))
+            (=>canonical (=>hash-key! name) new-empty-obarray hash-table-empty?)
+            ))
 
     (define =>env-lexical-mode?!
-      (record-unit-lens env-lxmode set!env-lxmode '=>env-lexical-mode?!))
+      (record-unit-lens env-lxmode set!env-lxmode '=>env-lexical-mode?!)
+      )
 
     (define =>env-stack-trace*!
-      (record-unit-lens env-trace set!env-trace '=>env-stack-trace*!))
+      (record-unit-lens env-trace set!env-trace '=>env-stack-trace*!)
+      )
 
     (define =>env-trace-depth*!
-      (record-unit-lens env-tr-depth set!env-tr-depth '=>env-trace-depth*!))
+      (record-unit-lens env-tr-depth set!env-tr-depth '=>env-trace-depth*!)
+      )
 
     (define =>env-trace-max*!
-      (record-unit-lens env-tr-max set!env-tr-max '=>env-trace-max*!))
+      (record-unit-lens env-tr-max set!env-tr-max '=>env-trace-max*!)
+      )
 
     ;;--------------------------------------------------------------------------------------------------
 
@@ -879,12 +899,10 @@
           (on-err "Lisp nesting exceeds 'max-lisp-eval-depth'")
           ))))
 
-
     (define (env-pop-trace! st)
       (update (lambda (i) (- i 1)) st =>env-trace-depth*!)
       (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!)
       )
-
 
     (define (env-trace! loc sym func st on-err run)
       ;; Takes the same three arguments as `NEW-STACK-TRACE-FRAME`, a 4th
@@ -898,7 +916,6 @@
         run
         (lambda () (env-pop-trace! st))
         ))
-
 
     (define (env-get-stack-trace env)
       (let*((trace (env-trace env))
@@ -917,19 +934,21 @@
          (else (make<elisp-stack-trace> #f))
          )))
 
-
     (define =>env-trace-location*!
-      (lens =>env-stack-trace*! =>car =>stack-trace-location*!))
+      (lens =>env-stack-trace*! =>car =>stack-trace-location*!)
+      )
 
     (define =>env-trace-symbol*!
-      (lens =>env-stack-trace*! =>car =>stack-trace-symbol*!))
+      (lens =>env-stack-trace*! =>car =>stack-trace-symbol*!)
+      )
 
     (define =>env-trace-func*!
-      (lens =>env-stack-trace*! =>car =>stack-trace-func*!))
+      (lens =>env-stack-trace*! =>car =>stack-trace-func*!)
+      )
 
     (define =>env-trace-frames*!
-      (lens =>env-stack-trace*! =>car =>stack-trace-frames*!))
-
+      (lens =>env-stack-trace*! =>car =>stack-trace-frames*!)
+      )
 
     (define (env-reset-stack! st)
       ;; Clear the stacks and stack traces, leave the rest of the
@@ -942,7 +961,6 @@
       (set!env-tr-depth st 0)
       (set!env-lxmode   st #t)
       st)
-
 
     (define (print-all-stack-frames st)
       ;; Shows all local variables in all stack frames.
@@ -966,17 +984,17 @@
         )
       (define (print-frames frames)
         (apply print
-         (let loop ((n 0) (frames (reverse frames)))
-           (cond
-            ((pair? frames)
-             (cons
-              (print
-               (bracketed 2 #\( #\) "frame " n (print-1frame (car frames)))
-               (line-break))
-              (loop (+ 1 n) (cdr frames))))
-            ((null? frames) '())
-            (else (error "not a frame" frames))
-            ))))
+               (let loop ((n 0) (frames (reverse frames)))
+                 (cond
+                  ((pair? frames)
+                   (cons
+                    (print
+                     (bracketed 2 #\( #\) "frame " n (print-1frame (car frames)))
+                     (line-break))
+                    (loop (+ 1 n) (cdr frames))))
+                  ((null? frames) '())
+                  (else (error "not a frame" frames))
+                  ))))
       (print
        ";;---- dynstack ------------------" (line-break)
        (print-frames (env-dynstack st)) (line-break)
@@ -995,8 +1013,6 @@
               (loop (cdr trace) (- i 1))
               ))))))
 
-
-
     (define (env-pop-elstkfrm! st)
       (let ((lxmode (bit-stack-pop! (env-stkflags st)))
             (pop (lambda (stack) (if (null? stack) '() (cdr stack))))
@@ -1004,7 +1020,6 @@
         (unless lxmode (update pop st =>env-dynstack*!))
         (update pop st =>env-lexstack*!)
         ))
-
 
     (define (env-push-new-elstkfrm! st size bindings)
       ;; Inspect the lexical binding mode and push a new stack frame on
@@ -1019,11 +1034,11 @@
               )))
         (update (lambda (stack) (cons elstkfrm stack)) st =>env-lexstack*!)
         (unless lxmode
-          (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!))
+          (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!)
+          )
         (bit-stack-push! (env-stkflags st) lxmode)
         elstkfrm
         ))
-
 
     (define (env-with-elstkfrm! st size bindings proc)
       (let*((elstkfrm (env-push-new-elstkfrm! st size bindings))
@@ -1033,17 +1048,18 @@
         return
         ))
 
-
     (define (env-dynstack-update updater st name newsym)
       ;; Part of the Elisp "SETQ" semantics. This procedure tries to
       ;; update just the dynamic variable stack. If there is no variable
       ;; bound to `NAME` then apply `UPDATER`, `ST`, and `NAME` to the
       ;; `NEWSYM` procedure. `NEWSYM` must return two values, the updated
-      ;; `ST` and an arbitrary return value for the `UPDATE&VIEW` lens.
-      (update&view updater st
-        =>env-dynstack*!
-        (=>stack! name (lambda () (newsym updater st name)))))
-
+      ;; `ST` and an arbitrary return value for the `update&view` lens.
+      ;;--------------------------------------------------------------
+      (update&view
+       updater st
+       =>env-dynstack*!
+       (=>stack! name (lambda () (newsym updater st name)))
+       ))
 
     (define (env-sym-update updater st name newsym)
       ;; Part of the Elisp "SETQ" semantics. This procedure updates the
@@ -1051,27 +1067,28 @@
       ;; the dynamic variable stack. If there is no variable bound to
       ;; `NAME` then apply `UPDATER`, `ST`, and `NAME` to the `NEWSYM`
       ;; procedure. `NEWSYM` must return two values, the updated `ST` and
-      ;; an arbitrary return value for the `UPDATE&VIEW` lens.
+      ;; an arbitrary return value for the `update&view` lens.
+      ;;--------------------------------------------------------------
       (if (env-lxmode st)
           (update&view
            updater st =>env-lexstack*!
-           (=>stack! name (lambda () (env-dynstack-update updater st name newsym))))
-          (env-dynstack-update updater st name newsym)))
+           (=>stack! name (lambda () (env-dynstack-update updater st name newsym)))
+           )
+          (env-dynstack-update updater st name newsym)
+          ))
 
 
-    (define (pdebug name where found)
-      (display ";; found ")(write name)
-      (display " in ")(display where)
-      (display ": ")(write found)(newline)
+    (define (env-lex-sym-lookup st name)
+      ;; Lookup only symbols bound in the lexical variable stack.
+      ;;----------------------------------------------------------------
+      (view st =>env-lexstack*! (=>stack! name #f))
       )
 
     (define (env-sym-lookup st name)
-      (or
-       (view st =>env-lexstack*! (=>stack! name #f))
-       (view st =>env-dynstack*! (=>stack! name #f))
-       (view st (=>env-obarray-key! name))
-       ))
-
+      (or (view st =>env-lexstack*! (=>stack! name #f))
+          (view st =>env-dynstack*! (=>stack! name #f))
+          (view st (=>env-obarray-key! name))
+          ))
 
     (define (env-intern! updater st name)
       ;; Part of the Elisp "SETQ" semantics. Interns a new symbol in the
@@ -1084,8 +1101,8 @@
           (((sym return) (updater (new-symbol name))))
         (values
          (lens-set sym st (=>env-obarray-key! name))
-         return)))
-
+         return
+         )))
 
     (define (=>env-symbol! name)
       ;; A lens that looks up a symbol in the lexical stack, dynamic
@@ -1096,15 +1113,14 @@
              (lambda (st) (env-sym-lookup st name)))
             (updater
              (lambda (updater st)
-               (env-sym-update updater st name env-intern!)))
-            )
+               (env-sym-update updater st name env-intern!)
+               )))
         (unit-lens
          getter
          (default-unit-lens-setter updater)
          updater
-         `(=>env-symbol ,name))
-        ))
-
+         `(=>env-symbol ,name)
+         )))
 
     (define (env-setq-bind! st updater name)
       ;; This procedure implements the `SETQ` semantics. It tries to
@@ -1112,12 +1128,12 @@
       ;; stack, the dynamic stack, or the global "obarray", but if no such
       ;; `NAME` is bound anywhere, a new symbol is initerned in the global
       ;; obarray.
-      (env-sym-update updater st name env-intern!))
-
+      (env-sym-update updater st name env-intern!)
+      )
 
     (define (hash-env-intern-soft hash name)
-      (hash-table-ref/default hash (ensure-string name) #f))
-
+      (hash-table-ref/default hash (ensure-string name) #f)
+      )
 
     (define (env-resolve-function st head)
       (let ((head
@@ -1125,34 +1141,30 @@
               ((sym-type? head) head)
               ((lambda-type? head) head)
               ((symbol? head) (env-sym-lookup st (symbol->string head)))
-              (else (eval-error "Invalid function" head))))
-            )
+              (else (eval-error "Invalid function" head))
+              )))
         (cond
          ((sym-type? head) (sym-function head))
-         (else head))
-        ))
-
+         (else head)
+         )))
 
     (define *default-obarray-size* 32749)
-      ;; ^ At the time of this writing, the size of the `OBARRAY` object
-      ;; in my Emacs was 15121. I am choosing a prime-number size here
-      ;; close to a power of 2, that is 2^15, which is roughly double that
-      ;; which I would need for my Emacs. This will make one element per
-      ;; cell highly likely, with plenty of room to spare for many more
-      ;; symbols.
-
+    ;; ^ At the time of this writing, the size of the `OBARRAY` object
+    ;; in my Emacs was 15121. I am choosing a prime-number size here
+    ;; close to a power of 2, that is 2^15, which is roughly double that
+    ;; which I would need for my Emacs. This will make one element per
+    ;; cell highly likely, with plenty of room to spare for many more
+    ;; symbols.
 
     (define new-empty-obarray
       (case-lambda
         (() (new-empty-obarray *default-obarray-size*))
         ((size)
          ;; TODO: make use of the `SIZE` argument
-         (make-hash-table string=? string-hash))
-        ))
-
+         (make-hash-table string=? string-hash)
+         )))
 
     (define *max-lisp-eval-depth* (make-parameter 1600))
-
 
     (define new-empty-environment
       (case-lambda
@@ -1163,7 +1175,6 @@
           (new-bit-stack) '() 0 (*max-lisp-eval-depth*)
           #t
           ))))
-
 
     (define (env-alist-defines! env init-env)
       ;; This procedure updates the global state of an environment with a
@@ -1192,7 +1203,8 @@
               (let*((name (ensure-string (car assoc)))
                     (val (cdr assoc))
                     (obj (if (or (not val) (null? val)) #f
-                             (new-symbol-value name val))))
+                             (new-symbol-value name val)
+                             )))
                 (cond
                  (obj
                   (lens-set obj env (=>env-obarray-key! name))
@@ -1251,10 +1263,10 @@
          (scheme->elisp (cdr val))
          ))
        ((elisp-form-type? val)
-        (scheme->elisp (elisp-form->list val)))
+        (scheme->elisp (elisp-form->list val))
+        )
        (else val)
        ))
-
 
     (define (elisp->scheme val)
       (define (replace-elem val)
@@ -1262,11 +1274,11 @@
          ((pair? val)
           (let ((head (car val)))
             (case head
-             ((|`|)  (cons 'quasiquote (cdr val)))
-             ((|,|)  (cons 'unquote    (cdr val)))
-             ((|,@|) (cons 'unquote-splicing (cdr val)))
-             (else val)
-             )))
+              ((|`|)  (cons 'quasiquote (cdr val)))
+              ((|,|)  (cons 'unquote    (cdr val)))
+              ((|,@|) (cons 'unquote-splicing (cdr val)))
+              (else val)
+              )))
          (else val)
          ))
       (define (replace-head head)
@@ -1290,7 +1302,6 @@
          (else val)
          )))
 
-
     (define (pure* proc)
       ;; Construct a procedure that always ignores it's first
       ;; argument. This is becuase whenever a built-in functions is
@@ -1311,19 +1322,22 @@
               ((arg checking ...)
                (if (type-ok? arg)
                    (loop checking)
-                   (eval-error "wrong type argument" 'function sym 'got arg 'expecting type-sym))
-               ))))))
+                   (eval-error "wrong type argument" 'function sym 'got arg 'expecting type-sym)
+                   )))))))
 
     (define (pure*-numbers sym proc)
-      (pure*-typed sym "number" number? proc))
+      (pure*-typed sym "number" number? proc)
+      )
 
     (define (pure n sym proc)
       ;; Like `PURE*`, but construct a procedure that takes exactly N+1
       ;; arguments and applies them all (except the first argument, which
       ;; is a reference to the environment) to `PROC`.
       ;;------------------------------------------------------------------
-      (pure-raw n sym
-       (lambda args (scheme->elisp (apply proc (map scheme->elisp args))))))
+      (pure-raw
+       n sym
+       (lambda args (scheme->elisp (apply proc (map scheme->elisp args))))
+       ))
 
     (define (pure-raw n sym proc)
       ;; Like `PURE`, but does not convert the Elisp values passed as
@@ -1340,9 +1354,10 @@
 
     (define (type-predicate sym p)
       (cons sym
-       (pure-raw 1 (symbol->string sym)
-        (lambda args (scheme->elisp (apply p args)))
-        )))
+            (pure-raw
+             1 (symbol->string sym)
+             (lambda args (scheme->elisp (apply p args)))
+             )))
 
     ;;----------------------------------------------------------------
     ))
