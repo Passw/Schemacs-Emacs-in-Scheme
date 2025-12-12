@@ -1017,9 +1017,10 @@
       (let ((lxmode (bit-stack-pop! (env-stkflags st)))
             (pop (lambda (stack) (if (null? stack) '() (cdr stack))))
             )
-        (unless lxmode (update pop st =>env-dynstack*!))
-        (update pop st =>env-lexstack*!)
-        ))
+        (if lxmode
+            (update pop st =>env-dynstack*!)
+            (update pop st =>env-lexstack*!)
+            )))
 
     (define (env-push-new-elstkfrm! st size bindings)
       ;; Inspect the lexical binding mode and push a new stack frame on
@@ -1032,10 +1033,10 @@
               ((hash-table? bindings) bindings)
               (else (new-elstkfrm size bindings))
               )))
-        (update (lambda (stack) (cons elstkfrm stack)) st =>env-lexstack*!)
-        (unless lxmode
-          (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!)
-          )
+        (if lxmode
+            (update (lambda (stack) (cons elstkfrm stack)) st =>env-lexstack*!)
+            (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!)
+            )
         (bit-stack-push! (env-stkflags st) lxmode)
         elstkfrm
         ))
@@ -1069,14 +1070,17 @@
       ;; procedure. `NEWSYM` must return two values, the updated `ST` and
       ;; an arbitrary return value for the `update&view` lens.
       ;;--------------------------------------------------------------
-      (if (env-lxmode st)
+      (let ((sym (env-sym-lookup st name)))
+        (cond
+         (sym (updater sym))
+         ((env-lxmode st)
           (update&view
            updater st =>env-lexstack*!
            (=>stack! name (lambda () (env-dynstack-update updater st name newsym)))
-           )
+           ))
+         (else
           (env-dynstack-update updater st name newsym)
-          ))
-
+          ))))
 
     (define (env-lex-sym-lookup st name)
       ;; Lookup only symbols bound in the lexical variable stack.
@@ -1091,18 +1095,25 @@
           ))
 
     (define (env-intern! updater st name)
-      ;; Part of the Elisp "SETQ" semantics. Interns a new symbol in the
-      ;; obarray, replacing it if it already exists (although this
-      ;; procedure is only called by procedures that have already checked
-      ;; if the symbol exists and is called when it does not
-      ;; exist). Before interning the new symbol, the symbol is applied to
-      ;; the `UPDATER` procedure passed as an argument to this procedure.
-      (let-values
-          (((sym return) (updater (new-symbol name))))
-        (values
-         (lens-set sym st (=>env-obarray-key! name))
-         return
-         )))
+      ;; Part of the Elisp "SETQ" semantics. Returns a symbol in the
+      ;; obarray associated with the given `NAME` if that symbol
+      ;; already exists, or creating a new empty symbol bound to the
+      ;; given `NAME` if the no symbol bound to that `NAME`
+      ;; exists. Before interning the new symbol, the symbol is
+      ;; applied to the `UPDATER` procedure passed as an argument to
+      ;; this procedure. `UPDATER` uses the semantics of the lens
+      ;; `update&view` procedure, and so must return two values, the
+      ;; symbol, and some other arbitrary return value. The
+      ;; `ENV-INTERN!` procedure returns both of these values.
+      ;;--------------------------------------------------------------
+      (let ((sym (env-sym-lookup st name)))
+        (cond
+         (sym (updater sym))
+         (else
+          (set! sym (new-symbol name))
+          (lens-set sym st (=>env-obarray-key! name))
+          (updater sym)
+          ))))
 
     (define (=>env-symbol! name)
       ;; A lens that looks up a symbol in the lexical stack, dynamic
