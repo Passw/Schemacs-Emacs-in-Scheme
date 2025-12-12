@@ -909,6 +909,11 @@
       (update (lambda (i) (max 0 (- i 1))) st =>env-trace-depth*!)
       (update
        (lambda (stack)
+         ;; This is called by `dynamic-wind`, and sometimes, due to
+         ;; some inscrutable chain of events, the push-trace procedure
+         ;; is called one time fewer than the pop-trace procedure. So
+         ;; we always need to check here if the stack is empty before
+         ;; popping it.
          (cond
           ((pair? stack) (cdr stack))
           (else '())

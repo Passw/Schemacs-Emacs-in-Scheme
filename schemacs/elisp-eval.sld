@@ -2548,7 +2548,6 @@
         (any (eval-error "wrong number of arguments" "mapcar" 'expected 2 any))
         ))
 
-
     (define (eval-eq a b)
       (cond
        ((or (null? a) (eq? a nil) (eq? a 'nil))
@@ -2601,13 +2600,29 @@
                   ((and (pair? head) (eval-eq key (select head))) head)
                   (else (loop (cdr alist)))
                   )))
-              (else (eval-error "wrong type argument" 'expected "list" 'got alist))
-              )))
-          (any (eval-error "wrong number of arguments" name 'expected 2 'got (length args)))
-          )))
+              (else
+               (eval-error
+                "wrong type argument"
+                '(expected . "list") '(got . alist)
+                )))))
+          (any
+           (eval-error
+            "wrong number of arguments" name
+            '(expected . 2) (cons 'got (length args))
+            )))))
 
     (define elisp-assq (eval-assq "assq" car))
     (define elisp-rassq (eval-assq "rassq" cdr))
+
+    (define elisp-identity
+      (lambda args
+        (match args
+          ((o) o)
+          (any
+           (eval-error
+            "wrong number of arguments" "identity"
+            '(expected . 1) (cons 'got (length args))
+            )))))
 
     ;;--------------------------------------------------------------------------------------------------
     ;; Formatting, output, and errors
@@ -2623,9 +2638,11 @@
         ((fstr args ...)
          (cond
           ((string? fstr) (scheme->elisp (apply format fstr args)))
-          (else (eval-error "wrong type argument" fstr 'expecting "string"))
-          ))
-        ))
+          (else
+           (eval-error
+            "wrong type argument" fstr
+            '(expecting . "string")
+            ))))))
 
     (define (elisp-prin1 . args)
       (match args
@@ -2635,15 +2652,20 @@
         (any
          (eval-error
           "wrong number of arguments" "prin1"
-          (length any) 'min 1 'max 3))
-        ))
+          (cons 'nargs (length any))
+          '(min 1) '(max 3)
+          ))))
 
     (define (elisp-princ . args)
       (match args
         ((val) ((*impl/princ*) val) val)
         ((val port) ((*impl/princ*) val port) val)
-        (any (eval-error "wrong number of arguments" "princ" 'min 1 'max 2))
-        ))
+        (any
+         (eval-error
+          "wrong number of arguments"
+          "princ"
+          '(min . 1) '(max . 2)
+          ))))
 
     (define eval-print
       (case-lambda
@@ -2651,14 +2673,18 @@
         ((val port)
          (newline port)
          ((*impl/prin1*) val port)
-         (newline port))
-        ))
+         (newline port)
+         )))
 
     (define (elisp-print . args)
       (match args
         ((val) (eval-print val))
         ((val port) (eval-print val port))
-        (any (eval-error "wrong number of arguments" "print" 'min 1 'max 2))
+        (any
+         (eval-error
+          "wrong number of arguments"
+          "print"
+          '(min 1) '(max 2)))
         ))
 
     (define (elisp-message . args)
@@ -2671,7 +2697,6 @@
            '()
            ))))
 
-
     (define (elisp-load . args)
       (match args
         ((filepath)
@@ -2680,9 +2705,11 @@
           (else (eval-error "wrong type argument" filepath 'expecting "string"))
           ))
         (any
-         (eval-error "wrong number of arguments" "load"
-                     (length any) 'min 1 'max 2))
-        ))
+         (eval-error
+          "wrong number of arguments" "load"
+          (cons 'nargs (length any))
+          '(min . 1) '(max . 2)
+          ))))
 
     ;;--------------------------------------------------------------------------------------------------
 
@@ -2897,6 +2924,8 @@
          (member   . ,elisp-member)
          (assq     . ,elisp-assq)
          (rassq    . ,elisp-rassq)
+         (identity . ,elisp-identity)
+         (purecopy . ,elisp-identity)
 
          ,(type-predicate 'null      elisp-null?)
          ,(type-predicate 'consp     elisp-pair?)
