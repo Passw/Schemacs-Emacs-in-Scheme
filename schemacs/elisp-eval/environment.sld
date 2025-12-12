@@ -977,8 +977,8 @@
             (qstr
              (if (sym-type? symbol)
                  (sym-value symbol)
-                 symbol)))
-           )))
+                 symbol
+                 ))))))
       (define (print-1frame frame)
         (apply print (map print-pair (hash-table->alist frame)))
         )
@@ -1014,13 +1014,16 @@
               ))))))
 
     (define (env-pop-elstkfrm! st)
-      (let ((lxmode (bit-stack-pop! (env-stkflags st)))
-            (pop (lambda (stack) (if (null? stack) '() (cdr stack))))
-            )
-        (if lxmode
-            (update pop st =>env-dynstack*!)
-            (update pop st =>env-lexstack*!)
-            )))
+      (let ((lxmode (bit-stack-pop! (env-stkflags st))))
+        (cond
+         (lxmode
+          (set!env-lexstack st (cdr (env-lexstack st)))
+          (car (env-lexstack st))
+          )
+         (else
+          (set!env-dynstack st (cdr (env-dynstack st)))
+          (car (env-dynstack st))
+          ))))
 
     (define (env-push-new-elstkfrm! st size bindings)
       ;; Inspect the lexical binding mode and push a new stack frame on
@@ -1033,10 +1036,13 @@
               ((hash-table? bindings) bindings)
               (else (new-elstkfrm size bindings))
               )))
-        (if lxmode
-            (update (lambda (stack) (cons elstkfrm stack)) st =>env-lexstack*!)
-            (update (lambda (stack) (cons elstkfrm stack)) st =>env-dynstack*!)
-            )
+        (cond
+         (lxmode
+          (set!env-lexstack st (cons elstkfrm (env-lexstack st)))
+          )
+         (else
+          (set!env-dynstack st (cons elstkfrm (env-lexstack st)))
+          ))
         (bit-stack-push! (env-stkflags st) lxmode)
         elstkfrm
         ))
@@ -1081,12 +1087,6 @@
          (else
           (env-dynstack-update updater st name newsym)
           ))))
-
-    (define (env-lex-sym-lookup st name)
-      ;; Lookup only symbols bound in the lexical variable stack.
-      ;;----------------------------------------------------------------
-      (view st =>env-lexstack*! (=>stack! name #f))
-      )
 
     (define (env-lex-sym-lookup st name)
       ;; Lookup only symbols bound in the lexical variable stack.

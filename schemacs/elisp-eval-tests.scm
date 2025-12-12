@@ -50,6 +50,8 @@
 (define (test-elisp-reset-env!)
   (set! test-elisp-env (new-environment (*elisp-init-env*))))
 
+(test-elisp-reset-env!)
+
 (define (test-elisp-eval! expr)
   (elisp-eval! expr test-elisp-env))
 
@@ -418,10 +420,12 @@
   (elisp-eval!
    (scheme->elisp
     '(quasiquote
-      ((+ ,(+ 1 2) ,(+ 2 3)) = ,(+ 1 2 2 3))))))
+      ((+ ,(+ 1 2) ,(+ 2 3)) = ,(+ 1 2 2 3))
+      ))))
 
 (test-equal '(a (quote ()))
-  (elisp->scheme (scheme->elisp '(a (quote ())))))
+  (elisp->scheme (scheme->elisp '(a (quote ()))))
+  )
 
 ;;--------------------------------------------------------------------------------------------------
 ;; `LAMBDA`, `DEFUN`, `APPLY`, and `FUNCALL` tests.
@@ -432,9 +436,8 @@
      (null? (view func =>lambda-args!))
      (null? (view func =>lambda-optargs!))
      (not (view func =>lambda-rest!))
-     (equal? '(nil) (view func =>lambda-body!)))
-    ))
-
+     (equal? '(nil) (view func =>lambda-body!))
+     )))
 
 (test-assert
     (test-run
@@ -447,33 +450,36 @@
         '(1 2)
         ))))
 
-
 (test-assert
     (test-run
      equal? '() test-elisp-eval!
      '(apply (lambda () t nil) '())
      ))
+
 (test-assert
     (test-run
      equal? #t  test-elisp-eval!
      '(apply (lambda () nil t) '())
      ))
+
 (test-assert
     (test-run
      equal? '() test-elisp-eval!
      '(apply '(lambda () t nil) '())
      ))
+
 (test-assert
     (test-run
      equal? #t  test-elisp-eval!
      '(apply '(lambda () nil t) '())
      ))
+
 (test-assert
     (test-run
      equal? '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8))
      test-elisp-eval!
-     '(apply (function list) '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8)))))
-
+     '(apply (function list) '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8)))
+     ))
 
 (test-assert
     (test-run
@@ -484,9 +490,11 @@
        (f 2 3)
        )))
 
-
-(test-equal (scheme->elisp '(a '()))
-  (elisp-eval! (scheme->elisp '(let ((a '())) `(a ',a)))))
+(test-assert
+    (test-run
+     equal? (scheme->elisp '(a '())) test-elisp-eval!
+     (scheme->elisp '(let ((a '())) (debug-print-stack) `(a ',a)))
+     ))
 
 ;;--------------------------------------------------------------------
 ;; Test evaluating an expression with quote and unquote forms, and
@@ -514,7 +522,12 @@
   ;; uniformly, regardless of whether a list or AST form is being
   ;; evaluated.
   ;;------------------------------------------------------------------
-  (elisp-form->list #t #t (list->elisp-form #t #t (elisp-eval! (scheme->elisp expr)))))
+  (elisp-form->list
+   #t #t
+   (list->elisp-form
+    #t #t
+    (elisp-eval! (scheme->elisp expr) test-elisp-env)
+    )))
 
 (define (elisp-test-eval-form! expr)
   ;; Convert an `EXPR`, which must be an AST data structure, and then
@@ -540,12 +553,10 @@
       (display "; as a form: ") (write b) (newline)
       #f))))
 
-
 (test-assert
     (elisp-test-eval-list-and-form!
      '(let ((a '())) `(',a))
      ))
-
 
 (test-equal (scheme->elisp '(()))
   (elisp-test-eval-list! '(let ((a '())) `(,a)))

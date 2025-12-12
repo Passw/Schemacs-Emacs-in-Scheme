@@ -2790,6 +2790,26 @@
 
     ;;--------------------------------------------------------------------------------------------------
 
+    (define (elisp-debug-print-stack . args)
+      (match args
+        (() (pretty (print-all-stack-frames (*the-environment*)))
+         )
+        ((port)
+         (cond
+          ((eq? port #t)
+           (pretty (current-output-port) (print-all-stack-frames (*the-environment*)))
+           )
+          ((eq? port #f)
+           (pretty #f (print-all-stack-frames (*the-environment*)))
+           )
+          ((output-port-open? port)
+           (pretty port (print-all-stack-frames (*the-environment*)))
+           )))
+        (args (eval-error "wrong number of arguments" "debug-print-stack" args))
+        ))
+
+    ;;--------------------------------------------------------------------------------------------------
+
     (define *elisp-init-env*
       ;; A parameter containing the default Emacs Lisp evaluation
       ;; environment. This environment is an ordinary association list
@@ -2929,6 +2949,7 @@
 
          (subr-native-elisp-p    . ,elisp-native-comp-function-p)
          (native-comp-function-p . ,elisp-native-comp-function-p)
+         (debug-print-stack .      ,elisp-debug-print-stack)
 
          (run-hooks                        . ,elisp-run-hooks)
          (run-hooks-with-args              . ,elisp-run-hooks-with-args)
@@ -2937,13 +2958,12 @@
          ;; ------- end of assocaition list -------
          )))
 
-
     (define elisp-reset-init-env!
       (case-lambda
         (() (elisp-reset-init-env! (*elisp-init-env*)))
         ((init-env) (elisp-reset-init-env! init-env (*the-environment*)))
-        ((init-env env) (env-alist-defines! env init-env))))
-
+        ((init-env env) (env-alist-defines! env init-env))
+        ))
 
     (define new-environment
       ;; Construct a new Emacs Lisp environment object, which is a bit
@@ -2959,9 +2979,10 @@
                )
            (for-each
             (lambda (err) (display ";;Warning, not a declaration: ") (write err) (newline))
-            errors)
-           env))))
-
+            errors
+            )
+           env
+           ))))
 
     (define elisp-debug-write-obarray
       (case-lambda
