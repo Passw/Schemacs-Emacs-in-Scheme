@@ -70,7 +70,8 @@
           elisp-procedure?  elisp-symbol?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
           env-with-elstkfrm!  env-trace!  
-          env-resolve-function   env-intern!   env-setq-bind!  env-reset-stack!
+          env-resolve-function  env-reset-stack!
+          env-intern!  env-setq-bind!  env-lex-sym-lookup
           elstkfrm-from-args   elstkfrm-sym-intern!
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
           *default-obarray-size*  *max-lisp-eval-depth*
@@ -1932,7 +1933,7 @@
           (let ((env (*the-environment*)))
             (for-each
              (lambda (name)
-               (let ((sym (view env (=>env-symbol! name))))
+               (let ((sym (env-lex-sym-lookup env name)))
                  (cond
                   (sym (hash-table-set! capture-vars name sym))
                   (else (hash-table-delete! capture-vars name))

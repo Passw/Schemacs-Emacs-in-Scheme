@@ -72,7 +72,7 @@
    env-push-trace!  env-pop-trace!  env-trace!
    env-with-elstkfrm!
    env-resolve-function
-   =>env-symbol!
+   =>env-symbol!  env-sym-lookup  env-lex-sym-lookup
    env-intern!    ;; implements the ELisp `intern` function
    env-setq-bind! ;; implements the ELisp `setq` macro
    env-alist-defines!
@@ -1088,8 +1088,14 @@
       (view st =>env-lexstack*! (=>stack! name #f))
       )
 
+    (define (env-lex-sym-lookup st name)
+      ;; Lookup only symbols bound in the lexical variable stack.
+      ;;----------------------------------------------------------------
+      (view st =>env-lexstack*! (=>stack! name #f))
+      )
+
     (define (env-sym-lookup st name)
-      (or (view st =>env-lexstack*! (=>stack! name #f))
+      (or (env-lex-sym-lookup st name)
           (view st =>env-dynstack*! (=>stack! name #f))
           (view st (=>env-obarray-key! name))
           ))
