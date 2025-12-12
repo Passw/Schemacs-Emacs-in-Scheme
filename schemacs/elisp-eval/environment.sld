@@ -76,7 +76,7 @@
    env-intern!    ;; implements the ELisp `intern` function
    env-setq-bind! ;; implements the ELisp `setq` macro
    env-alist-defines!
-   env-reset-stack!
+   env-reset-stack!  env-reset-obarray!
    *default-obarray-size*
    *elisp-input-port*
    *elisp-output-port*
@@ -89,6 +89,7 @@
    =>env-stack-trace*!
    =>env-trace-depth*!
    =>env-trace-max*!
+   =>env-label*!
    *max-lisp-eval-depth*
 
    ;;----------------------------------------
@@ -404,7 +405,6 @@
       (irritants  elisp-eval-error-irritants    set!elisp-eval-irritants)
       (trace      elisp-eval-error-stack-trace  set!elisp-eval-error-stack-trace)
       )
-
 
     (define =>elisp-eval-error-message
       (record-unit-lens
@@ -833,7 +833,7 @@
       ;; This is the environment object used for the Emacs Lisp evaluator.
       ;; Use `NEW-ENVIRONMENT` to construct an object of this type.
       ;;------------------------------------------------------------------
-      (make<elisp-environment> env dyn lex flag trace depth trmax mode)
+      (make<elisp-environment> env dyn lex flag trace depth trmax mode label)
       elisp-environment-type?
       (env   env-obarray   set!env-obarray) ;;environment (obarray)
       (dyn   env-dynstack  set!env-dynstack) ;;dynamically bound variable stack frames
@@ -843,6 +843,7 @@
       (depth env-tr-depth  set!env-tr-depth) ;;stack trace depth
       (trmax env-tr-max    set!env-tr-max)   ;;stack trace max depth
       (mode  env-lxmode    set!env-lxmode)   ;;lexical binding mode
+      (label env-label     set!env-label)    ;;label
       )
 
     (define *elisp-input-port* (make-parameter (current-input-port)))
@@ -882,27 +883,38 @@
       (record-unit-lens env-tr-max set!env-tr-max '=>env-trace-max*!)
       )
 
+    (define =>env-label*!
+      (record-unit-lens env-label set!env-label '=>env-label*!)
+      )
+
     ;;--------------------------------------------------------------------------------------------------
 
     (define (env-push-trace! st loc sym on-err func)
       (let ((now-depth (view st =>env-trace-depth*!))
             (max-depth (view st =>env-trace-max*!))
             )
+        (update
+         (lambda (stack) (cons (new-stack-trace-frame loc sym func) stack))
+         st =>env-stack-trace*!
+         )
         (cond
          ((< now-depth max-depth)
           (update (lambda (i) (+ 1 i)) st =>env-trace-depth*!)
-          (update
-           (lambda (stack) (cons (new-stack-trace-frame loc sym func) stack))
-           st =>env-stack-trace*!
-           ))
+          )
          (else
           (on-err "Lisp nesting exceeds 'max-lisp-eval-depth'")
           ))))
 
     (define (env-pop-trace! st)
-      (update (lambda (i) (- i 1)) st =>env-trace-depth*!)
-      (update (lambda (stack) (cdr stack)) st =>env-stack-trace*!)
-      )
+      (update (lambda (i) (max 0 (- i 1))) st =>env-trace-depth*!)
+      (update
+       (lambda (stack)
+         (cond
+          ((pair? stack) (cdr stack))
+          (else '())
+          ))
+       st =>env-stack-trace*!
+       ))
 
     (define (env-trace! loc sym func st on-err run)
       ;; Takes the same three arguments as `NEW-STACK-TRACE-FRAME`, a 4th
@@ -949,6 +961,15 @@
     (define =>env-trace-frames*!
       (lens =>env-stack-trace*! =>car =>stack-trace-frames*!)
       )
+
+    (define env-reset-obarray!
+      (case-lambda
+        ((st)
+         (set!env-obarray st (new-empty-obarray *default-obarray-size*))
+         st)
+        ((st size)
+         (set!env-obarray st (new-empty-obarray size))
+         st)))
 
     (define (env-reset-stack! st)
       ;; Clear the stacks and stack traces, leave the rest of the
@@ -1013,36 +1034,43 @@
               (loop (cdr trace) (- i 1))
               ))))))
 
+    (define (display-stack-depth up/down st)
+      (let ((a (length (env-lexstack st)))
+            (b (length (env-dynstack st)))
+            )
+        (display "; (") (write-char (if up/down #\+ #\-))
+        (display ")stack-depth ")
+        (display (env-label st))
+        (display ": ")
+        (write a)
+        (display " + ")
+        (write b)
+        (display " = ")
+        (write (+ a b))
+        (newline)
+        ))
+
     (define (env-pop-elstkfrm! st)
-      (let ((lxmode (bit-stack-pop! (env-stkflags st))))
-        (cond
-         (lxmode
-          (set!env-lexstack st (cdr (env-lexstack st)))
-          (car (env-lexstack st))
-          )
-         (else
-          (set!env-dynstack st (cdr (env-dynstack st)))
-          (car (env-dynstack st))
-          ))))
+      (let*((lxmode (bit-stack-pop! (env-stkflags st)))
+            (pop-stack (lambda (stack) (cdr stack)))
+            )
+        (update pop-stack st (if lxmode =>env-lexstack*! =>env-dynstack*!))
+        ))
 
     (define (env-push-new-elstkfrm! st size bindings)
       ;; Inspect the lexical binding mode and push a new stack frame on
       ;; the appropriate stack (lexical or dynamic stack). Return the
       ;; empty stack frame that was pushed so it can be updated by the
       ;; calling procedure.
-      (let ((lxmode (env-lxmode st))
+      (let*((lxmode (env-lxmode st))
             (elstkfrm
              (cond
               ((hash-table? bindings) bindings)
               (else (new-elstkfrm size bindings))
-              )))
-        (cond
-         (lxmode
-          (set!env-lexstack st (cons elstkfrm (env-lexstack st)))
-          )
-         (else
-          (set!env-dynstack st (cons elstkfrm (env-lexstack st)))
-          ))
+              ))
+            (push-stack (lambda (stack) (cons elstkfrm stack)))
+            )
+        (update push-stack st (if lxmode =>env-lexstack*! =>env-dynstack*!))
         (bit-stack-push! (env-stkflags st) lxmode)
         elstkfrm
         ))
@@ -1186,11 +1214,12 @@
     (define new-empty-environment
       (case-lambda
         (() (new-empty-environment *default-obarray-size*))
-        ((size)
+        ((size ) (new-empty-environment size #f))
+        ((size label)
          (make<elisp-environment>
           (new-empty-obarray size) '() '()
           (new-bit-stack) '() 0 (*max-lisp-eval-depth*)
-          #t
+          #t label
           ))))
 
     (define (env-alist-defines! env init-env)

@@ -70,7 +70,7 @@
           elisp-procedure?  elisp-symbol?
           new-empty-environment   elisp-environment-type?  env-alist-defines!
           env-with-elstkfrm!  env-trace!  
-          env-resolve-function  env-reset-stack!
+          env-resolve-function  env-reset-stack!  env-reset-obarray!
           env-intern!  env-setq-bind!  env-lex-sym-lookup
           elstkfrm-from-args   elstkfrm-sym-intern!
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
@@ -94,7 +94,8 @@
           env-get-location
           make<syntax>  syntax-type?  macro-type?
           syntax-eval  elisp-void-syntax
-          elisp-eval-error-type?  raise-error-impl*
+          elisp-eval-error-type?  make<elisp-eval-error>
+          raise-error-impl*
           =>elisp-eval-error-message
           =>elisp-eval-error-irritants
           =>elisp-eval-error-stack-trace
@@ -175,7 +176,9 @@
   (begin
     
     (define *the-environment*
-      (make-parameter (new-empty-environment *default-obarray-size*)))
+      (make-parameter
+       (new-empty-environment *default-obarray-size* "env-main")
+       ))
 
     (define (elisp-write-stack-frames)
       (let ((st (*the-environment*)))
@@ -184,8 +187,8 @@
           (print-stack-frame st)
           "==== stack frames ================"
           (line-break)
-          (print-all-stack-frames st)))))
-
+          (print-all-stack-frames st)
+          ))))
 
     (define =>elisp-symbol!
       ;; This lens looks-up a symbol in the environment, including the
@@ -210,9 +213,8 @@
          getter
          (default-unit-lens-setter updater)
          updater
-         '=>elisp-symbol!))
-      )
-
+         '=>elisp-symbol!
+         )))
 
     (define (elisp-intern! . assocs)
       ;; This procedure is exported, so mostly used by users of this
@@ -244,18 +246,20 @@
              (cond
               ((or (lambda-type? val)
                    (procedure? val)
-                   (macro-type? val))
-               (lens-set val sym =>sym-function*!))
-              (else (lens-set val sym =>sym-value*!)))
-             ))
-         assocs)))
+                   (macro-type? val)
+                   )
+               (lens-set val sym =>sym-function*!)
+               )
+              (else (lens-set val sym =>sym-value*!))
+              )))
+         assocs
+         )))
 
-
-    (define (new-elisp-raise-impl env halt-eval)
-      ;; This is a constructor for a procedure that raises an exception
-      ;; when an exception occurs in the Emacs Lisp evaluator. The
-      ;; procedure returned by this constructor should be used to
-      ;; parameterize the `RAISE-ERROR-IMPL*` API from the
+    (define new-elisp-raise-impl
+      ;; This is a constructor for a procedure that raises an
+      ;; exception when an exception occurs in the Emacs Lisp
+      ;; evaluator. The procedure returned by this constructor should
+      ;; be used to parameterize the `RAISE-ERROR-IMPL*` API from the
       ;; `(SCHEMACS ELISP-EVAL ENVIRONMENT)` library.
       ;;
       ;; The implementation returned by this procedure takes an error
@@ -264,51 +268,63 @@
       ;; constructor. The updated error object is then applied to the
       ;; `HALT-EVAL` procedure applied to this constructor. The
       ;; `HALT-EVAL` procedure is typically constructed with `CALL/CC`
-      ;; which forces computation to resume at the point in the program
-      ;; where `CALL/CC` was applied, returning the error object.
+      ;; which forces computation to resume at the point in the
+      ;; program where `CALL/CC` was applied, returning the error
+      ;; object.
       ;;
-      ;; Use this constructor when you want to modify the behavior of the
-      ;; Emacs Lisp evaluator with regard to how it throws exceptions.
+      ;; Use this constructor when you want to modify the behavior of
+      ;; the Emacs Lisp evaluator with regard to how it throws
+      ;; exceptions.
       ;;------------------------------------------------------------------
-      (let ((env (or env (*the-environment*))))
-        (lambda (err-obj)
-          (cond
-           ((elisp-eval-error-type? err-obj)
-            (lens-set
-             (env-get-stack-trace env)
-             err-obj =>elisp-eval-error-stack-trace
-             )
-            (halt-eval err-obj)
-            )
-           (else
-            (halt-eval err-obj)
-            )))))
+      (case-lambda
+        ((env halt-eval)
+         (new-elisp-raise-impl env halt-eval (current-output-port))
+         )
+        ((env halt-eval port)
+         (let ((env (or env (*the-environment*))))
+           (lambda (err-obj)
+             (when (elisp-eval-error-type? err-obj)
+               (lens-set
+                (env-get-stack-trace env)
+                err-obj =>elisp-eval-error-stack-trace
+                ))
+             ;;(write-elisp-eval-error err-obj env port)
+             (env-reset-stack! env)
+             (halt-eval err-obj)
+             )))))
 
     (define handle-scheme-exceptions*
       ;; This is a parameter that can alter the behavior of the Elisp
-      ;; evaluator when an exception is raised by Scheme, not by Elisp. If
-      ;; this parameter is set to `#F` (the default), the Scheme exception
-      ;; is handled, the Elisp interpreter is set into a consistent state,
-      ;; and then the Scheme exception is re-raised -- when running in the
-      ;; REPL, this will trigger the Scheme REPL execption handler and
-      ;; (usually) allow you to inspect the backtrace and debug the
-      ;; interpreter. If you set this to `#t` the exception is handled but
-      ;; not re-raised (effectively, ignored in the REPL).
+      ;; evaluator when an exception is raised by Scheme, not by
+      ;; Elisp. If this parameter is set to `#F` (the default), the
+      ;; Scheme exception is handled, the Elisp interpreter is set
+      ;; into a consistent state, and then the Scheme exception is
+      ;; re-raised -- when running in the REPL, this will trigger the
+      ;; Scheme REPL execption handler and (usually) allow you to
+      ;; inspect the backtrace and debug the interpreter. If you set
+      ;; this to `#t` the exception is handled but not re-raised
+      ;; (effectively, ignored in the REPL).
       ;;
-      ;; If you set this parameter to hold a procedure, the procedure will
-      ;; be applied with two arguments when a Scheme exception occurs
-      ;; during Emacs Lisp evaluation:
+      ;; If you set this parameter to hold a procedure, the procedure
+      ;; will be applied with two arguments when a Scheme exception
+      ;; occurs during Emacs Lisp evaluation:
       ;;
       ;;  1. the continuation that can optionally be applied a single
-      ;;     arbitrary argument (such as an error object) to signal that
-      ;;     the error condition has been handled, and
+      ;;     arbitrary argument (such as an error object) to signal
+      ;;     that the error condition has been handled, and
       ;;
       ;;  2. the Scheme error object that was caught by the Elisp
       ;;     exception handler.
-      ;;------------------------------------------------------------------
-      (make-parameter #f))
+      ;;--------------------------------------------------------------
+      (make-parameter #f)
+      )
 
     (define new-elisp-error-handler
+      ;; This procedure is similar to `new-elisp-raise-impl` in that
+      ;; it creates an error handler procedure. However the returned
+      ;; procedure is designed to be used as an exception handler to
+      ;; be used with the Scheme `with-exception-handler` syntax.
+      ;;--------------------------------------------------------------
       (case-lambda
         ((env halt-eval)
          (new-elisp-error-handler env halt-eval (current-output-port))
@@ -321,7 +337,7 @@
                 (lambda (tr) (or tr (env-get-stack-trace env)))
                 err-obj =>elisp-eval-error-stack-trace
                 ))
-             (write-elisp-eval-error err-obj env port)
+             ;;(write-elisp-eval-error err-obj env port)
              (env-reset-stack! env)
              (let ((user-handler (handle-scheme-exceptions*)))
                (cond
@@ -329,7 +345,6 @@
                 ((procedure? user-handler) (user-handler halt-eval err-obj))
                 (else (values))
                 )))))))
-
 
     (define (%elisp-eval! expr env)
       (define (run)
@@ -368,10 +383,12 @@
         (parameterize ((*the-environment* env)) (run))
         )
        ((or (hash-table? env) (pair? env))
-        (let ((new-env (new-empty-environment)))
-          ;;(env-push-new-elstkfrm! new-env #f env)
-          (parameterize ((*the-environment* new-env)) (run-with-mode #t))
-          ))
+        (let ((new-env (new-empty-environment *default-obarray-size*))
+              )
+          (parameterize
+              ((*the-environment* new-env))
+            (run-with-mode #t)
+            )))
        (else (run-with-mode #t))
        ))
 
@@ -385,8 +402,8 @@
       ;;------------------------------------------------------------------
       (case-lambda
         ((expr) (elisp-eval! expr #f))
-        ((expr env) (%elisp-eval! expr env))))
-
+        ((expr env) (%elisp-eval! expr env))
+        ))
 
     (define (eval-iterate-forms env port use-form)
       (let-values
@@ -423,64 +440,60 @@
          (else (loop #t))
          )))
 
+    (define (%elisp-load! filepath env)
+      (let*((name "load-file-name")
+            (port (open-input-file filepath))
+            (env (or env (*the-environment*)))
+            )
+        ;; TODO: check the `ENV` properly, should create a new
+        ;; environment if given an alist or hash table.
+        (define (setq-load-file-name val)
+          (lens-set val env
+                    (=>env-obarray-key! name)
+                    (=>sym-value! name)
+                    ))
+        (call-with-port port
+          (lambda (port)
+            (setq-load-file-name filepath)
+            (let*((parst
+                   (let ((parst (parse-state port)))
+                     (lens-set filepath parst =>parse-state-filepath*!)
+                     parst
+                     ))
+                  (old-dialect (view env =>env-lexical-mode?!))
+                  (dialect (select-elisp-dialect! parst))
+                  (env
+                   (lens-set
+                    (case dialect
+                      ((dynamic-binding) #f)
+                      (else #t))
+                    env =>env-lexical-mode?!
+                    ))
+                  (result
+                   (call/cc
+                    (lambda (halt-eval)
+                      (let ((handler (new-elisp-error-handler env halt-eval))
+                            (raise-impl (new-elisp-raise-impl env halt-eval))
+                            )
+                        (parameterize ((raise-error-impl* raise-impl))
+                          (with-exception-handler handler
+                            (lambda ()
+                              (eval-iterate-forms
+                               env parst
+                               (lambda (form)
+                                 (eval-form form (env-get-location form))
+                                 ))))))))))
+              (exec-run-hooks 'after-load-functions (list filepath))
+              (setq-load-file-name nil)
+              (lens-set old-dialect env =>env-lexical-mode?!)
+              result
+              )))))
 
     (define elisp-load!
       (case-lambda
-        ((filepath) (elisp-load! filepath #f))
-        ((filepath env)
-         (let*((name "load-file-name")
-               (port (open-input-file filepath))
-               )
-           (define (run env)
-             (define (setq-load-file-name val)
-               (lens-set val env
-                         (=>env-obarray-key! name)
-                         (=>sym-value! name)
-                         ))
-             (call-with-port port
-               (lambda (port)
-                 (setq-load-file-name filepath)
-                 (let*((parst
-                        (let ((parst (parse-state port)))
-                          (lens-set filepath parst =>parse-state-filepath*!)
-                          parst
-                          ))
-                       (old-dialect (view env =>env-lexical-mode?!))
-                       (dialect (select-elisp-dialect! parst))
-                       (env
-                        (lens-set
-                         (case dialect
-                           ((dynamic-binding) #f)
-                           (else #t))
-                         env =>env-lexical-mode?!
-                         ))
-                       (result
-                        (call/cc
-                         (lambda (halt-eval)
-                           (let ((handler (new-elisp-error-handler env halt-eval))
-                                 (raise-impl (new-elisp-raise-impl env halt-eval))
-                                 )
-                             (parameterize ((raise-error-impl* raise-impl))
-                               (with-exception-handler handler
-                                 (lambda ()
-                                   (eval-iterate-forms env parst
-                                                       (lambda (form)
-                                                         (eval-form form (env-get-location form))
-                                                         )))))))))
-                       )
-                   (exec-run-hooks 'after-load-functions (list filepath))
-                   (setq-load-file-name nil)
-                   (lens-set old-dialect env =>env-lexical-mode?!)
-                   result
-                   ))))
-           (cond
-            ((elisp-environment-type? env)
-             (parameterize ((*the-environment* env)) (run env))
-             )
-            ((not env) (run (*the-environment*)))
-            (else (error "expecting environment type" env))
-            )))))
-
+        ((filepath) (%elisp-load! filepath #f))
+        ((filepath env) (%elisp-load! filepath env))
+        ))
 
     (define subfeature-key "subfeature")
 
@@ -2747,10 +2760,7 @@
               ;; against the depth limit.
               )
              ((label args ...)
-              (let ((args
-                     (if all
-                         (map (lambda (expr) (loop depth expr)) args)
-                         args)))
+              (let ((args (if all (map (lambda (expr) (loop depth expr)) args) args)))
                 (cond
                  ((symbol? label)
                   (let ((func (env-resolve-function st label)))
@@ -2960,22 +2970,31 @@
 
     (define elisp-reset-init-env!
       (case-lambda
-        (() (elisp-reset-init-env! (*elisp-init-env*)))
-        ((init-env) (elisp-reset-init-env! init-env (*the-environment*)))
-        ((init-env env) (env-alist-defines! env init-env))
-        ))
+        (() (elisp-reset-init-env! #f #f #f))
+        ((init-env) (elisp-reset-init-env! init-env #f #f))
+        ((init-env env) (elisp-reset-init-env! init-env env #f))
+        ((init-env env size)
+         (let*((init-env (or init-env (*elisp-init-env*)))
+               (size (or size *default-obarray-size*))
+               (env (or env (*the-environment*)))
+               )
+           (env-reset-obarray! env size)
+           (env-reset-stack! env)
+           (env-alist-defines! env init-env)
+           ))))
 
     (define new-environment
       ;; Construct a new Emacs Lisp environment object, which is a bit
       ;; like an obarray.
       (case-lambda
-        (() (new-environment #f))
-        ((inits) (new-environment inits #f))
-        ((inits size)
+        (() (new-environment #f #f #f))
+        ((inits) (new-environment inits #f #f))
+        ((inits size) (new-environment inits size #f))
+        ((inits size label)
          (let*((size (if (integer? size) size *default-obarray-size*))
                (inits (if (and inits (pair? inits)) inits (*elisp-init-env*)))
-               (env (new-empty-environment size))
-               (errors (elisp-reset-init-env! inits env))
+               (env (new-empty-environment size label))
+               (errors (elisp-reset-init-env! inits env size))
                )
            (for-each
             (lambda (err) (display ";;Warning, not a declaration: ") (write err) (newline))
