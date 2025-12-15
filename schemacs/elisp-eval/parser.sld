@@ -1001,6 +1001,7 @@
                      (case head
                        ((quote)            (elisp-quote-scheme  (mktail) #f))
                        ((quasiquote)       (elisp-quote-scheme  (mktail) #t))
+                       ((backquote)        (elisp-quote-scheme  (mktail) #t))
                        ((unquote)          (elisp-unquoted-form (mktail) #f))
                        ((unquote-splicing) (elisp-unquoted-form (mktail) #t))
                        ((function) (make<elisp-function-ref> #f (mktail)))
@@ -1131,7 +1132,7 @@
                  (cond
                   (do-quotes
                    (list
-                    (if (%elisp-backquoted-form? form) 'quasiquote 'quote)
+                    (if (%elisp-backquoted-form? form) 'backquote 'quote)
                     result
                     ))
                   (else
