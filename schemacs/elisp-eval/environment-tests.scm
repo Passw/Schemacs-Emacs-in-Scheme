@@ -20,8 +20,7 @@
         hash-table-ref/default
         alist->hash-table
         hash-table->alist
-        )
-  )
+        ))
 
 (test-begin "schemacs_elisp_eval_environment_tests")
 
@@ -32,7 +31,8 @@
 (lens-set "Hello, world!" test-elisp-env (=>env-obarray-key! "hello"))
 
 (test-assert "Hello, world!"
-  (view test-elisp-env (=>env-obarray-key! "hello")))
+  (view test-elisp-env (=>env-obarray-key! "hello"))
+  )
 
 ;;;;---- these use `ELSTKFRM-ZIP-ARGS` to run tests ----
 ;;
@@ -71,9 +71,9 @@
     (lens-set (map symbol->string opts) func =>lambda-optargs!)
     (lens-set (if rest (symbol->string rest) #f) func =>lambda-rest!)
     (parameterize ((raise-error-impl* (lambda (err) err)))
-      (set! test-elstkfrm (elstkfrm-from-args func args)))
+      (set! test-elstkfrm (elstkfrm-from-args func args))
+      )
     #t))
-
 
 (define (elstkfrm-expect assocs stk-count stk-error)
   (cond
@@ -90,12 +90,14 @@
     (display "  Expecting: ")
     (write
      (map (lambda (elem) (cons (symbol->string (car elem)) (cdr elem)))
-          assocs))
+          assocs
+          ))
     (newline)
     (display "     Actual: ")
     (write
      (map (lambda (elem) (cons (car elem) (view (cdr elem) =>sym-value*!)))
-          (hash-table->alist test-elstkfrm)))
+          (hash-table->alist test-elstkfrm)
+          ))
     (newline)
     #f)
    (else
@@ -114,146 +116,179 @@
               (error
                "the \"elstkfrm\" did not have expected value at key"
                'key key 'expected expected 'actual actual
-               ))))
-       )))))
-
+               )))))))))
 
 (define (elstkfrm-expect-not-enough)
-  (elstkfrm-expect #f #f "not enough arguments"))
+  (elstkfrm-expect #f #f "not enough arguments")
+  )
 
 (define (elstkfrm-expect-too-many)
-  (elstkfrm-expect #f #f "too many arguments"))
+  (elstkfrm-expect #f #f "too many arguments")
+  )
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '() #f '())
-      (elstkfrm-expect '() 0 #f)))
-
+      (elstkfrm-expect '() 0 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '() #f '(0 1))
-      (elstkfrm-expect '((one . 1) (zero . 0)) 2 #f)))
+      (elstkfrm-expect '((one . 1) (zero . 0)) 2 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '() #f '())
-      (elstkfrm-expect-not-enough)))
+      (elstkfrm-expect-not-enough)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '() #f '(0))
-      (elstkfrm-expect-not-enough)))
+      (elstkfrm-expect-not-enough)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '() #f '(0 1 2))
-      (elstkfrm-expect-too-many)))
+      (elstkfrm-expect-too-many)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '(two) #f '(0 1 2))
       (elstkfrm-expect
-       '((two . 2) (one . 1) (zero . 0)) 3 #f))
-  )
+       '((two . 2) (one . 1) (zero . 0))
+       3 #f
+       )))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '(two three) #f '(0 1 2))
       (elstkfrm-expect
-       '((two . 2) (one . 1) (zero . 0) (three)) 4 #f))
-  )
+       '((two . 2) (one . 1) (zero . 0) (three))
+       4 #f
+       )))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '(two three) #f '(0 1 2 3))
       (elstkfrm-expect
-       '((three . 3) (two . 2) (one . 1) (zero . 0)) 4 #f))
-  )
+       '((three . 3) (two . 2) (one . 1) (zero . 0))
+       4 #f
+       )))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '(two three) #f '(0 1 2 3 4))
-      (elstkfrm-expect-too-many)))
+      (elstkfrm-expect-too-many)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '(zero one) '(two three) 'rest '(0 1 2 3 4))
       (elstkfrm-expect
-       '((rest 4) (three . 3) (two . 2) (one . 1) (zero . 0)) 5 #f)))
+       '((rest 4) (three . 3) (two . 2) (one . 1) (zero . 0))
+       5 #f
+       )))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) #f '())
-      (elstkfrm-expect '((zero) (one)) 2 #f)))
+      (elstkfrm-expect '((zero) (one)) 2 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) #f '(0))
-      (elstkfrm-expect '((zero . 0) (one)) 2 #f)))
+      (elstkfrm-expect '((zero . 0) (one)) 2 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) #f '(0 1))
-      (elstkfrm-expect '((one . 1) (zero . 0)) 2 #f)))
+      (elstkfrm-expect '((one . 1) (zero . 0)) 2 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) #f '(0 1 2))
-      (elstkfrm-expect-too-many)))
+      (elstkfrm-expect-too-many)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) 'rest '(0 1 2))
-      (elstkfrm-expect '((rest 2) (one . 1) (zero . 0)) 3 #f)))
+      (elstkfrm-expect '((rest 2) (one . 1) (zero . 0)) 3 #f)
+      ))
 
 (test-assert
     (let ()
       (elstkfrm-trial '() '(zero one) 'rest '(0 1 2 3))
-      (elstkfrm-expect '((rest 2 3) (one . 1) (zero . 0)) 3 #f)))
+      (elstkfrm-expect '((rest 2 3) (one . 1) (zero . 0)) 3 #f)
+      ))
 
-(env-push-new-elstkfrm!
- test-elisp-env 3
- (list (new-symbol "zero" 0)
-       (new-symbol "one"  1)
-       (new-symbol "two"  2)))
-(test-equal 2
-  (view test-elisp-env =>env-lexstack*! =>car (=>hash-key! "two") =>sym-value*!)
-  )
-(test-equal (list 2 1 0)
-  (let ((lookup
-         (lambda (name)
-           (view
-            test-elisp-env
-            (=>env-symbol! name)
-            =>sym-value*!)))
+(define (test-stack-ops)
+  (env-with-elstkfrm!
+   test-elisp-env 3
+   (list (new-symbol "zero" 0)
+         (new-symbol "one"  1)
+         (new-symbol "two"  2)
+         )
+   (lambda (elstkfrm)
+     (let*((result
+            (view
+             test-elisp-env
+             =>env-lexstack*! =>car (=>hash-key! "two") =>sym-value*!
+             ))
+           (lookup
+            (lambda (name)
+              (view
+               test-elisp-env
+               (=>env-symbol! name)
+               =>sym-value*!
+               ))))
+       (cond
+        ((= 2 ) #t)
+        (else (error "lenses failed to correctly retrieve value") #f)
         )
-    (list
-     (lookup "two")
-     (lookup "one")
-     (lookup "zero")
-     )))
+       (let*((expect (list 2 1 0))
+             (result
+              (list
+               (lookup "two")
+               (lookup "one")
+               (lookup "zero")
+               )))
+         (cond
+          ((equal? result expect) #t)
+          (else
+           (error "unexpected result" result 'expected: expect)
+           )))
+       (lens-set #f test-elisp-env =>env-lexical-mode?!)
+       (env-with-elstkfrm!
+        test-elisp-env 3
+        (list (new-symbol "three" 3)
+              (new-symbol "four"  4)
+              (new-symbol "five"  5)
+              )
+        (lambda (elstkframe)
+          (let*((expect (list 1 2 3 4))
+                (result
+                 (list
+                  (lookup "one")
+                  (lookup "two")
+                  (lookup "three")
+                  (lookup "four")
+                  )))
+            (cond
+             ((equal? result expect) #t)
+             (else
+              (error "unexpected result" result 'expected: expect)
+              )))))))))
 
-(lens-set #f test-elisp-env =>env-lexical-mode?!)
-(env-push-new-elstkfrm!
- test-elisp-env 3
- (list (new-symbol "three" 3)
-       (new-symbol "four"  4)
-       (new-symbol "five"  5)))
-
-(test-equal (list 3 4 5)
-  (let ((lookup
-         (lambda (name)
-           (view
-            test-elisp-env
-            (=>env-symbol! name)
-            =>sym-value*!)))
-        )
-    (list
-     (lookup "three")
-     (lookup "four")
-     (lookup "five")
-     )))
+(test-assert (test-stack-ops))
 
 (lens-set #t test-elisp-env =>env-lexical-mode?!)
 

@@ -10,6 +10,7 @@
         =>lambda-optargs!
         =>lambda-rest!
         =>lambda-body!
+        =>lambda-lexenv!
         =>env-lexical-mode?!
         *elisp-output-port*
         *elisp-error-port*
@@ -37,27 +38,29 @@
         hash-table-size
         hash-table-ref/default
         alist->hash-table
-        )
-  )
+        ))
 
 (test-begin "schemacs_elisp_eval_tests")
 
 ;;--------------------------------------------------------------------------------------------------
 
-(define test-elisp-env (new-environment (*elisp-init-env*)))
+(define test-elisp-env (new-environment (*elisp-init-env*) #f "env-test"))
 
 ;; Raw results of evaluation
 (define (test-elisp-reset-env!)
-  (set! test-elisp-env (new-environment (*elisp-init-env*))))
+  (set! test-elisp-env (new-environment (*elisp-init-env*) #f "env-test"))
+  )
 
 (define (test-elisp-eval! expr)
-  (elisp-eval! expr test-elisp-env))
+  (elisp-eval! expr test-elisp-env)
+  )
 
 (define (test-error-elisp-eval! expr)
-  (let ((result (test-elisp-eval! expr)))
-    (and (elisp-eval-error-type? result)
-         (view result =>elisp-eval-error-message))))
-
+  (parameterize ((handle-scheme-exceptions* #f))
+    (let ((result (test-elisp-eval! expr)))
+      (and (elisp-eval-error-type? result)
+           (view result =>elisp-eval-error-message)
+           ))))
 
 (define (test-run same? expected case-runner list-form)
   (let ((iden (lambda (a) a))
@@ -79,6 +82,10 @@
      (run "list" write iden list-form)
      (run "form" write-elisp-form (lambda (form) (elisp-form->list #t form)) form-form)
      )))
+
+(define (tc n)
+  (display ";; <<test ") (write n) (display ">>\n")
+  )
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Test basic function application for built-in arithmetic functions.
@@ -240,16 +247,19 @@
      eq? #f test-elisp-eval!
      '(when nil 40)
      ))
+
 (test-assert
     (test-run
      eq? 50 test-elisp-eval!
      '(when t 50)
      ))
+
 (test-assert
     (test-run
      eq? 60 test-elisp-eval!
      '(unless nil 60)
      ))
+
 (test-assert
     (test-run
      eq? #f test-elisp-eval!
@@ -282,7 +292,8 @@
     (test-run
      equal? "hello" test-elisp-eval!
      '(let ((a (make-symbol "hello")))
-        (symbol-name a))))
+        (symbol-name a)
+        )))
 
 (test-assert
     (test-run
@@ -305,6 +316,46 @@
             (d (* c 2)))
         (list a b c d)
         )))
+
+;; Test whether closures can properly capture variables
+(test-assert
+    (test-run
+     equal? 6 test-elisp-eval!
+     '(progn
+       (defun test-closure-capture (a b)
+         (let ((f (lambda (c) (+ a b c))))
+           (funcall f 1)
+           ))
+       (test-closure-capture 2 3)
+       )))
+
+;; Test whether closure properly captures variables but not let-bindings
+(test-assert
+    (let*((expr
+           (list->elisp-form
+            '(progn
+              (defun test-closure-capture (a b)
+                (let*((z 'fail)
+                      (f (lambda (c) (let ((z (+ a b c))) z))))
+                  (list (funcall f 1) f)
+                  ))
+              (test-closure-capture 2 3)
+              )))
+          (result (test-elisp-eval! expr))
+          (z-sym
+           (and
+            (pair? result)
+            (= 2 (length result))
+            (= (car result) 6)
+            (view (cadr result) =>lambda-lexenv! (=>hash-key! "z"))
+            )))
+      (cond
+       ((not z-sym) #t)
+       (else
+        (display ";Test failed, the variable `z` should not have been captured\n");;LOG
+        (display "; captured: ") (write z-sym) (newline);;LOG
+        #f
+        ))))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Test `SETQ`, `LET`, and `LET*` special forms.
@@ -391,38 +442,39 @@
 ;; test cases, only the list form of the input should be tested.
 
 (test-equal '(1 2 3)
-  (elisp-eval!
+  (test-elisp-eval!
    (scheme->elisp
     '(quasiquote (1 2 (unquote (+ 1 2))))
     )))
 
-(test-equal '() (elisp-eval! (scheme->elisp '(quasiquote ()))))
+(test-equal '() (test-elisp-eval! (scheme->elisp '(quasiquote ()))))
 
-(test-equal '(1 2 3) (elisp-eval! '(|`| (1 2 (|,| (+ 1 2))))))
+(test-equal '(1 2 3) (test-elisp-eval! '(|`| (1 2 (|,| (+ 1 2))))))
 
-(test-equal '(1 2 3) (elisp-eval! (car (scheme->elisp '(`(1 2 ,(+ 1 2)))))))
+(test-equal '(1 2 3) (test-elisp-eval! (car (scheme->elisp '(`(1 2 ,(+ 1 2)))))))
 
 (test-equal '((+ 3 5) = 8)
-  (elisp-eval!
+  (test-elisp-eval!
    (scheme->elisp
     '(quasiquote
-      ((+ ,(+ 1 2) ,(+ 2 3)) = ,(+ 1 2 2 3))))))
+      ((+ ,(+ 1 2) ,(+ 2 3)) = ,(+ 1 2 2 3))
+      ))))
 
 (test-equal '(a (quote ()))
-  (elisp->scheme (scheme->elisp '(a (quote ())))))
+  (elisp->scheme (scheme->elisp '(a (quote ()))))
+  )
 
 ;;--------------------------------------------------------------------------------------------------
 ;; `LAMBDA`, `DEFUN`, `APPLY`, and `FUNCALL` tests.
 
 (test-assert
-  (let ((func (test-elisp-eval! '(lambda () nil))))
-    (and
-     (null? (view func =>lambda-args!))
-     (null? (view func =>lambda-optargs!))
-     (not (view func =>lambda-rest!))
-     (equal? '(nil) (view func =>lambda-body!)))
-    ))
-
+    (let ((func (test-elisp-eval! '(lambda () nil))))
+      (and
+       (null? (view func =>lambda-args!))
+       (null? (view func =>lambda-optargs!))
+       (not (view func =>lambda-rest!))
+       (equal? '(nil) (view func =>lambda-body!))
+       )))
 
 (test-assert
     (test-run
@@ -435,33 +487,36 @@
         '(1 2)
         ))))
 
-
 (test-assert
     (test-run
      equal? '() test-elisp-eval!
      '(apply (lambda () t nil) '())
      ))
+
 (test-assert
     (test-run
      equal? #t  test-elisp-eval!
      '(apply (lambda () nil t) '())
      ))
+
 (test-assert
     (test-run
      equal? '() test-elisp-eval!
      '(apply '(lambda () t nil) '())
      ))
+
 (test-assert
     (test-run
      equal? #t  test-elisp-eval!
      '(apply '(lambda () nil t) '())
      ))
+
 (test-assert
     (test-run
      equal? '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8))
      test-elisp-eval!
-     '(apply (function list) '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8)))))
-
+     '(apply (function list) '((+ 1 1)(+ 1 2)(+ 2 3)(+ 3 5)(+ 5 8)))
+     ))
 
 (test-assert
     (test-run
@@ -472,9 +527,11 @@
        (f 2 3)
        )))
 
-
-(test-equal (scheme->elisp '(a '()))
-  (elisp-eval! (scheme->elisp '(let ((a '())) `(a ',a)))))
+(test-assert
+    (test-run
+     equal? (scheme->elisp '(a '())) test-elisp-eval!
+     (scheme->elisp '(let ((a '())) `(a ',a)))
+     ))
 
 ;;--------------------------------------------------------------------
 ;; Test evaluating an expression with quote and unquote forms, and
@@ -502,13 +559,19 @@
   ;; uniformly, regardless of whether a list or AST form is being
   ;; evaluated.
   ;;------------------------------------------------------------------
-  (elisp-form->list #t #t (list->elisp-form #t #t (elisp-eval! (scheme->elisp expr)))))
+  (elisp-form->list
+   #t #t
+   (list->elisp-form
+    #t #t
+    (test-elisp-eval! (scheme->elisp expr))
+    )))
 
 (define (elisp-test-eval-form! expr)
   ;; Convert an `EXPR`, which must be an AST data structure, and then
   ;; convert the result to a list.
   ;;------------------------------------------------------------------
-  (elisp-eval! (list->elisp-form expr)))
+  (test-elisp-eval! (list->elisp-form expr))
+  )
 
 (define (elisp-test-eval-list-and-form! expr)
   ;; Evaluate an `EXPR`, which must be a list data structure, using
@@ -518,7 +581,7 @@
   ;;------------------------------------------------------------------
   (let*((a (elisp-test-eval-list! expr))
         (b (elisp-test-eval-form! expr))
-        (ok (equal? (elisp-test-eval-list! expr) ))
+        (ok (equal? a b))
         )
     (cond
      (ok #t)
@@ -528,17 +591,14 @@
       (display "; as a form: ") (write b) (newline)
       #f))))
 
-
 (test-assert
     (elisp-test-eval-list-and-form!
      '(let ((a '())) `(',a))
      ))
 
-
 (test-equal (scheme->elisp '(()))
   (elisp-test-eval-list! '(let ((a '())) `(,a)))
   )
-
 
 (test-assert
     (elisp-test-eval-list-and-form!
@@ -557,7 +617,6 @@
     (newline)
     ))
 
-
 (define (ds)
   (elisp-debug-show-form debug-expr)
   (let ((return (elisp-debug-step! debug-expr)))
@@ -565,14 +624,12 @@
     return
     ))
 
-
 (define (capture-debug-step dbg writer)
   (let*((outport (open-output-string))
         (more    (writer dbg outport))
         )
     (values (get-output-string outport) more)
     ))
-
 
 (define (capture-debug-eval form)
   ;; This runs the stepper and captures every output and every
@@ -590,18 +647,18 @@
   ;;------------------------------------------------------------------
   (let ((log '())
         (dbg (if (debugger-state-type? form) form
-                 (elisp-debug-eval form)
+                 (elisp-debug-eval form test-elisp-env)
                  )))
     (let loop ((step 0))
       (let*-values
           (((form-str _t)
             (capture-debug-step dbg
-             (lambda (dbg port) (elisp-debug-show-form dbg port) #t)
-             ))
+                                (lambda (dbg port) (elisp-debug-show-form dbg port) #t)
+                                ))
            ((outstr more)
             (capture-debug-step dbg
-             (lambda (dbg _port) (elisp-debug-step! dbg))
-             ))
+                                (lambda (dbg _port) (elisp-debug-step! dbg))
+                                ))
            ((result) (view dbg =>debugger-last-value*!))
            ((log-item)
             `( ,step ,form-str ,result
@@ -614,7 +671,6 @@
           (set! log (cons log-item log))
           (loop (+ 1 step))
           ))))))
-
 
 (define (compare-debug-eval form expected)
   (define (write-remaining elems)
@@ -653,7 +709,6 @@
         (display "    actual: ") (write (car results)) (newline)
         #f
         ))))))
-
 
 (define debugger-test-form
   '(let ((a 3) (b 6))
@@ -703,13 +758,13 @@
        )))
 
 (test-equal 178
-  (let ((dbg (elisp-debug-eval debugger-test-form)))
+  (let ((dbg (elisp-debug-eval debugger-test-form test-elisp-env)))
     (elisp-debug-continue! dbg)
     (view dbg =>debugger-last-value*!)
     ))
 
 (test-equal 3
-  (let ((dbg (elisp-debug-eval debugger-test-form)))
+  (let ((dbg (elisp-debug-eval debugger-test-form test-elisp-env)))
     (elisp-debug-set-break! dbg 'b)
     (elisp-debug-set-break! dbg 'a)
     (elisp-debug-clear-break! dbg 'b)
@@ -743,22 +798,22 @@
      eqv? (+ 1 1 2 3 5 8 13 21 34) test-elisp-eval!
      '(let ((sum 0))
         (dolist (n '(1 1 2 3 5 8 13 21 34) sum)
-          (setq sum (+ n sum))
-          nil))))
+                (setq sum (+ n sum))
+                nil))))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Testing `&OPTIONAL` keyword in `DEFUN`
 
 (define (defun-test-optargs . exprs)
   `(progn
-     (defun test-optargs (&optional x y)
-       (cond
-        ((and (null x) (null y)) '(17 23))
-        ((null x) (list y y))
-        ((null y) (list x x))
-        (t (list (+ x y) (* x y)))
-        ))
-     (test-optargs ,@exprs)
+    (defun test-optargs (&optional x y)
+      (cond
+       ((and (null x) (null y)) '(17 23))
+       ((null x) (list y y))
+       ((null y) (list x x))
+       (t (list (+ x y) (* x y)))
+       ))
+    (test-optargs ,@exprs)
     ))
 
 (test-assert
@@ -800,7 +855,6 @@
 (test-assert (test-run equal? '(8 21) test-elisp-eval! (defun-test-restargs 3 5 8 13)))
 (test-assert (test-run equal? '(8 42) test-elisp-eval! (defun-test-restargs 3 5 8 13 21)))
 
-
 (test-assert
     (test-run
      equal? '(0 . 1) test-elisp-eval!
@@ -835,34 +889,40 @@
           (list result (get-output-string out))
           )))))
 
-
 (test-equal (list "Hello, world!" "Hello, world!")
   (test-elisp-eval-out-port!
-   '(princ "Hello, world!")))
+   '(princ "Hello, world!")
+   ))
 
 (test-equal (list (list "a" "b" "c") "(a b c)")
   (test-elisp-eval-out-port!
-   '(princ (list "a" "b" "c"))))
+   '(princ (list "a" "b" "c"))
+   ))
 
 (test-equal (list "Hello, world!\n" "\"Hello, world!\\n\"")
   (test-elisp-eval-out-port!
-   '(prin1 "Hello, world!\n")))
+   '(prin1 "Hello, world!\n")
+   ))
 
 (test-equal (list (list "a" "b" "c") "(\"a\" \"b\" \"c\")")
   (test-elisp-eval-out-port!
-   '(prin1 (list "a" "b" "c"))))
+   '(prin1 (list "a" "b" "c"))
+   ))
 
 (test-equal "Hello, world!"
   (test-elisp-eval!
-   '(format "Hello, %s" "world!")))
+   '(format "Hello, %s" "world!")
+   ))
 
 (test-equal "Hello 1234"
   (test-elisp-eval!
-   '(format "Hello %S" 1234)))
+   '(format "Hello %S" 1234)
+   ))
 
 (test-equal (list '() "" "Hello, world!\n")
   (test-elisp-eval-both-ports!
-   '(message "Hello, %s" "world!")))
+   '(message "Hello, %s" "world!")
+   ))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Testing lexical and dynamic scoping
@@ -896,7 +956,8 @@
          (runfn 'fn-A)
          (printglo 'fn-b-let4)
          )
-       (printglo 'fn-B))
+       (printglo 'fn-B)
+       )
      (runfn 'fn-A)
      (printglo 'top)
      (setq glo "top")
@@ -904,8 +965,7 @@
      (runfn 'fn-B)
      (printglo 'top)
      (princ "------------------------------\n")
-     t))
-  )
+     t)))
 
 (define lexical-scope-test-expected-result
   "------------------------------
@@ -964,12 +1024,14 @@ top: glo = top
 ")
 
 (test-equal (list #t lexical-scope-test-expected-result)
-  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test))
+  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test)
+  )
 
 (lens-set #f test-elisp-env =>env-lexical-mode?!)
 
 (test-equal (list #t dynamic-scope-test-expected-result)
-  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test))
+  (test-elisp-eval-out-port! test-elisp-progn-var-scope-test)
+  )
 
 (lens-set #t test-elisp-env =>env-lexical-mode?!)
 
@@ -1001,25 +1063,26 @@ top: glo = top
 ;; Testing hooks
 
 (test-assert
-  (test-elisp-eval!
-   '(progn
-      (defvar hook-test-var 0 "test hook functions")
-      (defun test-hook-success+1 (&optional n)
-        (unless n (setq n 1))
-           (setq hook-test-var (+ n hook-test-var))
-        t)
-      (defun test-hook-failure+1 (&optional n)
-        (unless n (setq n 1))
-           (setq hook-test-var (+ n hook-test-var))
-        nil)
-      (defvar test-hook-A 'test-hook-success+1)
-      (defvar test-hook-B 'test-hook-failure+1)
-      (defvar test-hook-ABA
-        '(test-hook-success+1 test-hook-failure+1 test-hook-success+1))
-      (defvar test-hook-BAB
-        '(test-hook-failure+1 test-hook-success+1 test-hook-failure+1))
-      t)
-   ))
+    (test-elisp-eval!
+     '(progn
+       (defvar hook-test-var 0 "test hook functions")
+       (defun test-hook-success+1 (&optional n)
+         (unless n (setq n 1))
+         (setq hook-test-var (+ n hook-test-var))
+         t)
+       (defun test-hook-failure+1 (&optional n)
+         (unless n (setq n 1))
+         (setq hook-test-var (+ n hook-test-var))
+         nil)
+       (defvar test-hook-A 'test-hook-success+1)
+       (defvar test-hook-B 'test-hook-failure+1)
+       (defvar test-hook-ABA
+         '(test-hook-success+1 test-hook-failure+1 test-hook-success+1)
+         )
+       (defvar test-hook-BAB
+         '(test-hook-failure+1 test-hook-success+1 test-hook-failure+1)
+         )
+       t)))
 
 (test-assert
     (test-run
@@ -1135,15 +1198,18 @@ top: glo = top
      )))
 
 (test-equal '(1 2 3)
-  (test-elisp-eval! '(mapcar (lambda (x) (+ x 1)) '(0 1 2))))
+  (test-elisp-eval! '(mapcar (lambda (x) (+ x 1)) '(0 1 2)))
+  )
 
 (test-equal '(16 9 4 1 0 1 4)
   (test-elisp-eval!
    '(let ((p (function (lambda (x) (+ (* x x) (* -2 x) 1)))))
-      (mapcar p '(-3 -2 -1 0 1 2 3)))))
+      (mapcar p '(-3 -2 -1 0 1 2 3))
+      )))
 
 (test-equal '(#t #t #t #t #t)
-  (test-elisp-eval! '(mapcar (function symbolp) '(zero one two three four))))
+  (test-elisp-eval! '(mapcar (function symbolp) '(zero one two three four)))
+  )
 
 (test-equal '((+ 1 1) (+ 1 2) (+ 2 3) (+ 3 5) (+ 5 8))
   (test-elisp-eval!
@@ -1151,8 +1217,8 @@ top: glo = top
    ))
 
 (test-equal '()
-  (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four)))))
-
+  (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four))))
+  )
 
 (test-assert (test-elisp-eval! '(memq 'b '(a b c))))
 (test-assert (test-elisp-eval! '(memv 'b '(a b c))))
@@ -1163,7 +1229,6 @@ top: glo = top
 (test-equal '(four . 4) (test-elisp-eval! (scheme->elisp `(assq 'four ,named-numbers))))
 (test-equal '(zero . 0) (test-elisp-eval! (scheme->elisp `(rassq 0 ,named-numbers))))
 (test-equal '(four . 4) (test-elisp-eval! (scheme->elisp `(rassq 4 ,named-numbers))))
-
 
 ;;--------------------------------------------------------------------------------------------------
 

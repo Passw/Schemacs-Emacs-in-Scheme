@@ -53,14 +53,14 @@
    parse-state ;; this constructs a parser state, similar API to 
    elisp-parse-state-type?
    =>parse-state-filepath*! ;; lens to get or set the current filepath
-   elisp-read  ;; read a single Elisp form
-   elisp-read-all ;; read all forms into a vector
+   elisp-read               ;; read a single Elisp form
+   elisp-read-all           ;; read all forms into a vector
    elisp-read-file-for-each ;; loop on `ELISP-READ`, apply each parsed form to a procedure
    select-elisp-dialect! ;; check for "-*-lexical-binding:t-*-" magic comment 
 
    ;;----------------
    ;; Selecting individual tokens
-   lexer-state ;; re-export schemacs lexer state constructor
+   lexer-state         ;; re-export schemacs lexer state constructor
    run-elisp-tokenizer ;; lex the next token from a port
    whitespace?
 
@@ -91,9 +91,11 @@
    list->elisp-form ;; consruct an Elisp form from a Scheme list
    elisp-form->list
    elisp-form->vector
+   elisp-form-fold
    elisp-form-equal? ;; compare Elisp form equality
    elisp-form-length ;; return number of elements in a Elisp form
-   write-elisp-form ;; write an Elisp form to a port
+   write-elisp-form  ;; write an Elisp form to a port
+   elisp-form-gather-symbols
 
    ;;----------------------------------------
    ;; Quoting, quasiquoting, and unquoting
@@ -171,7 +173,7 @@
        "float" "string" "char" "quote" "backquote" "unquote" "splice" "hashcode"))
 
     (define (token-type-name token-type)
-      ; dead code, only used for debugging
+                                        ; dead code, only used for debugging
       (if (< token-type (vector-length token-type-names))
           (vector-ref token-type-names token-type)
           "<token-type-error>"
@@ -193,13 +195,13 @@
       ;; well. Backslash symbols are special symbol characters and are
       ;; handled separately.
       (alist->parse-table  #t
-       `(((#\null . #\space) . ,lex-fail)
-          ;; ^ the first 33 ASCII chars (control characters) are considered spaces, not symbol chars
-         (#\delete . ,lex-fail)
-          ;; ^ the delete character (0x7F) is a control character and also not a symbol char
-         (,elisp-special-char . ,lex-fail)
-          ;; ^ special non-symbol non-space characters are not symbol chars
-         )))
+                           `(((#\null . #\space) . ,lex-fail)
+                             ;; ^ the first 33 ASCII chars (control characters) are considered spaces, not symbol chars
+                             (#\delete . ,lex-fail)
+                             ;; ^ the delete character (0x7F) is a control character and also not a symbol char
+                             (,elisp-special-char . ,lex-fail)
+                             ;; ^ special non-symbol non-space characters are not symbol chars
+                             )))
 
     (define (%buffer-if buffer char-pred?)
       (lambda (c)
@@ -220,15 +222,15 @@
 
     (define (%tokenize-decimal-digits buffer st)
       (run-lexer st
-       (lex-fold-count 0
-        (%accum-dec-int buffer st)
-        (lambda (accum count)
-          (if (> count 0)
-              (values accum count)
-              (values #f 0)
-              ))
-        (char char-numeric?)
-        )))
+                 (lex-fold-count 0
+                                 (%accum-dec-int buffer st)
+                                 (lambda (accum count)
+                                   (if (> count 0)
+                                       (values accum count)
+                                       (values #f 0)
+                                       ))
+                                 (char char-numeric?)
+                                 )))
 
     (define (negative i) (- i))
     (define (positive i) i)
@@ -263,33 +265,33 @@
       (let*-values
           (((sign) (%tokenize-sign buffer st))
            ((digits-value sig-figs) (%tokenize-decimal-digits buffer st))
-            )
+           )
         (if digits-value (sign digits-value) #f)
         ))
 
     (define (%tokenize-fraction buffer st)
       (let*((delim
              (run-lexer st
-              (%buffer-if buffer (lambda (c) (char=? c #\.))))
+                        (%buffer-if buffer (lambda (c) (char=? c #\.))))
              ))
         (if (not delim) (values #f 0)
             (run-lexer st
-             (lex-fold-count 0
-              (%accum-dec-int buffer st)
-              (lambda (accum count)
-                (cond
-                 ((> count 0)
-                  (let ((e (expt 10 count))) (values (/ accum e) count)))
-                 (else (values #f 0))
-                 ))
-              (char char-numeric?)
-              )))))
+                       (lex-fold-count 0
+                                       (%accum-dec-int buffer st)
+                                       (lambda (accum count)
+                                         (cond
+                                          ((> count 0)
+                                           (let ((e (expt 10 count))) (values (/ accum e) count)))
+                                          (else (values #f 0))
+                                          ))
+                                       (char char-numeric?)
+                                       )))))
 
     (define (%tokenize-exponent buffer st)
       (let*((delim
              (run-lexer st
-              (%buffer-if buffer
-               (lambda (c) (or (char=? c #\e) (char=? c #\E))))))
+                        (%buffer-if buffer
+                                    (lambda (c) (or (char=? c #\e) (char=? c #\E))))))
             (int (if (not delim) #f (%tokenize-signed-int buffer st)))
             )
         (if (not delim) 0 (if int int #f))
@@ -368,18 +370,18 @@
 
     (define escape-string-table
       (alist->parse-table (any)
-       `((#\\  . ,(any #\\ ))
-         (#\a  . ,(any #\alarm))
-         (#\b  . ,(any #\backspace))
-         (#\d  . ,(any #\delete))
-         (#\e  . ,(any #\escape))
-         (#\f  . ,(any #\x0C))
-         (#\n  . ,(any #\newline))
-         (#\r  . ,(any #\return))
-         (#\s  . ,(any #\space))
-         (#\t  . ,(any #\tab))
-         (#\v  . ,(any #\x0B))
-         )))
+                          `((#\\  . ,(any #\\ ))
+                            (#\a  . ,(any #\alarm))
+                            (#\b  . ,(any #\backspace))
+                            (#\d  . ,(any #\delete))
+                            (#\e  . ,(any #\escape))
+                            (#\f  . ,(any #\x0C))
+                            (#\n  . ,(any #\newline))
+                            (#\r  . ,(any #\return))
+                            (#\s  . ,(any #\space))
+                            (#\t  . ,(any #\tab))
+                            (#\v  . ,(any #\x0B))
+                            )))
 
 
     (define tokenize-string
@@ -390,23 +392,23 @@
             (open
              (let*((result
                     (run-lexer st
-                     (many1/buffer
-                      (many/buffer
-                       (char (lambda (c) (and (not (char=? c #\\ )) (not (char=? c #\"))))))
-                      (many1/buffer
-                       (take (lambda (c) (and (char? c) (char=? c #\\ )))) escape-string-table)
-                      )))
+                               (many1/buffer
+                                (many/buffer
+                                 (char (lambda (c) (and (not (char=? c #\\ )) (not (char=? c #\"))))))
+                                (many1/buffer
+                                 (take (lambda (c) (and (char? c) (char=? c #\\ )))) escape-string-table)
+                                )))
                    (closed
                     (run-lexer st
-                     (take (lambda (c) (and (char? c) (char=? c #\" ))))
-                     )))
+                               (take (lambda (c) (and (char? c) (char=? c #\" ))))
+                               )))
                (cond
                 ((not closed)
                  (values token-error
-                  (elisp-tokenizer-error
-                   "string literal runs past end of input"
-                   result
-                   )))
+                         (elisp-tokenizer-error
+                          "string literal runs past end of input"
+                          result
+                          )))
                 (else (values token-string result))
                 )))
             (else (values #f #f))
@@ -452,12 +454,12 @@
 
     (define (ndigit-char-int-literal exact-count on-err in-bound? shift-add)
       (lex-fold-count 0
-       (lambda (accum count c)
-         ((assert-int-shift-add shift-add) accum c))
-       (lambda (accum count)
-         (if (= count exact-count) (integer->char accum) (new-lexer-error on-err)))
-       in-bound?
-       ))
+                      (lambda (accum count c)
+                        ((assert-int-shift-add shift-add) accum c))
+                      (lambda (accum count)
+                        (if (= count exact-count) (integer->char accum) (new-lexer-error on-err)))
+                      in-bound?
+                      ))
 
     (define (basechar top base)
       (char-int-literal
@@ -488,7 +490,7 @@
 
     (define (unichar exact-count on-err)
       (lex (any)
-       (ndigit-char-int-literal exact-count on-err hexdigit-value hexencode-fold)))
+           (ndigit-char-int-literal exact-count on-err hexdigit-value hexencode-fold)))
 
     (define named-char-table
       (alist->parse-table
@@ -524,38 +526,38 @@
 
     (define named-char
       (lex #\N
-       (lex-brackets
-        open-curly close-curly
-        (lex-apply
-         (lambda (result)
-           (cond
-            ((string? result)
-             (cond
-              ((< (string-length result) 2)
-               (new-lexer-error
-                "unknown named character literal"
-                (list result)
+           (lex-brackets
+            open-curly close-curly
+            (lex-apply
+             (lambda (result)
+               (cond
+                ((string? result)
+                 (cond
+                  ((< (string-length result) 2)
+                   (new-lexer-error
+                    "unknown named character literal"
+                    (list result)
+                    ))
+                  ((and (char=? #\U (string-ref result 0))
+                        (char=? #\+ (string-ref result 1)))
+                   (hexdecode-string 2 result)
+                   )
+                  (else
+                   (let ((c ((*unicode-lookup-by-name*) result)))
+                     (if c c
+                         (new-lexer-error
+                          "unknown unicode symbol name"
+                          (list result))
+                         )))))
+                ((lexer-error-type? result) result)
+                (else (new-lexer-error "invalid named character literal" result))
                 ))
-              ((and (char=? #\U (string-ref result 0))
-                    (char=? #\+ (string-ref result 1)))
-               (hexdecode-string 2 result)
-               )
-              (else
-               (let ((c ((*unicode-lookup-by-name*) result)))
-                 (if c c
-                     (new-lexer-error
-                      "unknown unicode symbol name"
-                      (list result))
-                     )))))
-            ((lexer-error-type? result) result)
-            (else (new-lexer-error "invalid named character literal" result))
-            ))
-         (many/buffer
-          (many1/buffer (lex-table named-char-table))
-          ;; ^ gather non-spaces
-          (lex skip-space-chars (lex-const #\space))
-          ;; ^ skip many spaces, return single space
-          )))))
+             (many/buffer
+              (many1/buffer (lex-table named-char-table))
+              ;; ^ gather non-spaces
+              (lex skip-space-chars (lex-const #\space))
+              ;; ^ skip many spaces, return single space
+              )))))
 
     (define (ascii-ctrl-char c)
       (or (and
@@ -581,22 +583,22 @@
 
     (define ascii-c-dash-control-char
       (lex #\C
-       (either  no-eof-in-char-literal
-        (lex #\-
-         (either  no-eof-in-char-literal  ascii-ctrl-char)
-         ))))
+           (either  no-eof-in-char-literal
+                    (lex #\-
+                         (either  no-eof-in-char-literal  ascii-ctrl-char)
+                         ))))
 
     (define tokenize-escape-char-table
       (alist->parse-table (any)
-       `(,escape-string-table
-         (#\x . ,hexchar)
-         (#\X . ,hexchar)
-         (#\u . ,(unichar 4 "expecting exactly 4 hexdigits after \"?\\u\" prefix"))
-         (#\U . ,(unichar 8 "expecting exactly 8 hexdigits after \"?\\U\" prefix"))
-         (#\N . ,named-char)
-         (#\^ . ,ascii-carrat-control-char)
-         (#\C . ,ascii-c-dash-control-char)
-         )))
+                          `(,escape-string-table
+                            (#\x . ,hexchar)
+                            (#\X . ,hexchar)
+                            (#\u . ,(unichar 4 "expecting exactly 4 hexdigits after \"?\\u\" prefix"))
+                            (#\U . ,(unichar 8 "expecting exactly 8 hexdigits after \"?\\U\" prefix"))
+                            (#\N . ,named-char)
+                            (#\^ . ,ascii-carrat-control-char)
+                            (#\C . ,ascii-c-dash-control-char)
+                            )))
 
 
     (define (%tokenize-escape-char st)
@@ -674,12 +676,12 @@
        (lambda (st)
          (let ((result
                 (run-lexer st
-                 (many1
-                  (take
-                   (lambda (c)
-                     (and (char? c)
-                          (or (char=? c #\delete)
-                              (char<=? c #\space))))))))
+                           (many1
+                            (take
+                             (lambda (c)
+                               (and (char? c)
+                                    (or (char=? c #\delete)
+                                        (char<=? c #\space))))))))
                )
            (cond
             (result
@@ -737,10 +739,10 @@
          (run-lexer st #\, ) ;; skip leading comma
          (let ((token-type
                 (run-lexer st
-                 (either
-                  (take (lambda (c) (and (char=? c #\@) token-splice)))
-                  (lex-const token-unquote)
-                  )))
+                           (either
+                            (take (lambda (c) (and (char=? c #\@) token-splice)))
+                            (lex-const token-unquote)
+                            )))
                )
            (values token-type #t)
            ))))
@@ -777,11 +779,11 @@
        (lambda (st)
          (let ((step
                 (run-lexer st
-                 (either (eof)
-                  (look
-                   (lambda (c)
-                     (parse-table-ref elisp-tokenizer-table c)
-                     ))))))
+                           (either (eof)
+                                   (look
+                                    (lambda (c)
+                                      (parse-table-ref elisp-tokenizer-table c)
+                                      ))))))
            (cond
             ((eof-object? step) (values token-eof #f))
             ((not step)
@@ -808,7 +810,11 @@
       (elisp-quote-scheme  scheme-value  is-backquote)
       elisp-quote-scheme-type?
       (scheme-value  elisp-unquote-scheme)
-      (is-backquote  elisp-backquoted-form?)
+      (is-backquote  %elisp-backquoted-form?)
+      )
+
+    (define (elisp-backquoted-form? o)
+      (and (elisp-quote-scheme-type? o) (%elisp-backquoted-form? o))
       )
 
     (define elisp-quote-scheme-equal?
@@ -821,8 +827,8 @@
            (and
             (elisp-quote-scheme-type? a)
             (elisp-quote-scheme-type? b)
-            (eq? (elisp-backquoted-form? a)
-                 (elisp-backquoted-form? b)
+            (eq? (%elisp-backquoted-form? a)
+                 (%elisp-backquoted-form? b)
                  )
             (equal?
              (elisp-unquote-scheme a)
@@ -878,14 +884,13 @@
 
     (define (square-bracketed-form? form)
       (let ((c (elisp-form-delim form)))
-        (and (char? c) (char=? c close-square))
+        (and (elisp-form-type? form) (char? c) (char=? c close-square))
         ))
 
     (define (elisp-form-length a)
       (+ (vector-length (elisp-form-tokens a))
          (if (elisp-form-dot-element a) 1 0)
          ))
-
 
     (define (quote-syntax? elem)
       (and (pair? elem)
@@ -894,7 +899,9 @@
            elem
            ))
 
-    (define (t-dec  maxdepth) (or (eq? maxdepth #t) (- maxdepth  1)))
+    (define (t-dec  maxdepth)
+      (or (eq? maxdepth #t) (- maxdepth  1))
+      )
 
     (define list->elisp-form
       ;; Convert a Scheme list data structure to an Emacs Lisp AST. Can be
@@ -994,6 +1001,7 @@
                      (case head
                        ((quote)            (elisp-quote-scheme  (mktail) #f))
                        ((quasiquote)       (elisp-quote-scheme  (mktail) #t))
+                       ((backquote)        (elisp-quote-scheme  (mktail) #t))
                        ((unquote)          (elisp-unquoted-form (mktail) #f))
                        ((unquote-splicing) (elisp-unquoted-form (mktail) #t))
                        ((function) (make<elisp-function-ref> #f (mktail)))
@@ -1020,7 +1028,7 @@
               ((elisp-quote-scheme-type? elem)
                (elisp-quote-scheme
                 (loop (t-dec maxdepth) (elisp-unquote-scheme elem))
-                (elisp-backquoted-form? elem)
+                (%elisp-backquoted-form? elem)
                 ))
               ((elisp-unquoted-form-type? elem)
                (elisp-unquoted-form
@@ -1029,7 +1037,6 @@
                 ))
               (else elem)
               ))))))
-
 
     (define elisp-form->list
       ;; In order to preserve the file locations of each form for as long
@@ -1125,13 +1132,13 @@
                  (cond
                   (do-quotes
                    (list
-                    (if (elisp-backquoted-form? form) 'quasiquote 'quote)
+                    (if (%elisp-backquoted-form? form) 'backquote 'quote)
                     result
                     ))
                   (else
                    (elisp-quote-scheme
                     result
-                    (elisp-backquoted-form? form)
+                    (%elisp-backquoted-form? form)
                     )))))
               ((elisp-function-ref-type? form)
                (let ((result
@@ -1146,7 +1153,6 @@
                       ))))
               (else form)
               ))))))
-
 
     (define (elisp-form-equal? a b)
       ;; Compare two forms by content, ignoring location.
@@ -1189,20 +1195,150 @@
                     (loop (+ 1 i))
                     )
                    (else #f)
-                   ))))))
-           )))))
-
+                   )))))))))))
 
     (define (elisp-form->vector form)
       (let ((vec (elisp-form-tokens form)))
         (cond
-         ((mutable-vector-type? vec)
-          (mutable-vector->vector vec)
-          )
+         ((mutable-vector-type? vec) (mutable-vector->vector vec))
          (else vec)
          )))
 
-    ;;--------------------------------------------------------------------------------------------------
+    (define (%elisp-form-fold on-quoted on-unquoted proc)
+      (lambda (init o)
+        (cond
+         ((elisp-form-type? o)
+          (cond
+           ((square-bracketed-form? o)
+            ;; Square-bracketed forms are the same as quoted forms
+            ;; except that it evaluates to a vector. Like quoted forms,
+            ;; the content can be ignored as unquoted forms are not to
+            ;; be have their content evaluated.
+            (on-quoted init o)
+            )
+           (else
+            (let*((tokens (elisp-form-tokens o))
+                  (len   (vector-length tokens))
+                  )
+              (let loop ((i 0) (init init))
+                (cond
+                 ((< i len)
+                  (loop
+                   (+ 1 i)
+                   ((%elisp-form-fold on-quoted on-unquoted proc)
+                    init (vector-ref tokens i)
+                    )))
+                 ((elisp-form-dot-element o)
+                  ((%elisp-form-fold on-quoted on-unquoted proc)
+                   init (elisp-form-dot-element o)
+                   ))
+                 (else init)
+                 ))))))
+         ((elisp-function-ref-type? o)
+          ((%elisp-form-fold on-quoted on-unquoted proc)
+           init (elisp-function-get-ref o)
+           ))
+         ((elisp-unquoted-form-type? o) (on-unquoted init o))
+         ((elisp-quote-scheme-type?  o) (on-quoted   init o))
+         (else (proc init o))
+         )))
+
+    (define (elisp-form-fold proc)
+      ;; This is a curried function that first takes a `PROC`
+      ;; procedure that will fold over elements of a form, unless
+      ;; those elements are quoted or inside of quoted forms and not
+      ;; unquoted. The `PROC` procedure itself takes two arguments:
+      ;;
+      ;;  1. the accumulating folded value
+      ;;  2. the current form element being inspected
+      ;;
+      ;;  - returns: the accumulating folded value after folding.
+      ;;
+      ;; This `ELISP-FORM-FOLD` procedure itself returns a procedure
+      ;; which takes two arguments in the same order and serving the
+      ;; same purpose as the arguments given to `PROC`.
+      ;;
+      ;; Example usage:
+      ;;
+      ;; ```
+      ;;     ((elisp-form-fold +) 0 (elisp-read "(1 2 '(3 ,4) `(,5 6))"))
+      ;; ```
+      ;;
+      ;; The above should return 1 + 2 + 5 = 8
+      ;;--------------------------------------------------------------
+      (%elisp-form-fold
+       (lambda (init o)
+         (cond
+          ((elisp-backquoted-form? o)
+           ((elisp-form-fold-backquote proc) init o)
+           )
+          (else init)
+          ))
+       (elisp-form-fold-unquote proc)
+       (lambda (init o) (proc init o))
+       ))
+
+    (define (elisp-form-fold-unquote proc)
+      ;; This procedure exists because the recursive call to
+      ;; `elisp-form-fold` is called with different `proc` procedures
+      ;; depending on whether we are folding within a backquoted form
+      ;; or not. Backquoted forms ignore elements that are not
+      ;; unquoted.  This procedure constructs a procedure to be used
+      ;; as the `on-unquote` argument to the `%elisp-form-fold`
+      ;; procedure.
+      (lambda (init o)
+        ((elisp-form-fold proc) init (elisp-unquoted-get-form o))
+        ))
+
+    (define (elisp-form-fold-backquote proc)
+      ;; Inside of a backquoted form, all unquotes, no matter how
+      ;; deep, and regardless of whether they are enclosed in other
+      ;; quoted forms or vector literals, must be expanded.
+      (%elisp-form-fold
+       (lambda (init o)
+         ((elisp-form-fold-backquote proc) init (elisp-unquote-scheme o))
+         )
+       (elisp-form-fold-unquote proc)
+       (lambda (init o) init)
+       ))
+
+    (define (%elisp-form-gather-symbols o equal? sym->str)
+      ((elisp-form-fold
+        (lambda (table o)
+          (cond
+           ((symbol? o)
+            (let ((o (sym->str o)))
+              (hash-table-set! table o o)
+              table
+              ))
+           (else table)
+           )))
+       (make-hash-table equal?)
+       o))
+
+    (define elisp-form-gather-symbols
+      ;; Gather all unquoted symbols in a given form `O`. Returns a
+      ;; hash table where every symbol in the form `O` is mapped to
+      ;; itself. For example the form `(a b c)` will have a hash table
+      ;; of the form `((a . a) (b . b) (c . c))`.
+      ;;
+      ;; You can also specify two additional optional arguments after
+      ;; `O` to transform the values stored in the hash table:
+      ;;
+      ;;  1. an equality test such as `string=?` used by the hash table,
+      ;;
+      ;;  2. a conversion such as `symbol->string` used to transform
+      ;;     symbols before storing them to the hash table.
+      ;;--------------------------------------------------------------
+      (case-lambda
+        ((o)
+         (%elisp-form-gather-symbols o eq? (lambda (sym) sym))
+         )
+        ((o equal? sym->str)
+         (%elisp-form-gather-symbols o equal? sym->str)
+         )))
+
+    ;;================================================================
 
     (define-record-type <elisp-function-ref>
       (make<elisp-function-ref> loc ref)
@@ -1220,7 +1356,7 @@
         (elisp-function-get-ref b)
         )))
 
-    ;;--------------------------------------------------------------------------------------------------
+    ;;================================================================
 
     (define-record-type <elisp-parse-state-type>
       (make<elisp-parse-state>
@@ -1266,11 +1402,9 @@
       (irritants  elisp-parse-error-irritants)
       )
 
-
     (define (elisp-parse-error message location . irritants)
       (make<elisp-parse-error> message location irritants)
       )
-
 
     (define parse-state
       (case-lambda
@@ -1296,10 +1430,9 @@
           (else (error "value cannot be use to initialize parser state" init))
           ))))
 
-
     (define (%run-parse-monad st loc token monad)
-      ((elisp-parse-monad-procedure monad) st loc token))
-
+      ((elisp-parse-monad-procedure monad) st loc token)
+      )
 
     (define (run-elisp-parse-monad init-state token . monads)
       (let ((st (parse-state init-state)))
@@ -1313,49 +1446,54 @@
                 (loop
                  (cdr monads)
                  (%run-parse-monad st
-                  (parser-state-get-location st)
-                  token next
-                  )))
+                                   (parser-state-get-location st)
+                                   token next
+                                   )))
                (else
                 (error "not a parse monad" next)
                 ))))))))
-
 
     (define =>elisp-parse-token-buffer*!
       (record-unit-lens
        elisp-parse-token-buffer
        set!elisp-parse-token-buffer
-       '=>elisp-parse-token-buffer*!))
+       '=>elisp-parse-token-buffer*!
+       ))
 
     (define =>elisp-parse-location-buffer*!
       (record-unit-lens
        elisp-parse-location-buffer
        set!elisp-parse-location-buffer
-       '=>elisp-parse-location-buffer*!))
+       '=>elisp-parse-location-buffer*!
+       ))
 
     (define =>elisp-parse-close-bracket*!
       (record-unit-lens
        elisp-parse-close-bracket
        set!elisp-parse-close-bracket
-       '=>elisp-parse-close-bracket*!))
+       '=>elisp-parse-close-bracket*!
+       ))
 
     (define =>elisp-parse-depth-counter*!
       (record-unit-lens
        elisp-parse-depth-counter
        set!elisp-parse-depth-counter
-       '=>elisp-parse-depth-counter*!))
+       '=>elisp-parse-depth-counter*!
+       ))
 
     (define =>elisp-parse-stack*!
       (record-unit-lens
        elisp-parse-stack
        set!elisp-parse-stack
-       '=>elisp-parse-stack*!))
+       '=>elisp-parse-stack*!
+       ))
 
     (define =>elisp-parse-backref-dict*!
       (record-unit-lens
        elisp-parse-backref-dict
        set!elisp-parse-backref-dict
-       '=>elisp-parse-backref-dict*!))
+       '=>elisp-parse-backref-dict*!
+       ))
 
     (define (elisp-parse-stack-frame st)
       (make<elisp-parse-stack-frame>
@@ -1374,6 +1512,7 @@
        =>lexer-filepath*!
        ))
 
+    ;;----------------------------------------------------------------
 
     (define elisp-form
       (case-lambda
@@ -1390,7 +1529,6 @@
             (parser-state-get-location st)
             )))))
 
-
     (define (opposing-bracket open)
       (case open
         (( #\( ) #\) )
@@ -1399,7 +1537,6 @@
         (( #f )  #f  )
         (else (error "unknown bracket token" open))
         ))
-
 
     (define (%push-token-buffer! st open-bracket)
       (update
@@ -1497,7 +1634,8 @@
       (case-lambda
         ((location) (write-parser-location location (current-output-port)))
         ((location port)
-         (write-lexer-location (%get-location location) port))))
+         (write-lexer-location (%get-location location) port)
+         )))
 
     ;;--------------------------------------------------------------------------------------------------
 
@@ -1510,10 +1648,9 @@
           (list tokenizer-error)
           ))))
 
-
     (define parse-space
-      (make<elisp-parse-monad> (lambda (st loc token) #t)))
-
+      (make<elisp-parse-monad> (lambda (st loc token) #t))
+      )
 
     (define (%elisp-append-token! st loc token)
       (let ((tok-buf (elisp-parse-token-buffer st))
@@ -1524,11 +1661,10 @@
         (mutable-vector-append! loc-buf (source-file-column loc))
         ))
 
-
     (define parse-literal
       (make<elisp-parse-monad>
-       (lambda (st start-loc token) token)))
-
+       (lambda (st start-loc token) token)
+       ))
 
     (define (%unmatched-close st start-loc token)
       (elisp-parse-error
@@ -1537,7 +1673,6 @@
        token 'expecting (elisp-parse-close-bracket st)
        ))
 
-
     (define (%unbalanced-eof st start-loc token)
       (elisp-parse-error
        "end of file reached with unbalanced parentheses"
@@ -1545,28 +1680,24 @@
        'depth (elisp-parse-depth-counter st)
        ))
 
-
     (define (%unbalanced-bracket-error st loc)
       (elisp-parse-error
        "unbalanced expression, unexpected close bracket"
        loc 'depth (elisp-parse-depth-counter st)
        ))
 
-
     (define unbalanced-bracket-error
       (make<elisp-parse-monad>
-       (lambda (st loc _) (%unbalanced-bracket-error st loc))))
-
+       (lambda (st loc _) (%unbalanced-bracket-error st loc))
+       ))
 
     (define unbalanced-eof (make<elisp-parse-monad> %unbalanced-eof))
-
 
     (define dot-syntax-error
       (make<elisp-parse-monad>
        (lambda (st loc token)
          (elisp-parse-error "invalid read syntax, dot not part of any form" loc)
          )))
-
 
     (define parse-close-dot
       (make<elisp-parse-monad>
@@ -1585,11 +1716,10 @@
               (parser-state-get-location st)
               )))))))
 
-
     (define parse-end-of-file
       (make<elisp-parse-monad>
-       (lambda (st start-loc eof) eof)))
-
+       (lambda (st start-loc eof) eof)
+       ))
 
     (define parse-close-bracket
       (make<elisp-parse-monad>
@@ -1601,7 +1731,6 @@
              ))
           (else (%unbalanced-eof st start-loc close))
           ))))
-
 
     (define (%elisp-parse-many st table)
       (let loop ()
@@ -1618,9 +1747,9 @@
                   (result
                    (let ()
                      (%run-parse-monad st
-                      (parser-state-get-location st)
-                      token parser
-                      )))
+                                       (parser-state-get-location st)
+                                       token parser
+                                       )))
                   )
               (cond
                ((eq? #t result) (loop))
@@ -1633,7 +1762,6 @@
                 (loop)
                 ))))))))
 
-
     (define parse-open-bracket
       (make<elisp-parse-monad>
        (lambda (st start-loc open)
@@ -1641,13 +1769,11 @@
          (%elisp-parse-many st elisp-form-parse-table)
          )))
 
-
     (define elisp-syntax-error
       (make<elisp-parse-monad>
        (lambda (st loc _)
          (elisp-parse-error "invalid read syntax" loc)
          )))
-
 
     (define (parser-lex-integer-base lexer)
       (make<elisp-parse-monad>
@@ -1665,7 +1791,6 @@
               after
               )))))))
 
-
     (define parse-hashed-quote
       (make<elisp-parse-monad>
        (lambda (st loc token)
@@ -1682,7 +1807,6 @@
             (else (elisp-quote-scheme datum #f))
             )))))
 
-
     (define parse-self-referential-form
       (make<elisp-parse-monad>
        (lambda (st loc token)
@@ -1693,8 +1817,8 @@
            (cond
             ((integer? datum)
              (let ((op (run-lexer tokst
-                        (char (lambda (c) (or (char=? c #\#) (char=? c #\=))))
-                        ))
+                                  (char (lambda (c) (or (char=? c #\#) (char=? c #\=))))
+                                  ))
                    )
                (cond
                 ((not op)
@@ -1735,7 +1859,6 @@
               loc datum
               )))))))
 
-
     (define parse-null-string-symbol
       (make<elisp-parse-monad>
        (lambda (st loc token)
@@ -1745,7 +1868,6 @@
          (run-lexer (elisp-parse-tokenizer-state st) (any)) ;; skip the #\# char
          (string->symbol "") ;; empty symbol
          )))
-
 
     (define hashcode-parse-table
       ;; Characters that have special meaning when immediately after a
@@ -1763,7 +1885,6 @@
          (#\#         . ,parse-null-string-symbol)
          )))
 
-
     (define parse-hashcode
       (make<elisp-parse-monad>
        (lambda (st start-loc token)
@@ -1773,7 +1894,6 @@
                  )
              (run-elisp-parse-monad st token next-parser)
              )))))
-
 
     (define (parse-quoted-form constructor op)
       (make<elisp-parse-monad>
@@ -1788,7 +1908,6 @@
             (else
              (constructor datum op)
              ))))))
-
 
     (define (elisp-parse-table on-close on-dot on-eof)
       ;; Construct a parse table with unique behavior specified for the
@@ -1808,14 +1927,12 @@
          (,token-splice        . ,(parse-quoted-form elisp-unquoted-form #t))
          )))
 
-
     (define elisp-form-parse-table
       (elisp-parse-table
        parse-close-bracket
        parse-close-dot
        unbalanced-eof
        ))
-
 
     (define elisp-top-level-parse-table
       (elisp-parse-table
@@ -1907,8 +2024,8 @@
                 (sym
                  (if delim
                      (run-lexer tokst
-                      (lex (many whitespace?)
-                           (many1/buffer dialect-symbol-table)))
+                                (lex (many whitespace?)
+                                     (many1/buffer dialect-symbol-table)))
                      #f))
                 (return (lambda (val) (run-lexer tokst (skip-to-next-line)) val))
                 )
@@ -1916,8 +2033,8 @@
              ((and (string? sym) (string=? sym "lexical-binding"))
               (let*-values
                   (((sep) (run-lexer tokst
-                           (lex (many whitespace?)
-                                (lex-first #\: (many whitespace?)))))
+                                     (lex (many whitespace?)
+                                          (lex-first #\: (many whitespace?)))))
                    ((token-type token)
                     (if sep
                         (%parse-next-token st)
@@ -1925,9 +2042,9 @@
                    ((delim)
                     (if token
                         (run-lexer tokst
-                         (lex-first
-                          (scan-for-string 1 "-*-")
-                          (optional (skip-to-next-line 1))))
+                                   (lex-first
+                                    (scan-for-string 1 "-*-")
+                                    (optional (skip-to-next-line 1))))
                         #f))
                    )
                 (cond
@@ -1971,9 +2088,9 @@
                    )
                   (result
                    (%run-parse-monad st
-                    (parser-state-get-location st)
-                    token next-parser
-                    ))
+                                     (parser-state-get-location st)
+                                     token next-parser
+                                     ))
                   )
               (set!elisp-parse-backref-dict st #f)
               result
