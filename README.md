@@ -165,16 +165,16 @@ dependencies available in the `%load-path`, simply load the main
 program into the REPL:
 
 ```scheme
-(load "./main-guile.scm")
+(load "./main-gui.scm")
 ```
 
 This will rebuild and launch the executable. If you are using the
 `./guile.sh` script to start the REPL, note that the
 `--fresh-auto-compile` flag is set, and so recompilation will occur
-every time `main-guile.scm` is loaded. If you are not hacking the
-Schemacs source code, feel free to delete this flag from the `guile.sh`
-script file so that `load` only builds the application once, and
-launches the application more quickly.
+every time `main-gui.scm` is loaded. If you are not hacking the
+Schemacs source code, feel free to delete this flag from the
+`guile.sh` script file so that `load` only builds the application
+once, and launches the application more quickly.
 
 ### Double-check the Guile `%load-path`
 

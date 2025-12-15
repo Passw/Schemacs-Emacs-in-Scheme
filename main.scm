@@ -2,7 +2,7 @@
 
   (guile-3
 
-   (load "./main-guile.scm")
+   (load "./main-gui.scm")
 
    )
 
