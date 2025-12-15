@@ -10,6 +10,7 @@
         =>lambda-optargs!
         =>lambda-rest!
         =>lambda-body!
+        =>lambda-lexenv!
         =>env-lexical-mode?!
         *elisp-output-port*
         *elisp-error-port*
@@ -327,6 +328,34 @@
            ))
        (test-closure-capture 2 3)
        )))
+
+;; Test whether closure properly captures variables but not let-bindings
+(test-assert
+    (let*((expr
+           (list->elisp-form
+            '(progn
+              (defun test-closure-capture (a b)
+                (let*((z 'fail)
+                      (f (lambda (c) (let ((z (+ a b c))) z))))
+                  (list (funcall f 1) f)
+                  ))
+              (test-closure-capture 2 3)
+              )))
+          (result (test-elisp-eval! expr))
+          (z-sym
+           (and
+            (pair? result)
+            (= 2 (length result))
+            (= (car result) 6)
+            (view (cadr result) =>lambda-lexenv! (=>hash-key! "z"))
+            )))
+      (cond
+       ((not z-sym) #t)
+       (else
+        (display ";Test failed, the variable `z` should not have been captured\n");;LOG
+        (display "; captured: ") (write z-sym) (newline);;LOG
+        #f
+        ))))
 
 ;;--------------------------------------------------------------------------------------------------
 ;; Test `SETQ`, `LET`, and `LET*` special forms.
