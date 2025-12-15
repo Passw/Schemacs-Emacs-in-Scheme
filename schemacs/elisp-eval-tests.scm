@@ -501,7 +501,7 @@
 (test-assert
     (test-run
      equal? (scheme->elisp '(a '())) test-elisp-eval!
-     (scheme->elisp '(let ((a '())) (debug-print-stack) `(a ',a)))
+     (scheme->elisp '(let ((a '())) `(a ',a)))
      ))
 
 ;;--------------------------------------------------------------------

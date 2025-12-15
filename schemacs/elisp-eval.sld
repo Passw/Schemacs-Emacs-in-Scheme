@@ -931,7 +931,6 @@
                 (else (eval-error "Invalid function" head))
                 ))))))))
 
-
     (define (i-eval-form interp)
       (lambda (expr loc)
         (match expr
@@ -981,7 +980,6 @@
             (else literal)
             )))))
 
-
     (define (i-eval-args-list interp)
       (lambda (arg-exprs)
         (let ((result
@@ -1000,7 +998,6 @@
           result
           )))
 
-
     (define (i-eval-progn-body interp)
       (lambda (body-exprs)
         (let loop ((exprs body-exprs))
@@ -1013,7 +1010,6 @@
              )
             (exprs (error "no function body" exprs))
             ))))
-
 
     (define (i-eval-backquote interp)
       (lambda (expr)
@@ -1077,7 +1073,6 @@
             (expr (single expr #f))
             ))))
 
-
     (define ordinary-interpreter
       (let ((i (new-interpreter)))
         (set!interpret-apply      i (i-%elisp-apply                 i))
@@ -1100,12 +1095,13 @@
 
     (define-record-type <debugger-state-type>
       (make<debugger-state>
-       interp      pause       step
+       interp     env     pause       step
        cur-form   last-value   trace-mode
        skip-mode  resume-mode  breaks
        )
       debugger-state-type?
       (interp       debugger-interpreter)
+      (env          debugger-environment)
       (pause        debugger-pause          set!debugger-pause) ;;continuation used to pause evaluation
       (step         debugger-stepper        set!debugger-stepper)
       (cur-form     debugger-current-form   set!debugger-current-form)
@@ -1165,9 +1161,16 @@
          )))
 
 
-    (define (new-debugger-state interp)
-      (make<debugger-state> interp #f #f #f #f #f #f #f '()))
+    (define new-debugger-state
+      (case-lambda
+        ((interp) (%new-debugger-state interp #f))
+        ((interp env) (%new-debugger-state interp env))
+        ))
 
+    (define (%new-debugger-state interp env)
+      (make<debugger-state>
+       interp env #f #f #f #f #f #f #f '()
+       ))
 
     (define (form-head form)
       (and
@@ -1204,7 +1207,15 @@
                   debug-state
                   (lambda ()
                     (set!debugger-last-value debug-state #f)
-                    (let*((return ((i-eval-form i) form loc)))
+                    (let*((return
+                           (cond
+                            ((debugger-environment debug-state)
+                             (parameterize
+                                 ((*the-environment* (debugger-environment debug-state)))
+                               ((i-eval-form i) form loc)
+                               ))
+                            (else ((i-eval-form i) form loc))
+                            )))
                       (set!debugger-last-value debug-state return)
                       (set!debugger-current-form debug-state form)
                       (set!debugger-stepper debug-state (lambda () (resume return)))
@@ -1213,10 +1224,15 @@
                  ((debugger-pause debug-state) #t)
                  ))))))))
 
+    (define new-debugger
+      (case-lambda
+        (() (%new-debugger #f))
+        ((env) (%new-debugger env))
+        ))
 
-    (define (new-debugger)
+    (define (%new-debugger env)
       (let*((i  (new-interpreter))
-            (st (new-debugger-state i))
+            (st (new-debugger-state i env))
             )
         (set!interpret-eval       i (%debug-eval  st))
         (set!interpret-eval-qq    i (i-eval-backquote i))
@@ -1227,7 +1243,6 @@
         (set!interpret-new-frame  i (i-push-stack-frame-eval-body i))
         (set!debugger-stepper st #t)
         st))
-
 
     (define (elisp-debug-step! debug-state)
       ;; Single-step the evaluator in the `DEBUG-STATE`.
@@ -1256,7 +1271,6 @@
                (stepper)
                )))))))
 
-
     (define (elisp-debug-view-step! debug-state)
       ;; Like `ELISP-DEBUG-STEP!` except it shows which form is being
       ;; evaluated, and what value the form returns, unless the form does
@@ -1269,7 +1283,6 @@
         (lambda () (write-elisp-form (view debug-state =>debugger-last-value*!)) (newline))
         ))
 
-
     (define (elisp-debug-step-value! debug-state)
       ;; Perform a step and then return the value it returned to the
       ;; calling context. Obviously this is only useful when manipulating
@@ -1278,7 +1291,6 @@
       (elisp-debug-step! debug-state)
       (debugger-last-value debug-state)
       )
-
 
     (define (elisp-debug-skip! debug-state)
       ;; FIXME: this does not work correctly yet, see `ELISP-DEBUG-CONTINUE!`.
@@ -1293,13 +1305,11 @@
       (elisp-debug-step! debug-state)
       )
 
-
     (define (elisp-debug-continue! debug-state)
       ;; FIXME: this does not work correctly yet, fails to stop at breakpoints.
       (set!debugger-continue-mode debug-state #t)
       (elisp-debug-step! debug-state)
       )
-
 
     (define (elisp-debug-set-break! debug-state sym)
       ;; FIXME: this does not work correctly yet, see `ELISP-DEBUG-CONTINUE!`.
@@ -1314,7 +1324,6 @@
             ))
          debug-state =>debugger-breakpoints*!
          )))
-
 
     (define (elisp-debug-clear-break! debug-state sym)
       (let ((sym (ensure-string sym)))
@@ -1341,7 +1350,6 @@
          debug-state =>debugger-breakpoints*!
          )))
 
-
     (define elisp-debug-show-breaks
       (case-lambda
         ((debug-state)
@@ -1358,7 +1366,6 @@
                (loop (cdr breaks))
                )))))))
 
-
     (define elisp-debug-eval
       ;; Construct a new debugger state containing the given `EXPR`
       ;; argument and return it.  It is also possible to reused a debugger
@@ -1368,13 +1375,28 @@
       ;; `ELISP-DEBUG-SET-BREAK!`, `DEBUG-CLEAR-BREAK!`, and
       ;; `ELISP-DEBUG-SHOW-BREAKS`.
       (case-lambda
-        ((expr) (elisp-debug-eval expr (new-debugger)))
-        ((expr debug-state)
-         (set!debugger-current-form debug-state expr)
-         (set!debugger-last-value debug-state #f)
-         (elisp-debug-step! debug-state)
-         debug-state
-         )))
+        ((expr) (elisp-debug-eval expr #f))
+        ((expr st)
+         (cond
+          ((debugger-state-type? st)
+           (%elisp-debug-eval expr st)
+           )
+          ((elisp-environment-type? st)
+           (%elisp-debug-eval expr (new-debugger st))
+           )
+          (else
+           (error
+            "second argument must be a debugger state or environment"
+            st
+            ))))
+        ))
+
+    (define (%elisp-debug-eval expr debug-state)
+      (set!debugger-current-form debug-state expr)
+      (set!debugger-last-value debug-state #f)
+      (elisp-debug-step! debug-state)
+      debug-state
+      )
 
     ;;--------------------------------------------------------------------
     ;; The following interfaces are used by built-in macros such as
