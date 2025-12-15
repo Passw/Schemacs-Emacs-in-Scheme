@@ -2394,11 +2394,22 @@
                 (else (values)))
               (let ((key-compare
                      (case testfunc
-                       ((eq) eq?)
-                       ((eql) eqv?)
-                       ((equal) equal?)
-                       (else #f)
-                       )))
+                       ((eq) eval-eq)
+                       ((eq?) eq?)
+                       ((eql) eval-eql)
+                       ((eql?) eqv?)
+                       ((equal) eval-equal)
+                       ((equal?) equal?)
+                       (else
+                        (cond
+                         ((eq? testfunc eq?) eq?)
+                         ((eq? testfunc eqv?) eqv?)
+                         ((eq? testfunc equal?) equal?)
+                         ((eq? testfunc elisp-equal) elisp-equal)
+                         ((eq? testfunc elisp-eql) elisp-eql)
+                         ((eq? testfunc elisp-eq) elisp-eq)
+                         (else #f)
+                         )))))
                 (cond
                  (key-compare (make-hash-table key-compare))
                  (else
@@ -2556,16 +2567,21 @@
        (else (eq? a b))
        ))
 
+    (define (eval-eql a b) (or (eval-eq a b) (eqv? a b)))
+
     (define (eval-equal a b) (or (eval-eq a b) (equal? a b)))
 
     (define (%equality fname compare)
-      (lambda args
-        (match args
-          ((a b) (compare a b))
-          (any (eval-error  "wrong numbet of arguments" fname 'expected 2 any))
-          )))
+      (pure
+       2 fname
+       (lambda args
+         (match args
+           ((a b) (compare a b))
+           (any (eval-error  "wrong numbet of arguments" fname 'expected 2 any))
+           ))))
 
     (define elisp-eq    (%equality "eq"    eval-eq))
+    (define elisp-eql   (%equality "eql"   eval-eql))
     (define elisp-equal (%equality "equal" eval-equal))
 
     (define (eval-member fname compare)
@@ -2894,8 +2910,9 @@
          (dotimes  . ,elisp-dotimes)
          (dolist   . ,elisp-dolist)
 
-         (eq       . ,(pure 2 "eq" elisp-eq))
-         (equal    . ,(pure 2 "equal" elisp-equal))
+         (eq       . ,elisp-eq)
+         (eql      . ,elisp-eql)
+         (equal    . ,elisp-equal)
 
          (|1+| . ,(pure 1 "1+" |1+|))
          (|1-| . ,(pure 1 "1-" |1-|))
