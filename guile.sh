@@ -15,7 +15,7 @@ GUILE_REPL_IN_GDB=false;
 GUILE_IN_GUIX_SHELL=false;
 
 #export GDK_BACKEND='x11,wayland';
-#export GTK_DEBUG='interactive';
+export GTK_DEBUG='interactive';
 #export GOBJECT_DEBUG='instance-count';
 
 #---------------------------------------------------------------------
