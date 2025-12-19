@@ -1346,10 +1346,12 @@
       (let loop ((val val))
         (cond
          ((pair? val)
-          (cons
-           (replace-head (car val))
-           (map replace-elem (cdr val))
-           ))
+          (let*((head (replace-head (car val)))
+                (tail (cdr val))
+                (tail (if (pair? tail) (map replace-elem tail) tail))
+                )
+            (cons head tail)
+            ))
          (else val)
          )))
 

@@ -346,8 +346,13 @@
                 (else (values))
                 )))))))
 
+    (define (set-lexical-binding env val)
+      (lens-set val env =>env-lexical-mode?!)
+      (lens-set val env (=>env-obarray-key! "lexical-binding"))
+      )
+
     (define (%elisp-eval! expr env)
-      (define (run)
+      (define (run env)
         (call/cc
          (lambda (halt-eval)
            (let*((handler (new-elisp-error-handler env halt-eval))
@@ -361,9 +366,8 @@
               ((elisp-eval-error-type? return) (raise-impl return))
               (else return)
               )))))
-      (define (run-with-mode new-lxmode)
-        (let*((env (*the-environment*))
-              (old-lxmode (view env =>env-lexical-mode?!))
+      (define (run-with-mode new-lxmode env)
+        (let*((old-lxmode (view env =>env-lexical-mode?!))
               (sym-name "max-lisp-eval-depth")
               (trace-max (view env (=>env-symbol! sym-name) (=>sym-value! sym-name)))
               )
@@ -372,24 +376,22 @@
              (max 100 (or trace-max (*max-lisp-eval-depth*)))
              env =>env-trace-max*!
              ))
-          (lens-set new-lxmode env =>env-lexical-mode?!)
-          (let ((result (run)))
-            (lens-set old-lxmode env =>env-lexical-mode?!)
+          (set-lexical-binding env new-lxmode)
+          (let ((result (run env)))
+            (set-lexical-binding env old-lxmode)
             result
             )))
       (cond
-       ((not env) (run-with-mode #f))
+       ((boolean? env) (run-with-mode env (*the-environment*)))
        ((elisp-environment-type? env)
-        (parameterize ((*the-environment* env)) (run))
+        (parameterize ((*the-environment* env)) (run env))
         )
        ((or (hash-table? env) (pair? env))
-        (let ((new-env (new-empty-environment *default-obarray-size*))
-              )
-          (parameterize
-              ((*the-environment* new-env))
-            (run-with-mode #t)
+        (let ((new-env (new-empty-environment *default-obarray-size*)))
+          (parameterize ((*the-environment* new-env))
+            (run-with-mode #t new-env)
             )))
-       (else (run-with-mode #t))
+       (else (run-with-mode #t (*the-environment*)))
        ))
 
     (define elisp-eval!
@@ -924,8 +926,7 @@
                          )))
                      (else
                       (eval-error "Invalid macro" 'expected 'lambda 'actual func)
-                      )
-                     ))
+                      )))
                    (any (eval-error "Invalid function" func))
                    ))
                 (else (eval-error "Invalid function" head))
@@ -1860,25 +1861,31 @@
     (define (eval-defalias sym-expr val-expr docstr)
       (let*((st (*the-environment*))
             (sym (eval-ensure-interned (eval-form sym-expr)))
+            (fset
+             (or (eval-get st sym "defalias-fset-function")
+                 (lambda (sym val) (eval-fset st sym val))
+                 ))
             (val (eval-form val-expr))
             (func
-             (let loop ((val val))
-               (cond
-                ((symbol? val)
-                 (loop (view st (=>env-obarray-key! (symbol->string val)))))
-                ((sym-type? val) (view val =>sym-function*!))
-                ((lambda-type? val) val)
-                ((procedure? val) val)
-                ((command-type? val) val)
-                ((pair? val) val)
-                (else #f)
-                ))))
+             (cond
+              ((symbol? val)
+               (let*((val (eval-ensure-interned val)))
+                 (or (view val =>sym-function*!) val)
+                 ))
+              ((sym-type? val)
+               (or (view val =>sym-function*!) val)
+               )
+              ((lambda-type? val) val)
+              ((procedure? val) val)
+              ((command-type? val) val)
+              ((pair? val) val)
+              (else #f)
+              )))
         (cond
          ((not func) (eval-error "void function" val))
          ((not sym) (eval-error "wrong type argument" sym 'expecting "symbol"))
-         (else
-          (lens-set! func sym =>sym-function*!)
-          ))))
+         (else (fset sym func))
+         )))
 
     (define elisp-defalias
       (make<syntax>
@@ -2034,18 +2041,17 @@
       ;; `<SYM-TYPE>` object itself.
       (cond
        ((sym-type? name/sym)
-        (let-values
-            (((obj return) (updater name/sym)))
-          return
-          ))
+        (let-values (((obj return) (updater name/sym))) return)
+        )
        ((symbol/string? name/sym)
         (let-values
             (((obj return)
-              (update&view updater st
-                           (=>env-obarray-key! (ensure-string name/sym)))))
+              (update&view
+               updater st
+               (=>env-obarray-key! (ensure-string name/sym))
+               )))
           return
           ))))
-
 
     (define (eval-ensure-interned sym)
       ;; A procedure that returns a <SYM-TYPE> object or creates a new
@@ -2164,33 +2170,70 @@
              (if obj =>sym-plist*! (=>sym-plist! (ensure-string sym)))
              (=>hash-key! prop)
              )
-            val)
-           ))))
+            val
+            )))))
 
     (define (eval-boundp st sym)
-      (view-on-symbol st sym (lambda (obj) (not (not (view obj (=>sym-value! sym)))))))
+      (view-on-symbol
+       st sym (lambda (obj) (not (not (view obj (=>sym-value! sym)))))
+       ))
 
     (define (eval-makunbound st sym)
-      (update-on-symbol st sym
-                        (lambda (obj) (values (lens-set #f obj (=>sym-value! sym)) obj))))
+      (update-on-symbol
+       st sym (lambda (obj) (values (lens-set #f obj (=>sym-value! sym)) obj))
+       ))
 
     (define (eval-symbol-function st sym)
-      (view-on-symbol st sym (lambda (obj) (view obj (=>sym-function! sym)))))
+      (view-on-symbol st sym (lambda (obj) (view obj (=>sym-function! sym))))
+      )
 
     (define (eval-fboundp st sym)
-      (not (not (eval-symbol-function st sym))))
+      (not (not (eval-symbol-function st sym)))
+      )
+
+    (define (symbol-indirection st sym)
+      (cond
+       ((string? sym) (view st (=>env-obarray-key! sym)))
+       ((symbol? sym) (view st (=>env-obarray-key! (symbol->string sym))))
+       ((sym-type? sym) sym)
+       (else #f)
+       ))
+
+    (define (check-cyclic-function-indirection st sym func)
+      (let ((sym (symbol-indirection st sym)))
+        (and sym
+             (let loop ((stack (list sym)) (func func))
+               (let ((func (symbol-indirection st func)))
+                 (cond
+                  ((not func) #f)
+                  ((memq func stack) (cons func stack))
+                  (else (loop (cons func stack) (view func =>sym-function*!)))
+                  ))))))
 
     (define (eval-fset st sym func)
       (let ((sym (ensure-string sym)))
-        (update-on-symbol st sym
-                          (lambda (obj)
-                            (values
-                             (lens-set (elisp->scheme func) obj (=>sym-function! sym))
-                             func
-                             )))))
+        (cond
+         ((string? func)
+          ;; TODO: Emacs Lisp lets you declare a string of key events
+          ;; as a function.
+          (error "Schemacs ELisp does not yet support the use of key input strings as procedures" func)
+          )
+         (else
+          (let ((cycle (check-cyclic-function-indirection st sym func)))
+            (cond
+             (cycle (eval-error "cyclic function indirection" cycle))
+             (else
+              (update-on-symbol
+               st sym
+               (lambda (obj)
+                 (values
+                  (lens-set (elisp->scheme func) obj (=>sym-function! sym))
+                  func
+                  ))))))))))
 
     (define (eval-fmakunbound st sym)
-      (view-on-symbol st sym (lambda (obj) (view st (=>env-obarray-key! sym)))))
+      (view-on-symbol st sym (lambda (obj) (view st (=>env-obarray-key! sym))))
+      )
 
     (define (|1+| n) (+ n 1))
     (define (|1-| n) (- n 1))
@@ -2242,7 +2285,11 @@
          ((symbol? arg)
           (let ((result (view arg =>elisp-symbol!)))
             (cond
-             ((sym-type? result) (view result =>sym-function*!))
+             ((symbol? result) (eval-function-ref (view result =>elisp-symbol!)))
+             ((sym-type? result)
+              (let ((func (view result =>sym-function*!)))
+                (if func (eval-function-ref func) result)
+                ))
              ((lambda-type? result) result)
              ((is-lambda? result) (make-lambda result))
              (else arg)
@@ -2261,7 +2308,6 @@
            (any (eval-error "wrong number of arguments" "function" 'expecting 1 'value any))
            ))))
 
-
     (define (elisp-symbol-op name type? op)
       (lambda args
         (match args
@@ -2277,8 +2323,8 @@
           (any
            (eval-error
             "wrong number of arguments" name
-            (length any) 'expecting 1))
-          )))
+            (length any) 'expecting 1
+            )))))
 
     (define (elisp-symbol-op2 name type? op)
       (lambda args
@@ -2292,13 +2338,13 @@
             (else
              (eval-error
               "wrong type argument" name
-              sym 'expecting "symbol"))
-            ))
+              sym 'expecting "symbol"
+              ))))
           (any
            (eval-error
             "wrong number of arguments" name
-            (length any) 'expecting 2)
-           ))))
+            (length any) 'expecting 2
+            )))))
 
     (define (elisp-make-symbol . args)
       (match args
@@ -2310,12 +2356,14 @@
            (eval-error "wrong type argument" name 'expecting "symbol or string"))
           ))
         (any
-         (eval-error "wrong number of arguments" "make-symbol"
-                     (length any) 'expecting 1))
-        ))
+         (eval-error
+          "wrong number of arguments" "make-symbol"
+          (length any) 'expecting 1
+          ))))
 
     (define elisp-symbol-name
-      (elisp-symbol-op "symbol-name" any-symbol? eval-symbol-name))
+      (elisp-symbol-op "symbol-name" any-symbol? eval-symbol-name)
+      )
 
     (define (elisp-bare-symbol . args)
       (match args
@@ -2330,23 +2378,28 @@
         (any
          (eval-error
           "wrong number of arguments" "bare-symbol"
-          (length any) 'expecting 1))
-        ))
+          (length any) 'expecting 1
+          ))))
 
     (define elisp-boundp
-      (elisp-symbol-op "unboundp" any-symbol? eval-boundp))
+      (elisp-symbol-op "unboundp" any-symbol? eval-boundp)
+      )
 
     (define elisp-makunbound
-      (elisp-symbol-op "makunbound" any-symbol? eval-makunbound))
+      (elisp-symbol-op "makunbound" any-symbol? eval-makunbound)
+      )
 
     (define elisp-intern
-      (elisp-symbol-op "intern" symbol/string? eval-intern))
+      (elisp-symbol-op "intern" symbol/string? eval-intern)
+      )
 
     (define elisp-intern-soft
-      (elisp-symbol-op "intern-soft" symbol/string? eval-intern-soft))
+      (elisp-symbol-op "intern-soft" symbol/string? eval-intern-soft)
+      )
 
     (define elisp-unintern
-      (elisp-symbol-op "unintern" symbol/string? eval-unintern))
+      (elisp-symbol-op "unintern" symbol/string? eval-unintern)
+      )
 
     (define (elisp-mapatoms . args)
       (match args
@@ -2354,20 +2407,24 @@
         ((func obarray)
          (eval-mapatoms (scheme-lambda->elisp-lambda func) obarray))
         ((any ...)
-         (eval-error "wrong number of arguments" "mapatoms" (length any)))
-        ))
+         (eval-error "wrong number of arguments" "mapatoms" (length any))
+         )))
 
     (define elisp-symbol-plist
-      (elisp-symbol-op "symbol-plist" any-symbol? eval-symbol-plist))
+      (elisp-symbol-op "symbol-plist" any-symbol? eval-symbol-plist)
+      )
 
     (define elisp-setplist
-      (elisp-symbol-op2 "setplist" any-symbol? eval-setplist))
+      (elisp-symbol-op2 "setplist" any-symbol? eval-setplist)
+      )
 
     (define elisp-set
-      (elisp-symbol-op2 "set" any-symbol? eval-set))
+      (elisp-symbol-op2 "set" any-symbol? eval-set)
+      )
 
     (define elisp-get
-      (elisp-symbol-op2 "get" symbol? eval-get))
+      (elisp-symbol-op2 "get" symbol? eval-get)
+      )
 
     (define (elisp-put . args)
       (match args
@@ -2377,20 +2434,24 @@
         (args
          (eval-error
           "wrong number of arguments" "put"
-          (length args) 'expecting 3))
-        ))
+          (length args) 'expecting 3
+          ))))
 
     (define elisp-symbol-function
-      (elisp-symbol-op "symbol-function" symbol? eval-symbol-function))
+      (elisp-symbol-op "symbol-function" symbol? eval-symbol-function)
+      )
 
     (define elisp-fboundp
-      (elisp-symbol-op "fboundp" symbol? eval-fboundp))
+      (elisp-symbol-op "fboundp" symbol? eval-fboundp)
+      )
 
     (define elisp-fmakunbound
-      (elisp-symbol-op "fmakunbound" symbol? eval-fmakunbound))
+      (elisp-symbol-op "fmakunbound" symbol? eval-fmakunbound)
+      )
 
     (define elisp-fset
-      (elisp-symbol-op2 "fset" symbol? eval-fset))
+      (elisp-symbol-op2 "fset" symbol? eval-fset)
+      )
 
     (define elisp-sxhash-equal (pure 1 "sxhash-equal" default-hash))
 
@@ -2450,8 +2511,8 @@
         (any
          (eval-error
           "wrong number of arguments"
-          "native-comp-function-p" 'expected 1 any)
-         )))
+          "native-comp-function-p" 'expected 1 any
+          ))))
 
     ;;--------------------------------------------------------------------------------------------------
 
@@ -3045,10 +3106,17 @@
          (let*((init-env (or init-env (*elisp-init-env*)))
                (size (or size *default-obarray-size*))
                (env (or env (*the-environment*)))
-               )
-           (env-reset-obarray! env size)
-           (env-reset-stack! env)
-           (env-alist-defines! env init-env)
+               (errors
+                (begin
+                  (env-reset-obarray! env size)
+                  (env-reset-stack! env)
+                  (env-alist-defines! env init-env)
+                  )))
+           (lens-set
+            (view env =>env-lexical-mode?!)
+            env (=>env-obarray-key! "lexical-binding")
+            )
+           errors
            ))))
 
     (define new-environment
