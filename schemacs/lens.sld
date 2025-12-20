@@ -48,7 +48,7 @@
   ;; a lens, such as `=>HASH-KEY`, then the non-canonical lens is
   ;; suffixed with an asterisk ("*"). Non-canonical lenses can also be
   ;; mutating. A "bang" ("!")  indicates a record mutating lens, and
-  ;; should be prefixed to the asterisk, if there is one:
+  ;; should be suffixed to the asterisk, if there is one:
   ;;
   ;;    `=>pure-lens`     :: replaces the target, and is canonical
   ;;    `=>impure-lens!`  :: mutates the target, and is canonical
