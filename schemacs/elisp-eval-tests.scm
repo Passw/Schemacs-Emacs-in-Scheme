@@ -1220,6 +1220,17 @@ top: glo = top
   (test-elisp-eval! '(delq t (mapcar (function symbolp) '(zero one two three four))))
   )
 
+(test-equal (list #t 3)
+  (test-elisp-eval! '(eval '(list lexical-binding (+ 1 2))))
+  )
+
+(test-equal (list #f 3)
+  (test-elisp-eval!
+   '(eval
+     '(list lexical-binding (+ 1 a))
+     '((a . 2))
+     )))
+
 (test-assert (test-elisp-eval! '(memq 'b '(a b c))))
 (test-assert (test-elisp-eval! '(memv 'b '(a b c))))
 
