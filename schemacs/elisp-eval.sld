@@ -82,7 +82,7 @@
           =>sym-name  =>sym-value*!  =>sym-function*!  =>sym-plist*!
           =>sym-value!  =>sym-function!  =>sym-plist!
           ensure-string  symbol/string?  any-symbol?
-          nil  t
+          nil  t  lexical-binding-varname
           lambda-type?  new-lambda  lambda-copy-into!
           =>lambda-kind!  =>lambda-args!
           =>lambda-optargs!  =>lambda-rest!
@@ -348,10 +348,10 @@
 
     (define (set-lexical-binding env val)
       (lens-set val env =>env-lexical-mode?!)
-      (lens-set val env (=>env-obarray-key! "lexical-binding"))
+      (lens-set val env (=>env-obarray-key! lexical-binding-varname))
       )
 
-    (define (%elisp-eval! expr env)
+    (define (eval-eval expr env)
       (define (run env)
         (call/cc
          (lambda (halt-eval)
@@ -395,16 +395,80 @@
        ))
 
     (define elisp-eval!
-      ;; Evaluate an Emacs Lisp expression that has already been parsed
-      ;; from a string into a list or vector data structure. You can pass
-      ;; an optional environment object, or a hash table. Note that if a
-      ;; hash table is given, a new environment is created with the
-      ;; lexical scoping mode enabled. If no environment is given, the
-      ;; current environment is used.
+      ;; This is a procedure intended to be called from within a
+      ;; Scheme environment. This function Evaluates an Emacs Lisp
+      ;; expression that has already been parsed from a string into a
+      ;; list or vector data structure. You can pass an optional
+      ;; environment object, or a hash table. Note that if a hash
+      ;; table is given, a new environment is created with the lexical
+      ;; scoping mode enabled. If no environment is given, the current
+      ;; environment is used.
       ;;------------------------------------------------------------------
       (case-lambda
-        ((expr) (elisp-eval! expr #f))
-        ((expr env) (%elisp-eval! expr env))
+        ((expr) (eval-eval expr #f))
+        ((expr env) (eval-eval expr env))
+        ))
+
+    (define (%elisp-eval . args)
+      ;; (Not for export.) This is the evaluator that can be called
+      ;; from within Emacs Lisp interpreter, that is running `eval` in
+      ;; Emacs Lisp will call this function, as opposed to
+      ;; `elisp-eval!` which is called from Scheme. The main
+      ;; difference (apart from the fact that it can only be called
+      ;; from Emacs Lisp) is that it does not setup it's own exception
+      ;; handler, which is important because if a call to `eval` in
+      ;; Emacs Lisp handle's it's own exception the same way Scheme
+      ;; handles exceptions, it will return a Scheme record type
+      ;; containing the error information rather than transfering
+      ;; control over to the Emacs Lisp exception handler.
+      (match args
+        ((expr)
+         (eval-form expr (env-get-location expr))
+         )
+        ((expr lexical)
+         (cond
+          ((pair? lexical)
+           (let*((lexical
+                  (let loop ((elems lexical))
+                    (cond
+                     ((pair? elems)
+                      (let ((assoc (car elems)))
+                        (cond
+                         ((pair? assoc)
+                          (let*((name (car assoc))
+                                (name
+                                 (cond
+                                  ((string? name) name)
+                                  ((symbol? name) (symbol->string name))
+                                  (else
+                                   (elisp-error
+                                    "void variable (not a variable name)" name
+                                    )))))
+                            (cons
+                             (new-symbol-value
+                              name (scheme->elisp (cdr assoc))
+                              )
+                             (loop (cdr elems))
+                             )))
+                         ((sym-type? assoc)
+                          (cons assoc (loop (cdr elems)))
+                          )
+                         (else (loop (cdr elems)))
+                         )))
+                     (else '())
+                     )))
+                 (len (length lexical))
+                 )
+             (env-with-elstkfrm!
+              (*the-environment*) #f len lexical
+              (lambda (elstkfrm) (eval-form expr (env-get-location expr)))
+              )))
+          (else
+           (env-with-elstkfrm!
+            (*the-environment*) (not (eq? #f lexical)) 0 '()
+            (lambda (elstkfrom) (eval-form expr (env-get-location expr)))
+            ))))
+        (any (elisp-error "wrong number of arguments" "eval" any))
         ))
 
     (define (eval-iterate-forms env port use-form)
@@ -1581,7 +1645,7 @@
                    (else
                     (let ((st (*the-environment*)))
                       (env-with-elstkfrm!
-                       st 1 '()
+                       st lexical-binding-varname 0 '()
                        (lambda (elstkfrm)
                          (let ((obj (elstkfrm-sym-intern! elstkfrm (symbol->string var) 0)))
                            (let loop ((n 0))
@@ -1621,7 +1685,7 @@
                        (st (*the-environment*))
                        )
                    (env-with-elstkfrm!
-                    st 1 '()
+                    st lexical-binding-varname 0 '()
                     (lambda (elstkfrm)
                       (let ((obj (elstkfrm-sym-intern! elstkfrm (symbol->string var) 0)))
                         (let loop ()
@@ -1703,7 +1767,7 @@
                 (match unbound-exprs
                   (()
                    (env-with-elstkfrm!
-                    st size (reverse bound)
+                    st lexical-binding-varname size (reverse bound)
                     (lambda _ (eval-progn-body progn-body))
                     ))
                   ((binding-expr more ...)
@@ -1729,7 +1793,6 @@
               (eval-error "wrong type argument, expecting list" otherwise)
               ))))))
 
-
     (define elisp-let*
       (make<syntax>
        (lambda expr
@@ -1739,7 +1802,7 @@
              ((bindings-form progn-body ...)
               (let ((bindings (%unpack bindings-form)))
                 (env-with-elstkfrm!
-                 st (length bindings) '()
+                 st lexical-binding-varname (length bindings) '()
                  (lambda (elstkfrm)
                    (let loop ((unbound-exprs bindings))
                      (match unbound-exprs
@@ -2928,8 +2991,7 @@
 
     (define (elisp-debug-print-stack . args)
       (match args
-        (() (pretty (print-all-stack-frames (*the-environment*)))
-         )
+        (() (pretty (print-all-stack-frames (*the-environment*))))
         ((port)
          (cond
           ((eq? port #t)
@@ -3075,7 +3137,7 @@
          (print            . ,elisp-print)
          (error            . ,elisp-error)
 
-         (eval             . ,elisp-eval!)
+         (eval             . ,%elisp-eval)
          (load             . ,elisp-load)
          (provide          . ,elisp-provide)
          (featurep         . ,elisp-featurep)
@@ -3114,7 +3176,7 @@
                   )))
            (lens-set
             (view env =>env-lexical-mode?!)
-            env (=>env-obarray-key! "lexical-binding")
+            env (=>env-obarray-key! lexical-binding-varname)
             )
            errors
            ))))

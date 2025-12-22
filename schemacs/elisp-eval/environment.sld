@@ -63,7 +63,7 @@
    elisp-procedure?  elisp-symbol?
 
    ;; Emacs Lisp constant symbols
-   nil t
+   nil t  lexical-binding-varname
 
    ;;----------------------------------------
    ;; Environment objects
@@ -887,6 +887,8 @@
       (record-unit-lens env-label set!env-label '=>env-label*!)
       )
 
+    (define lexical-binding-varname "lexical-binding")
+
     ;;--------------------------------------------------------------------------------------------------
 
     (define (env-push-trace! st loc sym on-err func)
@@ -1062,12 +1064,24 @@
         (update pop-stack st (if lxmode =>env-lexstack*! =>env-dynstack*!))
         ))
 
-    (define (env-push-new-elstkfrm! st size bindings)
-      ;; Inspect the lexical binding mode and push a new stack frame on
-      ;; the appropriate stack (lexical or dynamic stack). Return the
-      ;; empty stack frame that was pushed so it can be updated by the
-      ;; calling procedure.
-      (let*((lxmode (env-lxmode st))
+    (define (env-push-new-elstkfrm! st mode size bindings)
+      (let*((lxmode
+             (cond
+              ((string? mode)
+               (let ((sym (env-sym-lookup st mode)))
+                 (cond
+                  ((sym-type? sym)
+                   (and (not (eq? nil sym))
+                        (not (eq? #f (sym-value sym)))
+                        ))
+                  (else (env-lxmode st))
+                  )))
+              ((boolean? mode) mode)
+              ((eq? mode 'env-lxmode) (env-lxmode st))
+              (else
+               (error
+                "unknown value for mode argument of env-new-elstkfrm!" mode
+                ))))
             (elstkfrm
              (cond
               ((hash-table? bindings) bindings)
@@ -1075,13 +1089,30 @@
               ))
             (push-stack (lambda (stack) (cons elstkfrm stack)))
             )
+        (when (boolean? mode)
+          ;;FIXME: for some reason, setting the "lexical-binding"
+          ;; variable here does not seem to work as expected.
+          (lens-set
+           (new-symbol-value lexical-binding-varname mode)
+           elstkfrm (=>hash-key! lexical-binding-varname)
+           ))
         (update push-stack st (if lxmode =>env-lexstack*! =>env-dynstack*!))
         (bit-stack-push! (env-stkflags st) lxmode)
         elstkfrm
         ))
 
-    (define (env-with-elstkfrm! st size bindings proc)
-      (let*((elstkfrm (env-push-new-elstkfrm! st size bindings))
+    (define (env-with-elstkfrm! st mode size bindings proc)
+      ;; Inspect the lexical binding mode and push a new stack frame
+      ;; on the appropriate stack (lexical or dynamic stack). The
+      ;; `MODE` argumement can decide where to lookup the binding
+      ;; mode: if it is a string, lookup the value of that string and
+      ;; set dynamic binding only if that value is `nil`. If `MODE` is
+      ;; a symbol 'env-lxmode`, take it from the environment
+      ;; `env-lxmode`. If it is a boolean, force the lexical mode to
+      ;; that value.  Return the empty stack frame that was pushed so
+      ;; it can be updated by the calling procedure.
+      ;;--------------------------------------------------------------
+      (let*((elstkfrm (env-push-new-elstkfrm! st mode size bindings))
             (return   (proc elstkfrm))
             )
         (env-pop-elstkfrm! st)
