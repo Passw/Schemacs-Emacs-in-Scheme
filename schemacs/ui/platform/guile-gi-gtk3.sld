@@ -90,7 +90,8 @@
       ;; the `TOP` monad, and also sets the application window's title
       ;; to `WINDOW-NAME` and initializes it's size to `WINDOW-SIZE`.
       (lambda (app)
-        (let*((div (gtk-draw-app-window top))
+        (let*((settings (settings:get-default))
+              (div (gtk-draw-app-window top))
               (wref
                (cond
                 ((floater-type? div) (view div =floater-div*! =>div-widget*!))
@@ -98,6 +99,10 @@
                 ((not div) (display "WARNING: no `DIV` content to display\n") #f)
                 (else (error "not a `DIV` type" div))
                 )))
+          (when settings
+            (display "; successfully obtained settings object\n");;DEBUG
+            (set! (settings:gtk-label-select-on-focus settings) #f)
+            )
           (when wref
             (display "; show-all ") (write (gtk-get-outer-widget wref)) (newline);;DEBUG
             (widget:show-all (gtk-get-outer-widget wref))
@@ -1235,6 +1240,7 @@
         (gi-repo:load-by-name "Gtk" "VPaned")
         (gi-repo:load-by-name "Gtk" "Orientation")
         (gi-repo:load-by-name "Gtk" "Separator")
+        (gi-repo:load-by-name "Gtk" "Settings")
         (gi-repo:load-by-name "Gtk" "ScrolledWindow")
         (gi-repo:load-by-name "Gtk" "TextBuffer")
         (gi-repo:load-by-name "Gtk" "TextTag")
