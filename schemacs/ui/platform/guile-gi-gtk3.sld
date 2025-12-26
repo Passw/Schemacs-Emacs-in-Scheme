@@ -89,8 +89,19 @@
       ;; procedure that renders the content of a `div` constructed by
       ;; the `TOP` monad, and also sets the application window's title
       ;; to `WINDOW-NAME` and initializes it's size to `WINDOW-SIZE`.
-      (lambda (app) (gtk-draw-content top #f))
-      )
+      (lambda (app)
+        (let*((div (gtk-draw-app-window top))
+              (wref
+               (cond
+                ((floater-type? div) (view div =floater-div*! =>div-widget*!))
+                ((div-record-type? div) (view div =>div-widget*!))
+                ((not div) (display "WARNING: no `DIV` content to display\n") #f)
+                (else (error "not a `DIV` type" div))
+                )))
+          (when wref
+            (display "; show-all ") (write (gtk-get-outer-widget wref)) (newline);;DEBUG
+            (widget:show-all (gtk-get-outer-widget wref))
+            ))))
 
     (define (gtk-draw-div top)
       ;; This is the entrypoint into the program. Apply a `div`
@@ -563,14 +574,68 @@
       ;; `div`, it can be modified in the widget tree by replacing
       ;; itself in the `GtkBox`. The `OUTER` argument is the `GtkBox`,
       ;; if `OUTER` is `#f` a new `GtkBox` must be constructed.
-      (cond
-       ((floater-type? o)
-        ;; If a floater is not conained within a `div-space` node,
-        ;; then it should be treated as an application window.
-        (let*((flo o)
-              (o (floater-div flo))
-              (rect (floater-rect flo))
-              (size (rect2D-size rect))
+      (let*((cont (div-content o)))
+        (cond
+         ((not cont) o)
+         ((div-space-type? cont) (gtk-draw-div-space o outer cont))
+         ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
+         ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
+         ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) outer))
+         (else
+          (let*((cont-str
+                 (cond
+                  ((string? cont) cont)
+                  (else
+                   (call-with-port (open-output-string)
+                     (lambda (port) (write cont port) (get-output-string port))
+                     ))))
+                (props (view o =>div-properties*!))
+                (ptype (div-view-type o))
+                (wref
+                 (cond
+                  ((eq? ptype push-button) (gtk-draw-push-button cont props))
+                  ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
+                   (gtk-draw-text-editor cont props)
+                   )
+                  (else (gtk-draw-string cont props))
+                  ))
+                (outer (gtk-prepare-outer-box o outer #f))
+                )
+            (cond
+             (outer
+              (container:add outer wref)
+              (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
+              )
+             (else
+              (lens-set wref o =>div-widget*!)
+              ))
+            (lens-set gtk-div-delete o =>div-on-delete*!)
+            (update
+             ;; if the front-end developer has already set an updater
+             ;; function, do not replace it. Otherwise use
+             ;; `gtk-div-updater` as the updater.
+             (lambda (old-updater) (or old-updater gtk-div-updater))
+             o =>div-on-update*!
+             )
+            o)))))
+
+    (define (gtk-draw-app-window o/flo)
+      ;; This draws the root of the `DIV` tree before calling the
+      ;; recurisve procedure `gtk-draw-content` which draws the rest
+      ;; of the whole tree. The root requires special treatment
+      ;; because a top-level application window needs to be created,
+      ;; and the arguments used to creates the app window may differ
+      ;; based on whether the argument `O` is a floater type or a
+      ;; div-record type.
+      (let*-values
+          (((o rect)
+            (cond
+             ((floater-type? o/flo)
+              (values (floater-div flo) (floater-rect flo))
+              )
+             (else (values o/flo (rect2D 0 0 800 640)))
+             )))
+        (let*((size (rect2D-size rect))
               (props (and (div-record-type? o) (view o =>div-properties*!)))
               (title (prop-lookup 'title: props))
               (win-wref
@@ -584,55 +649,8 @@
           (gobject-ref win-wref)
           (container:add win-wref (gtk-get-outer-widget child))
           (lens-set win-wref o =>div-widget*!)
-          (widget:show-all win-wref)
-          flo))
-       (else
-        ;; Otherwise, the node type and content must be inspected to
-        ;; determine how to render it. 
-        (let*((cont (div-content o)))
-          (cond
-           ((not cont) o)
-           ((div-space-type? cont) (gtk-draw-div-space o outer cont))
-           ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
-           ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
-           ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) outer))
-           (else
-            (let*((cont-str
-                   (cond
-                    ((string? cont) cont)
-                    (else
-                     (call-with-port (open-output-string)
-                       (lambda (port) (write cont port) (get-output-string port))
-                       ))))
-                  (props (view o =>div-properties*!))
-                  (ptype (div-view-type o))
-                  (wref
-                   (cond
-                    ((eq? ptype push-button) (gtk-draw-push-button cont props))
-                    ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
-                     (gtk-draw-text-editor cont props)
-                     )
-                    (else (gtk-draw-string cont props))
-                    ))
-                  (outer (gtk-prepare-outer-box o outer #f))
-                  )
-              (cond
-               (outer
-                (container:add outer wref)
-                (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
-                )
-               (else
-                (lens-set wref o =>div-widget*!)
-                ))
-              (lens-set gtk-div-delete o =>div-on-delete*!)
-              (update
-               ;; if the front-end developer has already set an updater
-               ;; function, do not replace it. Otherwise use
-               ;; `gtk-div-updater` as the updater.
-               (lambda (old-updater) (or old-updater gtk-div-updater))
-               o =>div-on-update*!
-               )
-              o)))))))
+          o/flo
+          )))
 
     (define (gtk-draw-string o props)
       (display "; gtk-draw-string: ") (write o) (newline) ;;DEBUG
@@ -691,7 +709,7 @@
         (gtk-widget-set-event-handlers wref props)
         wref
         ))
- 
+
     ;;----------------------------------------------------------------
 
     (define (gtk-empty-div orient)
