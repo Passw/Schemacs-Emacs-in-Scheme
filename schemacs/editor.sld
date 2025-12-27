@@ -154,10 +154,10 @@
     ;; -------------------------------------------------------------------------------------------------
     ;; Keymaps defined prior to launching the programming editor GUI.
 
-    (define (uarg->integer uarg)
+    (define (uarg->integer dflt uarg)
       (cond
+       ((eq? #f uarg) dflt)
        ((eq? #t uarg) 4)
-       ((eq? #f uarg) 0)
        ((integer? uarg) uarg)
        ((number? uarg) (round uarg))
        (error "U-argument cannot be cast to integer" uarg)
@@ -179,9 +179,12 @@
            ))
         ((uarg c)
          (let ((buf (current-buffer)))
-           (let loop ((c (uarg->integer uarg)))
+           (let loop ((uarg (uarg->integer 1 uarg)))
              (cond
-              ((< 0 c) (impl/insert-char buf c))
+              ((< 0 uarg)
+               (impl/insert-char buf c)
+               (loop (- uarg 1))
+               )
               (else #f)
               ))))))
 
@@ -555,8 +558,9 @@
                      (parameterize
                          ((selected-frame parent)
                           (selected-window this)
-                          (current-buffer (window-buffer this))
-                          )
+                          (current-buffer
+                           (view (window-buffer this) =>state-var-value*!)
+                           ))
                        (key-event-handler
                         parent (collect-keymaps parent) key-path
                         )))
@@ -974,9 +978,9 @@
 
     ;;----------------------------------------------------------------
 
-    (define selected-frame (make-parameter #f))
+    (define selected-frame  (make-parameter #f))
     (define selected-window (make-parameter #f))
-    (define current-buffer (make-parameter #f))
+    (define current-buffer  (make-parameter #f))
     (define selected-buffer current-buffer)
 
     ;;----------------------------------------------------------------
@@ -1021,7 +1025,6 @@
     (define (display-in-echo-area winframe str)
       (let*((msgbuf (messages-buffer)))
         (clear-echo-area winframe)
-        ((*old-impl/display-in-echo-area*) winframe str)
         (impl/insert-string msgbuf str)
         ))
 
@@ -1029,7 +1032,8 @@
       (let*((winframe (selected-frame))
             (str (apply format (cons msgstr objlist)))
             )
-        (display-in-echo-area winframe str)))
+        (display-in-echo-area winframe str)
+        ))
 
     (define (is-buffer-changed? window)
       ;; Takes a window, calls *OLD-IMPL/IS-BUFFER-modified?* on the buffer

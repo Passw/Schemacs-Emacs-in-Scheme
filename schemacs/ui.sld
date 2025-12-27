@@ -341,7 +341,7 @@
       )
 
     (define (div-run-update old new)
-      (let ((update (or (div-on-update old) (div-on-update new))))
+      (let ((update (div-on-update old)))
         (when update (update old new))
         new
         ))
@@ -415,8 +415,9 @@
           (let*((usevar (car var-users))
                 (old-value (use-vars-value usevar))
                 (new-value (apply-use-vars log-output usevar))
+                (new-value (div-run-update old-value new-value))
                 )
-            (div-run-update old-value new-value)
+            (set!use-vars-value usevar new-value)
             (loop (cdr var-users))
             )))))
 

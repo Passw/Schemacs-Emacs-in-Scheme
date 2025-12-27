@@ -44,7 +44,7 @@
     (prefix (schemacs editor) ed:)
     (prefix (schemacs keymap) km:)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
-    (only (schemacs pretty) display-lines)
+    (only (schemacs pretty) display-lines pretty print line-break qstr)
     (only (scheme case-lambda) case-lambda)
     (only (scheme char) char-upcase)
     (prefix (gi) gi:)
@@ -94,17 +94,15 @@
               (div (gtk-draw-app-window top))
               (wref
                (cond
-                ((floater-type? div) (view div =floater-div*! =>div-widget*!))
+                ((floater-type? div) (view (floater-div div) =>div-widget*!))
                 ((div-record-type? div) (view div =>div-widget*!))
                 ((not div) (display "WARNING: no `DIV` content to display\n") #f)
                 (else (error "not a `DIV` type" div))
                 )))
           (when settings
-            (display "; successfully obtained settings object\n");;DEBUG
             (set! (settings:gtk-label-select-on-focus settings) #f)
             )
           (when wref
-            (display "; show-all ") (write (gtk-get-outer-widget wref)) (newline);;DEBUG
             (widget:show-all (gtk-get-outer-widget wref))
             ))))
 
@@ -454,11 +452,17 @@
            ((mod-bits)           (modifier-type->number modifiers))
            ((unicode)            (gtk-keyval-normalize keyval))
            )
-        ;; (format #t ;;DEBUG
-        ;;  ";;key-event (keyval: #x~x keycode: #x~x modifiers: ~s mod-bits: ~s unicode: ~a)\n" ;;DEBUG
-        ;;  keyval keycode modifiers mod-bits unicode) ;;DEBUG
-        ;; Example output of the above format statement after pressing space bar:
-        ;;     (key-event #x20 #x41 ())
+        ;; (pretty ;;DEBUG
+        ;;  (print ;;DEBUG
+        ;;   ";;key-event (keyval: " keyval ;;DEBUG
+        ;;   " keycode: " keycode           ;;DEBUG
+        ;;   " modifiers: " modifiers       ;;DEBUG
+        ;;   " mod-bits: " mod-bits         ;;DEBUG
+        ;;   " unicode: " unicode           ;;DEBUG
+        ;;   ")" (line-break);;DEBUG
+        ;;   )) ;;DEBUG
+        ;;;; Example output of the above format statement after pressing space bar:
+        ;;;;     (key-event #x20 #x41 ())
         (cond
          ((and (= 0 mod-bits) (char=? unicode #\null))
           ;; Ignored because this is a key press of a modifier without an
@@ -468,13 +472,11 @@
           (let*((mod-list (modifier-type->list modifiers))
                 (km-index (km:keymap-index (gtk-keymod->keymap-mod mod-list unicode)))
                 )
-            ;;(pretty (print ";;keymap-index " (km:keymap-index-print km-index) (line-break)));;DEBUG
             (gtk3-event-handler (lambda () (on-key-event km-index)))
             ;; Must return #t to prevent this event from propagating up
             ;; the widget tree to the parent TextView object and
             ;; triggering the default event handler.
             #t)))))
-
 
     (define (gtk-keymod->keymap-mod mod-list keyval)
       ;; This function is responsible for constructing keyboard modifier
@@ -497,7 +499,7 @@
               (cons 'control (loop (cdr mod-list) keyval))
               )
              (else
-              (format #t ";; unknown Gtk key modifier symbol \"~a\"\n" mod)
+              (pretty (print ";; unknown Gtk key modifier symbol" mod (line-break)));;DEBUG
               (loop (cdr mod-list) keyval)
               )))))))
 
@@ -608,12 +610,11 @@
                 )
             (cond
              (outer
-              (container:add outer wref)
+              (container:add outer (gtk-get-outer-widget wref))
               (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
               )
-             (else
-              (lens-set wref o =>div-widget*!)
-              ))
+             (else (lens-set wref o =>div-widget*!))
+             )
             (lens-set gtk-div-delete o =>div-on-delete*!)
             (update
              ;; if the front-end developer has already set an updater
@@ -636,7 +637,7 @@
           (((o rect)
             (cond
              ((floater-type? o/flo)
-              (values (floater-div flo) (floater-rect flo))
+              (values (floater-div o/flo) (floater-rect o/flo))
               )
              (else (values o/flo (rect2D 0 0 800 640)))
              )))
@@ -658,7 +659,6 @@
           )))
 
     (define (gtk-draw-string o props)
-      (display "; gtk-draw-string: ") (write o) (newline) ;;DEBUG
       (let ((wref
              (gi:make
               <GtkLabel>
@@ -672,6 +672,7 @@
               #:can-default #f
               #:vexpand #f
               #:hexpand #f
+              ;; TODO: set the #:attributes with Pango font properties
               )))
         (gobject-ref wref)
         (gtk-widget-set-event-handlers wref props)
@@ -702,16 +703,29 @@
         ))
 
     (define (gtk-draw-text-editor buffer props)
-      (let*((wref
+      (let*((viewport
              (gi:make
               <GtkTextView>
               #:buffer buffer
               #:hexpand #t
               #:vexpand #t
+              #:monospace (not (prop-lookup 'default-font: props))
+              ))
+            (scroll
+             (gi:make
+              <GtkScrolledWindow>
+              #:vscrollbar-policy 'automatic
+              #:hscrollbar-policy 'automatic
               #:visible #t
+              #:child viewport
+              ))
+            (wref
+             (make<gtk-div-contain>
+              #f scroll viewport buffer
               )))
-        (gobject-ref wref)
-        (gtk-widget-set-event-handlers wref props)
+        (gobject-ref viewport)
+        (gobject-ref scroll)
+        (gtk-widget-set-event-handlers viewport props)
         wref
         ))
 
@@ -769,15 +783,6 @@
         (lens-set gtk-div-contain-delete-all o =>div-on-delete*!)
         o))
 
-    (define (gtk-container-nullify-focus container _widget)
-      ;; A signal which disables the default focus behavior when a
-      ;; container widget is created.
-      ;;--------------------------------------------------------------
-      ;;(display "; caught set-focus-child signal\n");;DEBUG
-      (container:set-focus-child container #f)
-      #f
-      )
-
     (define (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
       (let*-values
           (((make-paned)
@@ -801,8 +806,8 @@
            ((split-wrefs)  (make-vector nsplits))
            ((wref)
             (make<gtk-div-contain>
-             (or outer splitpane) #f #f split-wrefs)
-            ))
+             (or outer splitpane) #f #f split-wrefs
+             )))
         (lens-set split-wrefs o =>div-widget*!)
         (gobject-ref splitpane)
         (gtk-set-widget-width-height (gtk-get-outer-widget first-wref) rect)
@@ -853,20 +858,20 @@
          ((eq? scrollprop 'vertical)
           (gi:make
            <GtkScrolledWindow>
-           #:vscrollbar-policy 'policy-automatic
-           #:hscrollbar-policy 'policy-never
+           #:vscrollbar-policy 'automatic
+           #:hscrollbar-policy 'never
            ))
          ((eq? scrollprop 'horizontal)
           (gi:make
            <GtkScrolledWindow>
-           #:vscrollbar-policy 'policy-never
-           #:hscrollbar-policy 'policy-automatic
+           #:vscrollbar-policy 'never
+           #:hscrollbar-policy 'automatic
            ))
          ((eq? scrollprop 'both)
           (gi:make
            <GtkScrolledWindow>
-           #:vscrollbar-policy 'policy-automatic
-           #:hscrollbar-policy 'policy-automatic
+           #:vscrollbar-policy 'automatic
+           #:hscrollbar-policy 'automatic
            ))
          (else (error "unknown value for 'scrollbar: property" scrollprop))
          )))
@@ -937,9 +942,15 @@
             (viewport (and scroll (gi:make <GtkViewport> #:visible #t)))
             (box-wref
              (cond
-              ((eq? orient cut-horizontal) (gi:make <GtkVBox> #:spacing 0 #:visible #t))
-              ((eq? orient cut-vertical)   (gi:make <GtkHBox> #:spacing 0 #:visible #t))
-              ((not orient) (gi:make <GtkVBox> #:spacing 0 #:visible #t))
+              ((eq? orient cut-horizontal)
+               (gi:make <GtkVBox> #:spacing 0 #:visible #t)
+               )
+              ((eq? orient cut-vertical)
+               (gi:make <GtkHBox> #:spacing 0 #:visible #t)
+               )
+              ((not orient)
+               (gi:make <GtkVBox> #:spacing 0 #:visible #t)
+               )
               (else (error "unknown box orientation value" orient))
               ))
             (pack-start (lambda (widget) (box:pack-start box-wref widget #f #f 0)))
@@ -1026,15 +1037,13 @@
     (define (gtk-draw-div-grid o outer cont)
       (let*((outer (gtk-prepare-outer-box o outer #f))
             (scroll (gtk-make-scroller o (div-prop-lookup 'scrolled: o)))
-            (viewport (and scroll (gi:make <GtkViewport> #:has-focus #f #:can-default #f)))
+            (viewport
+             (and scroll (gi:make <GtkViewport> #:has-focus #f #:can-default #f))
+             )
             (grid (gi:make <GtkGrid> #:has-focus #f #:can-default #f))
             (wref (make<gtk-div-contain> outer scroll viewport grid))
             )
         (gobject-ref grid)
-        (gi:connect grid container:add gtk-container-nullify-focus)
-        ;; ^ TODO: this doesn't prevent the first element in the grid from
-        ;;         being foused auomatically. Need to find out how to make
-        ;;         sure nothing is selected when the widget is realized.
         (when viewport (gobject-ref viewport))
         (lens-set gtk-div-delete o =>div-on-delete*!)
         ((for-each-div-grid
@@ -1097,71 +1106,164 @@
                 )
             (display "; new GtkTextTag object with properties: ") ;;DEBUG
             (write props) ;;DEBUG
-            (newline)      ;;DEBUG
+            (newline)     ;;DEBUG
             (gobject-ref props)
             style
             ))))
 
-    (define (gtk-buffer-length buffer)
-      (text-buffer:get-char-count buffer)
-      )
+    (define (gtk-buffer-method proc)
+      (lambda (buf . args)
+        (apply proc (view buf ed:=>buffer-view) args)
+        ))
 
-    (define (gtk-text-load-port buffer port flags)
+    (define gtk-buffer-length 
+      (gtk-buffer-method
+       (lambda (buffer)
+         (text-buffer:get-char-count buffer)
+         )))
+
+    (define gtk-text-load-port 
       ;; TODO: handle `FLAGS` to allow for markdown and HTML parsing.
-      (cond
-       ((not (gtk-buffer-type? buffer))
-        (error "not a GtkTextBuffer" buffer)
-        )
-       ((not (input-port-open? port))
-        (error "not an open input port" port)
-        )
-       (else
-        (let ((bufsize (gtk-buffer-length buffer)))
-          (let loop ((count 0))
-            (let*((next-chunk (read-string bufsize))
-                  (chunk-size (string-length next-chunk)))
-              (cond
-               ((eof-object? next-chunk) count)
-               (else
-                (text-buffer:insert-at-cursor buffer next-chunk chunk-size)
-                (display "; inserted ") (write chunk-size) (display " characters") (newline) ;;DEBUG
-                (loop (+ count chunk-size))
+      (gtk-buffer-method
+       (lambda (buffer port flags)
+         (cond
+          ((not (gtk-buffer-type? buffer))
+           (error "not a GtkTextBuffer" buffer)
+           )
+          ((not (input-port-open? port))
+           (error "not an open input port" port)
+           )
+          (else
+           (let ((bufsize (gtk-buffer-length buffer)))
+             (let loop ((count 0))
+               (let*((next-chunk (read-string bufsize))
+                     (chunk-size (string-length next-chunk))
+                     )
+                 (cond
+                  ((eof-object? next-chunk) count)
+                  (else
+                   (text-buffer:insert-at-cursor buffer next-chunk chunk-size)
+                   ;;(display "; inserted ") (write chunk-size) (display " characters") (newline) ;;DEBUG
+                   (loop (+ count chunk-size))
+                   ))))))))))
+
+    (define gtk-text-dump-port 
+      (gtk-buffer-method
+       (lambda (buffer port flags)
+         (cond
+          ((not (gtk-buffer-type? buffer))
+           (error "not a GtkTextBuffer" buffer)
+           )
+          ((not (output-port-open? port))
+           (error "not an open output port" port)
+           )
+          (else
+           (let*((chunk-size (*text-load-buffer-size*))
+                 (bufsize (gtk-buffer-length buffer))
+                 )
+             (let loop ((lo 0) (hi (min bufsize chunk-size)))
+               (cond
+                ((< lo bufsize)
+                 (let*((lo-iter
+                        (text-buffer:get-iter-at-offset!
+                         buffer (gi:make <GtkTextIter>) lo
+                         ))
+                       (hi-iter
+                        (text-buffer:get-iter-at-offset!
+                         buffer (gi:make <GtkTextIter>) hi
+                         ))
+                       (chunk (text-buffer:get-slice lo-iter hi-iter #t))
+                       )
+                   (string-for-each (lambda (c) (write-char c port)) chunk)
+                   (loop (+ lo chunk-size) (min bufsize (+ hi chunk-size)))
+                   ))
+                (else (values))
                 ))))))))
 
-    (define (gtk-text-dump-port buffer port flags)
-      (cond
-       ((not (gtk-buffer-type? buffer))
-        (error "not a GtkTextBuffer" buffer)
-        )
-       ((not (output-port-open? port))
-        (error "not an open output port" port)
-        )
-       (else
-        (let*((chunk-size (*text-load-buffer-size*))
-              (bufsize (gtk-buffer-length buffer))
-              )
-          (let loop ((lo 0) (hi (min bufsize chunk-size)))
-            (cond
-             ((< lo bufsize)
-              (let*((lo-iter
-                     (text-buffer:get-iter-at-offset!
-                      buffer (gi:make <GtkTextIter>)
-                      lo))
-                    (hi-iter
-                     (text-buffer:get-iter-at-offset!
-                      buffer (gi:make <GtkTextIter>)
-                      hi))
-                    (chunk (text-buffer:get-slice lo-iter hi-iter #t))
-                    )
-                (string-for-each (lambda (c) (write-char c port)) chunk)
-                (loop (+ lo chunk-size) (min bufsize (+ hi chunk-size)))
-                ))
-             (else (values))
-             ))))))
+    (define gtk-get-cursor-index 
+      (gtk-buffer-method
+       (lambda (buffer)
+         (text-buffer:cursor-position bufrer)
+         )))
 
-    (define (gtk-delete-from-cursor buffer to)
-      (display "; to: ") (write to) (newline);;DEBUG
-      )
+    (define gtk-set-cursor-index
+      (gtk-buffer-method
+       (lambda (buffer index)
+         (text-buffer:cursor-position buffer index)
+         )))
+
+    (define gtk-move-cursor-index
+      (gtk-buffer-method
+       (lambda (buffer index)
+         (let*((cursor (text-buffer:cursor-position buffer)))
+           (text-buffer:cursor-position buffer (+ cursor index))
+           ))))
+
+    (define gtk-set-cursor-position
+      (gtk-buffer-method
+       (lambda (buffer line column)
+         (let*((iter
+                (text-buffer:get-iter-at-line-offset
+                 buffer (gi:make <GtkTextIter>) line column
+                 )))
+           (text-buffer:place-cursor buffer iter)
+           ))))
+
+    (define gtk-index->line-column
+      (gtk-buffer-method
+       (lambda (buffer index)
+         (let*((iter
+                (text-buffer:get-iter-at-offset
+                 buffer (gi:make <GtkTextIter>) index
+                 ))
+               (line (text-iter:get-line iter))
+               (column (text-iter:get-line-offset iter))
+               )
+           (text-buffer:cursor-position buffer old-index)
+           (values line column)
+           ))))
+
+    (define gtk-delete-range
+      (gtk-buffer-method
+       (lambda (buffer from to)
+         (let*((from-iter
+                (text-buffer:get-iter-at-offset!
+                 buffer (gi:make <GtkTextIter>) from
+                 ))
+               (to-iter
+                (text-buffer:get-iter-at-offset!
+                 buffer (gi:make <GtkTextIter>) to
+                 )))
+           (text-buffer:delete buffer from-iter to-iter)
+           ))))
+
+    (define gtk-delete-from-cursor
+      (gtk-buffer-method
+       (lambda (buffer to)
+         (let*((cursor (text-buffer:cursor-position buffer))
+               (cursor-iter
+                (text-buffer:get-iter-at-offset!
+                 buffer (gi:make <GtkTextIter>) cursor
+                 ))
+               (to-iter
+                (text-buffer:get-iter-at-offset!
+                 buffer (gi:make <GtkTextIter>) (- cursor to)
+                 )))
+           (text-buffer:delete buffer cursor-iter to-iter)
+           ))))
+
+    (define gtk-insert-string
+      (gtk-buffer-method
+       (lambda (buffer str)
+         (cond
+          ((char? str)
+           (text-buffer:insert-at-cursor buffer (make-string 1 str) 1)
+           )
+          ((string? str)
+           (text-buffer:insert-at-cursor buffer str (string-length str))
+           )
+          (else (error "not a string or character" str))
+          ))))
 
     (define (parameterized-gtk-api thunk)
       (parameterize
@@ -1173,14 +1275,29 @@
            (*impl/buffer-length*         gtk-buffer-length)
            (*impl/text-load-port*        gtk-text-load-port)
            (*impl/text-dump-port*        gtk-text-dump-port)
+           (*impl/get-cursor-index*      gtk-get-cursor-index)
+           (*impl/set-cursor-index*      gtk-set-cursor-index)
+           (*impl/move-cursor-index*     gtk-move-cursor-index)
+           (*impl/set-cursor-position*   gtk-set-cursor-position)
+           (*impl/index->line-column*    gtk-index->line-column)
+           (*impl/delete-from-cursor*    gtk-delete-from-cursor)
+           (*impl/insert-string*         gtk-insert-string)
+           (*impl/insert-char*           gtk-insert-string)
+           (*impl/delete-range*          gtk-delete-range)
            (*impl/delete-from-cursor*    gtk-delete-from-cursor)
            )
         (thunk)
         ))
 
     (define (gtk3-event-handler proc)
-      (parameterized-gtk-api (lambda () (div-event-handler proc)))
-      )
+      (parameterized-gtk-api
+       (lambda ()
+         ;; NOTE: to do print debugging, you can pass
+         ;; `(current-output-port)` as the first argument to
+         ;; `div-event-handler` like so:
+         ;;     (div-event-handler (current-output-port) proc)
+         (div-event-handler proc)
+         )))
 
     ;;----------------------------------------------------------------
 
