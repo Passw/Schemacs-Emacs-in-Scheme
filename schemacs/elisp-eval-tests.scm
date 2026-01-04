@@ -1060,6 +1060,32 @@ top: glo = top
                )))))))
 
 ;;--------------------------------------------------------------------------------------------------
+;; Testing `DEFVARALIAS`
+
+(test-assert
+    (test-run
+     equal? '(1 1) test-elisp-eval!
+     '(progn
+       (unintern 'abcd)
+       (unintern 'bcde)
+       (defvar abcd 1)
+       (defun abcd () abcd)
+       (defvaralias 'bcde 'abcd)
+       (defalias 'bcde 'abcd)
+       (let ((a (abcd))
+             (b (bcde)))
+         (defvar abcd 2)
+         (let ((c (abcd))
+               (d (bcde)))
+           (unintern 'abcd)
+           (let ((e (bcde)))
+             (defvar abcd 1)
+             (let ((f (abcd))
+                   (g (bcde)))
+               (list a b c d e f g)
+               )))))))
+
+;;--------------------------------------------------------------------------------------------------
 ;; Testing hooks
 
 (test-assert

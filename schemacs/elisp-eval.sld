@@ -1875,6 +1875,38 @@
              (any (eval-error "wrong number of arguments" def any))
              )))))
 
+    (define (eval-defvaralias sym-expr val-expr docstr)
+      (let*((st (*the-environment*))
+            (sym (eval-ensure-interned (eval-form sym-expr)))
+            (val
+             (let loop ((val (eval-form val-expr)))
+               (cond
+                ((symbol? val)
+                 (loop (view st (=>env-obarray-key! (symbol->string val)))))
+                ((sym-type? val) (view val =>sym-value*!))
+                ((lambda-type? val) val)
+                ((procedure? val) val)
+                ((command-type? val) val)
+                ((pair? val) val)
+                (else #f)
+                ))))
+        (cond
+         ((not val) (eval-error "void value" val))
+         ((not sym) (eval-error "wrong type argument" sym 'expecting "symbol"))
+         (else
+          (lens-set! val sym =>sym-value*!)
+          ))))
+
+    (define elisp-defvaralias
+      (make<syntax>
+       (lambda expr
+         (match (cdr expr)
+           ((sym-expr val-expr) (eval-defvaralias sym-expr val-expr #f))
+           ((sym-expr val-expr docstr) (eval-defvaralias sym-expr val-expr docstr))
+           (any (eval-error
+                 "wrong number of arguments" "defvaralias"
+                 (length any) 'min 2 'max 3
+                 ))))))
 
     (define elisp-defun-defmacro
       (make<syntax>
@@ -3029,21 +3061,22 @@
          ,(new-symbol "features" '())
          ,(new-symbol "max-lisp-eval-depth" (*max-lisp-eval-depth*))
 
-         (lambda    . ,elisp-lambda)
-         (apply    . ,elisp-apply)
-         (funcall  . ,elisp-funcall)
-         (defun    . ,elisp-defun-defmacro)
-         (defsubst . ,elisp-defun-defmacro)
-         (defmacro . ,elisp-defun-defmacro)
-         (defalias . ,elisp-defalias)
-         (defvar   . ,elisp-defvar)
-         (function . ,elisp-function)
-         (progn    . ,elisp-progn)
-         (prog1    . ,elisp-prog1)
-         (prog2    . ,elisp-prog2)
-         (setq     . ,elisp-setq)
-         (let      . ,elisp-let)
-         (let*     . ,elisp-let*)
+         (lambda      . ,elisp-lambda)
+         (apply       . ,elisp-apply)
+         (funcall     . ,elisp-funcall)
+         (defun       . ,elisp-defun-defmacro)
+         (defsubst    . ,elisp-defun-defmacro)
+         (defmacro    . ,elisp-defun-defmacro)
+         (defalias    . ,elisp-defalias)
+         (defvaralias . ,elisp-defvaralias)
+         (defvar      . ,elisp-defvar)
+         (function    . ,elisp-function)
+         (progn       . ,elisp-progn)
+         (prog1       . ,elisp-prog1)
+         (prog2       . ,elisp-prog2)
+         (setq        . ,elisp-setq)
+         (let         . ,elisp-let)
+         (let*        . ,elisp-let*)
 
          (cond     . ,elisp-cond)
          (if       . ,elisp-if)
