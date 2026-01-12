@@ -103,7 +103,7 @@
             (set! (settings:gtk-label-select-on-focus settings) #f)
             )
           (when wref
-            (widget:show-all (gtk-get-outer-widget wref))
+            (widget:show (gtk-get-outer-widget wref))
             ))))
 
     (define (gtk-draw-div top)
@@ -368,19 +368,20 @@
       ;; `GtkBox` into which the widget content should be drawn. If
       ;; that outer widget does not exist, it must be created, which
       ;; is what this procedure does.
-      (and
-       (div-from-var? o)
-       (or outer
-           (let ((outer
-                  (cond
-                   ((eq? align 'cut-vertical)
-                    (gi:make <GtkHBox> #:spacing 0 #:visible #t)
-                    )
-                   (else (gi:make <GtkVBox> #:spacing 0 #:visible #t))
-                   )))
-             (gobject-ref outer)
-             outer
-             ))))
+      (let ((vis (not (div-prop-lookup 'hidden: o))))
+        (and
+         (div-from-var? o)
+         (or outer
+             (let ((outer
+                    (cond
+                     ((eq? align 'cut-vertical)
+                      (gi:make <GtkHBox> #:spacing 0 #:visible vis)
+                      )
+                     (else (gi:make <GtkVBox> #:spacing 0 #:visible vis))
+                     )))
+               (gobject-ref outer)
+               outer
+               )))))
 
     (define (gtk-div-updater old new)
       ;; This procedure takes the outer `GtkBox` of the `OLD` `div`
@@ -602,7 +603,7 @@
                  (cond
                   ((eq? ptype push-button) (gtk-draw-push-button cont props))
                   ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
-                   (gtk-draw-text-editor cont props)
+                   (gtk-draw-text-editor o cont props)
                    )
                   (else (gtk-draw-string cont props))
                   ))
@@ -663,15 +664,14 @@
              (gi:make
               <GtkLabel>
               #:label o
-              #:visible #t
+              #:visible (not (prop-lookup 'hidden: props))
               #:halign 'start
               #:valign 'start
               #:selectable #t
               #:has-default #f
-              #:focus-on-click #t ;; TODO: set this to #t but select none until click
+              #:focus-on-click #t
               #:can-default #f
-              #:vexpand #f
-              #:hexpand #f
+              #:expand #f
               ;; TODO: set the #:attributes with Pango font properties
               )))
         (gobject-ref wref)
@@ -685,10 +685,9 @@
              (gi:make
               <GtkButton>
               #:label label
-              #:visible #t
+              #:visible (not (prop-lookup 'hidden: props))
               #:sensitive (procedure? action)
-              #:vexpand #f
-              #:hexpand #f
+              #:expand #f
               )))
         (gobject-ref wref)
         (gtk-widget-set-event-handlers wref props)
@@ -702,13 +701,13 @@
         wref
         ))
 
-    (define (gtk-draw-text-editor buffer props)
+    (define (gtk-draw-text-editor o buffer props)
       (let*((viewport
              (gi:make
               <GtkTextView>
               #:buffer buffer
-              #:hexpand #t
-              #:vexpand #t
+              #:expand #t
+              #:visible (not (prop-lookup 'hidden: props))
               #:monospace (not (prop-lookup 'default-font: props))
               ))
             (scroll
@@ -716,7 +715,8 @@
               <GtkScrolledWindow>
               #:vscrollbar-policy 'automatic
               #:hscrollbar-policy 'automatic
-              #:visible #t
+              #:visible (not (prop-lookup 'hidden: props))
+              #:expand #t
               #:child viewport
               ))
             (wref
@@ -734,8 +734,8 @@
     (define (gtk-empty-div orient)
       (let ((wref
              (if (eq? orient cut-vertical)
-                 (gi:make <GtkHBox> #:spacing 0 #:visible #t)
-                 (gi:make <GtkVBox> #:spacing 0 #:visible #t)
+                 (gi:make <GtkHBox> #:spacing 0)
+                 (gi:make <GtkVBox> #:spacing 0)
                  )))
         (gobject-ref wref)
         wref
@@ -785,10 +785,21 @@
 
     (define (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
       (let*-values
-          (((make-paned)
+          (((props) (view o =>div-properties*!))
+           ((make-paned)
             (cond
-             ((eq? orient cut-horizontal) (lambda () (gi:make <GtkVPaned> #:visible #t)))
-             ((eq? orient cut-vertical)   (lambda () (gi:make <GtkHPaned> #:visible #t)))
+             ((eq? orient cut-horizontal)
+              (lambda ()
+                (gi:make
+                 <GtkVPaned>
+                 #:visible (not (prop-lookup 'hidden: props))
+                 )))
+             ((eq? orient cut-vertical)
+              (lambda ()
+                (gi:make
+                 <GtkHPaned>
+                 #:visible (not (prop-lookup 'hidden: props))
+                 )))
              (else (error "unknown box orientation value" orient))
              ))
            ((add1 add2)
@@ -939,17 +950,19 @@
 
     (define (gtk-draw-pack-nowrap o outer from orient rect sizes subdivs)
       (let*((scroll (gtk-make-scroller o orient))
-            (viewport (and scroll (gi:make <GtkViewport> #:visible #t)))
+            (props (view o =>div-properties*!))
+            (vis (not (prop-lookup 'hidden: props)))
+            (viewport (and scroll (gi:make <GtkViewport> #:visible vis)))
             (box-wref
              (cond
               ((eq? orient cut-horizontal)
-               (gi:make <GtkVBox> #:spacing 0 #:visible #t)
+               (gi:make <GtkVBox> #:spacing 0 #:visible vis)
                )
               ((eq? orient cut-vertical)
-               (gi:make <GtkHBox> #:spacing 0 #:visible #t)
+               (gi:make <GtkHBox> #:spacing 0 #:visible vis)
                )
               ((not orient)
-               (gi:make <GtkVBox> #:spacing 0 #:visible #t)
+               (gi:make <GtkVBox> #:spacing 0 #:visible vis)
                )
               (else (error "unknown box orientation value" orient))
               ))
@@ -1365,7 +1378,7 @@
         (gi-repo:load-by-name "Gtk" "TextView")
         (gi-repo:load-by-name "Gtk" "DeleteType")
         (gi-repo:load-by-name "Gtk" "Viewport")
-        (gi-repo:load-by-name "Gtk" "Widget") ;; show-all, key-press-event
+        (gi-repo:load-by-name "Gtk" "Widget") ;; show, show-all, key-press-event
         (gi-repo:load-by-name "Gtk" "Window")
         (gi-repo:load-by-name "Gtk" "Box")
         (gi-repo:load-by-name "Gtk" "HBox")

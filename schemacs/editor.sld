@@ -356,7 +356,7 @@
       (view        line-display-view          set!line-display-view)
       )
 
-    (define (new-line-display parent prompt-str)
+    (define (new-line-display parent prompt-str hidden)
       (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
             (buffer     (impl/new-buffer))
             (this       (make<line-display-type> parent prompt-var buffer #f))
@@ -376,6 +376,7 @@
                (text-editor
                 buffer
                 (properties
+                 'hidden: hidden
                  'on-key-event:
                  (cond
                   (prompt-str
@@ -395,8 +396,8 @@
         this
         ))
 
-    (define (new-echo-area  parent) (new-line-display parent #f))
-    (define (new-minibuffer parent) (new-line-display parent ""))
+    (define (new-echo-area  parent) (new-line-display parent #f #f))
+    (define (new-minibuffer parent) (new-line-display parent "" #t))
 
     (define (new-header-line parent-window st)
       (new-mode-line parent-window (or st *header-line-format*))
@@ -772,7 +773,9 @@
                 (size2D expand expand)
                 (use-vars (list layout) window-view)
                 )
-               (pack-elem lo-size (line-display-view echo-area))
+               (pack-elem
+                lo-size (line-display-view echo-area)
+                )
                (pack-elem lo-size (line-display-view minibuffer))
                ))))
         (set!winframe-selected-window this init-window)
@@ -1209,29 +1212,30 @@
          (let ((insert (pp-state-output-port pp))
                (buffer (pp-state-line-buffer pp)))
            (when (>= indent 0)
-             (insert buffer
-                     (call-with-port
-                         (lambda (port)
-                           (let loop ((i 0))
-                             (if (>= i indent) (values)
-                                 (begin (write-char char port) (loop (+ 1 i)))))
-                           (get-output-string port))
-                       (open-output-string))))
+             (insert
+              buffer
+              (call-with-port
+                  (lambda (port)
+                    (let loop ((i 0))
+                      (if (>= i indent) (values)
+                          (begin (write-char char port) (loop (+ 1 i)))))
+                    (get-output-string port))
+                (open-output-string))))
            (when string (insert buffer string))
            ))))
 
     (define (buffer-write-line pp line)
-      (%buffer-write-line pp
-                          (pp-line-indent-char line)
-                          (pp-line-indent line)
-                          (pp-line-string line)
-                          ))
+      (%buffer-write-line
+       pp (pp-line-indent-char line)
+       (pp-line-indent line)
+       (pp-line-string line)
+       ))
 
     (define (buffer-first-indent pp)
-      (%buffer-write-line pp
-                          (pp-state-indent-char pp)
-                          (pp-state-indent pp)
-                          ))
+      (%buffer-write-line
+       pp (pp-state-indent-char pp)
+       (pp-state-indent pp)
+       ))
 
     (define (buffer-print-finalize pp) (values))
 
