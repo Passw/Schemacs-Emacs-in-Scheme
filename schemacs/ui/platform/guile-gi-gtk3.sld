@@ -375,10 +375,23 @@
              (let ((outer
                     (cond
                      ((eq? align 'cut-vertical)
-                      (gi:make <GtkHBox> #:spacing 0 #:visible vis)
-                      )
-                     (else (gi:make <GtkVBox> #:spacing 0 #:visible vis))
-                     )))
+                      (gi:make
+                       <GtkHBox>
+                       #:spacing 0
+                       #:visible vis
+                       #:expand #t
+                       #:valign 'fill
+                       #:halign 'fill
+                       ))
+                     (else
+                      (gi:make
+                       <GtkVBox>
+                       #:spacing 0
+                       #:visible vis
+                       #:expand #t
+                       #:valign 'fill
+                       #:halign 'fill
+                       )))))
                (gobject-ref outer)
                outer
                )))))
@@ -608,10 +621,11 @@
                   (else (gtk-draw-string cont props))
                   ))
                 (outer (gtk-prepare-outer-box o outer #f))
+                (inner (gtk-get-outer-widget wref))
                 )
             (cond
              (outer
-              (container:add outer (gtk-get-outer-widget wref))
+              (container:add outer inner)
               (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
               )
              (else (lens-set wref o =>div-widget*!))
@@ -650,6 +664,9 @@
                 <GtkApplicationWindow>
                 #:application *gtk-application-object*
                 #:title (or title *default-window-title*)
+                #:valign 'fill
+                #:halign 'fill
+                #:expand #t
                 ))
               (child (gtk-draw-content o #f))
               )
@@ -707,6 +724,8 @@
               <GtkTextView>
               #:buffer buffer
               #:expand #t
+              #:valign 'fill
+              #:halign 'fill
               #:visible (not (prop-lookup 'hidden: props))
               #:monospace (not (prop-lookup 'default-font: props))
               ))
@@ -717,6 +736,8 @@
               #:hscrollbar-policy 'automatic
               #:visible (not (prop-lookup 'hidden: props))
               #:expand #t
+              #:valign 'fill
+              #:halign 'fill
               #:child viewport
               ))
             (wref
@@ -956,14 +977,32 @@
             (box-wref
              (cond
               ((eq? orient cut-horizontal)
-               (gi:make <GtkVBox> #:spacing 0 #:visible vis)
-               )
+               (gi:make
+                <GtkVBox>
+                #:spacing 0
+                #:visible vis
+                #:valign 'start
+                #:halign 'start
+                #:expand #t
+                ))
               ((eq? orient cut-vertical)
-               (gi:make <GtkHBox> #:spacing 0 #:visible vis)
-               )
+               (gi:make
+                <GtkHBox>
+                #:spacing 0
+                #:visible vis
+                #:valign 'start
+                #:halign 'start
+                #:expand #t
+                ))
               ((not orient)
-               (gi:make <GtkVBox> #:spacing 0 #:visible vis)
-               )
+               (gi:make
+                <GtkVBox>
+                #:spacing 0
+                #:visible vis
+                #:valign 'start
+                #:halign 'start
+                #:expand #t
+                ))
               (else (error "unknown box orientation value" orient))
               ))
             (pack-start (lambda (widget) (box:pack-start box-wref widget #f #f 0)))
