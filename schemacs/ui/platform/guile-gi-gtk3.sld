@@ -473,8 +473,8 @@
         ;;   " modifiers: " modifiers       ;;DEBUG
         ;;   " mod-bits: " mod-bits         ;;DEBUG
         ;;   " unicode: " unicode           ;;DEBUG
-        ;;   ")" (line-break);;DEBUG
-        ;;   )) ;;DEBUG
+        ;;   ")" (line-break)               ;;DEBUG
+        ;;   ))                             ;;DEBUG
         ;;;; Example output of the above format statement after pressing space bar:
         ;;;;     (key-event #x20 #x41 ())
         (cond
@@ -503,17 +503,23 @@
          (else
           (let ((mod (car mod-list)))
             (cond
-             ((eq? mod 'shift-mask)
-              (loop (cdr mod-list) (char-upcase keyval))
-              )
-             ((or (eq? mod 'alt-mask) (eq? 'mod1-mask))
-              (cons 'meta (loop (cdr mod-list) keyval))
-              )
-             ((eq? mod 'control-mask)
-              (cons 'control (loop (cdr mod-list) keyval))
+             ((eq? mod 'shift-mask)   (loop (cdr mod-list) (char-upcase keyval)))
+             ((eq? mod 'alt-mask)     (cons 'meta (loop (cdr mod-list) keyval)))
+             ((eq? mod 'control-mask) (cons 'control (loop (cdr mod-list) keyval)))
+             ((eq? 'mod1-mask)
+              ;; Ignore 'mod1-mask as it is typically only used for
+              ;; alternative input methods. Also note: though `eq?` is
+              ;; used to compare a symbol `mod1-mask` to the symbol
+              ;; returned by `modifier-type->number` (which returns a
+              ;; list of symbols) and if evaluate `(eq? 'mod1-mask m)`
+              ;; when `m` is a symbol `modifier-reserved-25-mask`
+              ;; returned by `modifier-type->number`, `eq?` evaluates
+              ;; to `#t`. This ;; is definitely a bug, probably in
+              ;; Guile GOOPS. Oopsie.
+              (loop (cdr mod-list) keyval)
               )
              (else
-              (pretty (print ";; unknown Gtk key modifier symbol" mod (line-break)));;DEBUG
+              (display "; unknown Gtk key modifier symbol ") (write mod) (newline) ;;DEBUG
               (loop (cdr mod-list) keyval)
               )))))))
 
