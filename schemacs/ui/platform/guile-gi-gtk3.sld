@@ -361,7 +361,7 @@
 
     ;;----------------------------------------------------------------
 
-    (define (gtk-prepare-outer-box o outer align)
+    (define (gtk-prepare-outer-box o outer)
       ;; When a widget is being drawn, it may be drawing after a state
       ;; variable update, or it might be drawing anew. If drawing is
       ;; happening during an update, there is usually already an outer
@@ -373,25 +373,11 @@
          (div-from-var? o)
          (or outer
              (let ((outer
-                    (cond
-                     ((eq? align 'cut-vertical)
-                      (gi:make
-                       <GtkHBox>
-                       #:spacing 0
-                       #:visible vis
-                       #:expand #t
-                       #:valign 'fill
-                       #:halign 'fill
-                       ))
-                     (else
-                      (gi:make
-                       <GtkVBox>
-                       #:spacing 0
-                       #:visible vis
-                       #:expand #t
-                       #:valign 'fill
-                       #:halign 'fill
-                       )))))
+                    (gi:make
+                     <GtkBox>
+                     #:visible vis
+                     #:orientation 'vertical
+                     )))
                (gobject-ref outer)
                outer
                )))))
@@ -475,8 +461,8 @@
         ;;   " unicode: " unicode           ;;DEBUG
         ;;   ")" (line-break)               ;;DEBUG
         ;;   ))                             ;;DEBUG
-        ;;;; Example output of the above format statement after pressing space bar:
-        ;;;;     (key-event #x20 #x41 ())
+;;;; Example output of the above format statement after pressing space bar:
+;;;;     (key-event #x20 #x41 ())
         (cond
          ((and (= 0 mod-bits) (char=? unicode #\null))
           ;; Ignored because this is a key press of a modifier without an
@@ -626,12 +612,12 @@
                    )
                   (else (gtk-draw-string cont props))
                   ))
-                (outer (gtk-prepare-outer-box o outer #f))
+                (outer (gtk-prepare-outer-box o outer))
                 (inner (gtk-get-outer-widget wref))
                 )
             (cond
              (outer
-              (container:add outer inner)
+              (box:pack-start outer inner #t #t 0)
               (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
               )
              (else (lens-set wref o =>div-widget*!))
@@ -665,6 +651,15 @@
         (let*((size (rect2D-size rect))
               (props (and (div-record-type? o) (view o =>div-properties*!)))
               (title (prop-lookup 'title: props))
+              (layout
+               (gi:make
+                <GtkBox>
+                #:expand #t
+                #:visible #t
+                #:valign 'fill
+                #:halign 'fill
+                #:orientation 'vertical
+                ))
               (win-wref
                (gi:make
                 <GtkApplicationWindow>
@@ -672,12 +667,16 @@
                 #:title (or title *default-window-title*)
                 #:valign 'fill
                 #:halign 'fill
-                #:expand #t
+                #:child layout
                 ))
-              (child (gtk-draw-content o #f))
+              (child (gtk-draw-content o layout))
+              (child-wref (gtk-get-outer-widget child))
               )
           (gobject-ref win-wref)
-          (container:add win-wref (gtk-get-outer-widget child))
+          (gobject-ref layout)
+          (widget:set-hexpand child-wref #t)
+          (widget:set-vexpand child-wref #t)
+          (container:add layout child-wref)
           (lens-set win-wref o =>div-widget*!)
           o/flo
           )))
@@ -725,23 +724,28 @@
         ))
 
     (define (gtk-draw-text-editor o buffer props)
-      (let*((viewport
+      (let*((visible (not (prop-lookup 'hidden: props)))
+            (viewport
              (gi:make
               <GtkTextView>
               #:buffer buffer
-              #:expand #t
+              #:vexpand #t
+              #:hexpand #t
               #:valign 'fill
               #:halign 'fill
-              #:visible (not (prop-lookup 'hidden: props))
+              #:visible visible
               #:monospace (not (prop-lookup 'default-font: props))
+              #:input-purpose 'terminal
               ))
             (scroll
              (gi:make
               <GtkScrolledWindow>
+              #:visible visible
               #:vscrollbar-policy 'automatic
               #:hscrollbar-policy 'automatic
               #:visible (not (prop-lookup 'hidden: props))
-              #:expand #t
+              #:vexpand #t
+              #:hexpand #t
               #:valign 'fill
               #:halign 'fill
               #:child viewport
@@ -758,12 +762,27 @@
 
     ;;----------------------------------------------------------------
 
+    (define (div->gtk-orientation orient)
+      (cond
+       ((eq? orient 'cut-vertical) 'horizontal)
+       ((eq? orient 'cut-horizontal) 'vertical)
+       ((eq? orient 'align-horizontal) 'horizontal)
+       ((eq? orient 'align-vertical) 'vertical)
+       ((eq? orient #f) 'vertical)
+       (else (error "unknown div-pack orientation" orient))
+       ))
+
     (define (gtk-empty-div orient)
-      (let ((wref
-             (if (eq? orient cut-vertical)
-                 (gi:make <GtkHBox> #:spacing 0)
-                 (gi:make <GtkVBox> #:spacing 0)
-                 )))
+      (let*((orient (div->gtk-orientation orient))
+            (wref
+             (gi:make
+              <GtkBox>
+              #:orientation orient
+              #:spacing 0
+              #:expand #t
+              #:valign 'start
+              #:halign 'start
+              )))
         (gobject-ref wref)
         wref
         ))
@@ -790,12 +809,12 @@
           (let*((wref (gtk-empty-div orient))
                 (subdiv (gtk-draw-content (vector-ref subdivs 0) #f))
                 )
-            (container:add wref (gtk-get-outer-widget subdiv))
+            (box:pack-start wref (gtk-get-outer-widget subdiv) #f #f 0)
             (lens-set wref o =>div-widget*!)
             wref
             ))
          (else
-          (let ((outer (gtk-prepare-outer-box o outer orient)))
+          (let ((outer (gtk-prepare-outer-box o outer)))
             (cond
              ((eq? flags wrapping)
               (gtk-draw-pack-flow o outer from orient rect sizes subdivs)
@@ -813,20 +832,15 @@
     (define (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
       (let*-values
           (((props) (view o =>div-properties*!))
+           ((visible) (not (prop-lookup 'hidden: props)))
            ((make-paned)
             (cond
              ((eq? orient cut-horizontal)
-              (lambda ()
-                (gi:make
-                 <GtkVPaned>
-                 #:visible (not (prop-lookup 'hidden: props))
-                 )))
+              (lambda () (gi:make <GtkVPaned> #:visible visible))
+              )
              ((eq? orient cut-vertical)
-              (lambda ()
-                (gi:make
-                 <GtkHPaned>
-                 #:visible (not (prop-lookup 'hidden: props))
-                 )))
+              (lambda () (gi:make <GtkHPaned> #:visible visible))
+              )
              (else (error "unknown box orientation value" orient))
              ))
            ((add1 add2)
@@ -880,7 +894,9 @@
         o))
 
     (define (gtk-make-scroller o orient)
-      (let*((scrollprop (div-prop-lookup 'scrollbar: o))
+      (let*((props (view o =>div-properties*!))
+            (visible (not (prop-lookup 'hidden: props)))
+            (scrollprop (prop-lookup 'scrollbar: props))
             (scrollprop
              (cond
               ((eq? scrollprop #t)
@@ -896,30 +912,39 @@
          ((eq? scrollprop 'vertical)
           (gi:make
            <GtkScrolledWindow>
+           #:visible visible
            #:vscrollbar-policy 'automatic
            #:hscrollbar-policy 'never
+           #:expand #t
            ))
          ((eq? scrollprop 'horizontal)
           (gi:make
            <GtkScrolledWindow>
+           #:visible visible
            #:vscrollbar-policy 'never
            #:hscrollbar-policy 'automatic
+           #:expand #t
            ))
          ((eq? scrollprop 'both)
           (gi:make
            <GtkScrolledWindow>
+           #:visible visible
            #:vscrollbar-policy 'automatic
            #:hscrollbar-policy 'automatic
+           #:expand #t
            ))
          (else (error "unknown value for 'scrollbar: property" scrollprop))
          )))
 
     (define (gtk-draw-pack-flow o outer from orient rect sizes subdivs)
-      (let*((scroll (gtk-make-scroller o orient))
-            (viewport (gi:make <GtkViewport>))
+      (let*((props (view o =>div-properties*!))
+            (visible (not (prop-lookup 'hidden: props)))
+            (scroll (gtk-make-scroller o orient))
+            (viewport (gi:make <GtkViewport> #:visible visible #:expand #t))
             (flowbox
              (gi:make
               <GtkFlowBox>
+              #:visible visible
               (cond
                ((eq? orient cut-horizontal) 'vertical)
                ((eq? orient cut-vertical) 'horizontal)
@@ -927,6 +952,7 @@
                (else (error "unknown box orientation value" orient))
                )
               #:selection-mode 'selection-multiple
+              #:expand #t
               ))
             (counter (vector-length (div-pack-subdiv-sizes o)))
             (pack-start
@@ -978,38 +1004,18 @@
     (define (gtk-draw-pack-nowrap o outer from orient rect sizes subdivs)
       (let*((scroll (gtk-make-scroller o orient))
             (props (view o =>div-properties*!))
-            (vis (not (prop-lookup 'hidden: props)))
-            (viewport (and scroll (gi:make <GtkViewport> #:visible vis)))
+            (visible (not (prop-lookup 'hidden: props)))
+            (viewport (and scroll (gi:make <GtkViewport> #:visible visible)))
+            (orient (div->gtk-orientation orient))
             (box-wref
-             (cond
-              ((eq? orient cut-horizontal)
-               (gi:make
-                <GtkVBox>
-                #:spacing 0
-                #:visible vis
-                #:valign 'start
-                #:halign 'start
-                #:expand #t
-                ))
-              ((eq? orient cut-vertical)
-               (gi:make
-                <GtkHBox>
-                #:spacing 0
-                #:visible vis
-                #:valign 'start
-                #:halign 'start
-                #:expand #t
-                ))
-              ((not orient)
-               (gi:make
-                <GtkVBox>
-                #:spacing 0
-                #:visible vis
-                #:valign 'start
-                #:halign 'start
-                #:expand #t
-                ))
-              (else (error "unknown box orientation value" orient))
+             (gi:make
+              <GtkBox>
+              #:spacing 0
+              #:visible visible
+              #:valign 'fill
+              #:halign 'fill
+              #:expand #t
+              #:orientation orient
               ))
             (pack-start (lambda (widget) (box:pack-start box-wref widget #f #f 0)))
             (pack-end   (lambda (widget) (box:pack-end   box-wref widget #f #f 0)))
@@ -1033,8 +1039,11 @@
           (container:add viewport box-wref)
           )
          (else
-          (when outer (container:add outer box-wref))
-          ))
+          (when outer
+            (widget:set-hexpand box-wref #t)
+            (widget:set-vexpand box-wref #t)
+            (container:add outer box-wref)
+            )))
         (vector-for-each
          (lambda (size child)
            (let*((child (gtk-draw-content child #f))
@@ -1050,13 +1059,16 @@
         o))
 
     (define (gtk-draw-div-space o outer cont)
-      (let ((elems (div-space-elements cont)))
+      (let ((elems (div-space-elements cont))
+            )
         (cond
          ((not elems) (gtk-empty-div cut-horizontal))
          (else
-          (let*((scroll (gtk-make-scroller o #t))
-                (outer  (gtk-prepare-outer-box o outer #f))
-                (layout (gi:make <GtkLayout>))
+          (let*((props (view o =>div-properties*!))
+                (visible (not (prop-lookup 'hidden: props)))
+                (scroll (gtk-make-scroller o #t))
+                (outer  (gtk-prepare-outer-box o outer))
+                (layout (gi:make <GtkLayout> #:visible visible))
                 (wref   (make<gtk-div-contain> outer scroll #f layout))
                 )
             (gobject-ref layout)
@@ -1093,12 +1105,25 @@
             o)))))
 
     (define (gtk-draw-div-grid o outer cont)
-      (let*((outer (gtk-prepare-outer-box o outer #f))
+      (let*((props (view o =>div-properties*!))
+            (visible (not (prop-lookup 'hidden: props)))
+            (outer (gtk-prepare-outer-box o outer))
             (scroll (gtk-make-scroller o (div-prop-lookup 'scrolled: o)))
             (viewport
-             (and scroll (gi:make <GtkViewport> #:has-focus #f #:can-default #f))
-             )
-            (grid (gi:make <GtkGrid> #:has-focus #f #:can-default #f))
+             (and scroll
+                  (gi:make
+                   <GtkViewport>
+                   #:visible visible
+                   #:has-focus #f
+                   #:can-default #f
+                   )))
+            (grid
+             (gi:make
+              <GtkGrid>
+              #:has-focus #f
+              #:can-default #f
+              #:visible visible
+              ))
             (wref (make<gtk-div-contain> outer scroll viewport grid))
             )
         (gobject-ref grid)
@@ -1426,6 +1451,7 @@
         (gi-repo:load-by-name "Gtk" "Widget") ;; show, show-all, key-press-event
         (gi-repo:load-by-name "Gtk" "Window")
         (gi-repo:load-by-name "Gtk" "Box")
+        (gi-repo:load-by-name "Gtk" "Bin")
         (gi-repo:load-by-name "Gtk" "HBox")
         (gi-repo:load-by-name "Gtk" "VBox")
 
