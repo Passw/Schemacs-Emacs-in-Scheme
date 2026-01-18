@@ -47,8 +47,10 @@
     (only (schemacs pretty) display-lines pretty print line-break qstr)
     (only (scheme case-lambda) case-lambda)
     (only (scheme char) char-upcase)
+    (only (oop goops) make slot-ref)
+    (only (system foreign) parse-c-struct int32)
     (prefix (gi) gi:)
-    (only (gi util) push-duplicate-handler!)
+    (only (gi util) push-duplicate-handler! int-vector->list)
     (only (gi) <signal>)
     (prefix (gi repository) gi-repo:)
     (only (gi types) flags->list)
@@ -183,13 +185,19 @@
 
     (define (gtk-delete-container-content o)
       ;; When a state update occurs, sometimes only the content of a
-      ;; Gtk widget needs to be deleted and not it's containing GtkBox
-      ;; or GtkLayout. This procedure deletes only the content
-      ;; widgets, leaving the outer widgets alone.
+      ;; Gtk widget needs to be deleted and not it's containing
+      ;; GtkBox. This procedure deletes only the content widgets,
+      ;; leaving the outer widgets alone.
       (cond
-       ((gtk-div-boxed-type? o) (gtk-delete-boxed-content o))
-       ((gtk-div-contain-type? o) (gtk-div-contain-delete-content o))
-       ((div-record-type? o) (gtk-delete-container-content (view o =>div-widget*!)))
+       ((gtk-div-boxed-type? o)
+        (gtk-delete-boxed-content o)
+        )
+       ((gtk-div-contain-type? o)
+        (gtk-div-contain-delete-content o)
+        )
+       ((div-record-type? o)
+        (gtk-delete-container-content (view o =>div-widget*!))
+        )
        (else (gtk-unref-destroy o))
        ))
 
@@ -306,12 +314,12 @@
       ;; Used for updating after state changes, returns the outer-most
       ;; Gtk box (if it exists) so that it's content can be replaced.
       ;;
-      ;; `div` widgets may be contained within their own GtkBox or
-      ;; GtkLayout widget. Most `div` widgets also contain other
-      ;; widgets for rendering content. All of these widgets are
-      ;; grouped together into a record structure. This procedure
-      ;; returns the outer-most `GtkBox` or `GtkLayout` so that it can
-      ;; be placed into a Gtk container widget.
+      ;; `div` widgets may be contained within their own GtkBox
+      ;; widget. Most `div` widgets also contain other widgets for
+      ;; rendering content. All of these widgets are grouped together
+      ;; into a record structure. This procedure returns the
+      ;; outer-most `GtkBox` or `GtkLayout` so that it can be placed
+      ;; into a Gtk container widget.
       ;;
       ;; WARNING: if the outer-most box does not exist, this procedure
       ;; returns `#f`, usually so that an error can be reported. Use
@@ -330,12 +338,12 @@
       ;; Gtk widget that can be placed into some other Gtk container
       ;; widget.
       ;;
-      ;; `div` widgets may be contained within their own GtkBox or
-      ;; GtkLayout widget. Most `div` widgets also contain other
-      ;; widgets for rendering content. All of these widgets are
-      ;; grouped together into a record structure. This procedure
-      ;; returns the outer-most `GtkBox` or `GtkLayout` so that it can
-      ;; be placed into a Gtk container widget.
+      ;; `div` widgets may be contained within their own GtkBox
+      ;; widget. Most `div` widgets also contain other widgets for
+      ;; rendering content. All of these widgets are grouped together
+      ;; into a record structure. This procedure returns the
+      ;; outer-most `GtkBox` so that it can be placed into a Gtk
+      ;; container widget.
       ;;
       ;; WARNING: if the outer-most box does not exist, it returns the
       ;; inner widget. If you want only to replace the Gtk widget
@@ -377,6 +385,12 @@
                      <GtkBox>
                      #:visible vis
                      #:orientation 'vertical
+                     #:name "state-var"
+                     #:vexpand #t
+                     #:hexpand #t
+                     #:valign 'fill
+                     #:halign 'fill
+                     #:resize-mode 'parent
                      )))
                (gobject-ref outer)
                outer
@@ -416,7 +430,7 @@
          (gtk3-event-handler (lambda () (action event)))
          )))
 
-    (define (gtk-widget-set-event-handlers wref props)
+    (define (gtk-widget-set-event-handlers o wref props)
       (let*((on-key-event   (prop-lookup 'on-key-event:   props))
             (on-focus-event (prop-lookup 'on-focus-event: props))
             (on-focus-in    (prop-lookup 'on-focus-in:    props))
@@ -439,10 +453,13 @@
             )))
         (when (procedure? on-key-event)
           (set-handler
-           (gi:make <signal> #:name "key-press-event")
+           (gi:make
+            <signal> #:name "key-press-event")
            (lambda (event)
              (gtk-key-press-event-handler on-key-event event)
-             )))))
+             )))
+        (gtk-setup-size-alloc-handler o wref "widget")
+        ))
 
     (define (gtk-key-press-event-handler on-key-event event)
       (let*-values
@@ -606,18 +623,19 @@
                 (ptype (div-view-type o))
                 (wref
                  (cond
-                  ((eq? ptype push-button) (gtk-draw-push-button cont props))
+                  ((eq? ptype push-button) (gtk-draw-push-button o cont props))
                   ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
                    (gtk-draw-text-editor o cont props)
                    )
-                  (else (gtk-draw-string cont props))
+                  (else (gtk-draw-string o cont props))
                   ))
                 (outer (gtk-prepare-outer-box o outer))
                 (inner (gtk-get-outer-widget wref))
                 )
             (cond
              (outer
-              (box:pack-start outer inner #t #t 0)
+              ;;(box:pack-start outer inner #t #t 0)
+              (container:add outer inner)
               (lens-set (make<gtk-div-boxed> outer wref) o =>div-widget*!)
               )
              (else (lens-set wref o =>div-widget*!))
@@ -631,6 +649,47 @@
              o =>div-on-update*!
              )
             o)))))
+
+    (define (size->expand size) (eq? 'expand size))
+
+    (define (size->default size deflt)
+      (cond
+       ((eq? 'expand size) deflt)
+       ((eq? 'enclose size) 0)
+       ((integer? size) size)
+       (else (error "not a size value" size))
+       ))
+
+    (define (gdk-rect->rect2D gr)
+      (apply
+       rect2D
+       (parse-c-struct
+        (slot-ref gr 'value)
+        (list int32 int32 int32 int32)
+        )))
+
+    (define (gtk-setup-size-alloc-handler o wref label)
+      ;; Every widget has an event handler that is called when it is
+      ;; resized, this take the resize event and sets the `div-rect`
+      ;; field of all elements of the `DIV` tree. This allows the
+      ;; Schemacs REPL to inspect the size of arbitrary `DIV`
+      ;; elements.
+      ;;
+      ;; *WARNING:* this may cause GUIs with lots of elements to
+      ;; become much slower than if these event handlers were never
+      ;; installed. It may be better to install these event handlers
+      ;; only on certain widgets, and not on every single on-screen
+      ;; element.
+      (cond
+       ((div-record-type? o)
+        (gi:connect
+         wref (gi:make <signal> #:name "size-allocate")
+         (lambda (wref rect)
+           (let ((rect (gdk-rect->rect2D rect)))
+             (lens-set rect o =>div-rect*!)
+             ))))
+       (else (error "not a div-record-type" o))
+       ))
 
     (define (gtk-draw-app-window o/flo)
       ;; This draws the root of the `DIV` tree before calling the
@@ -646,62 +705,71 @@
              ((floater-type? o/flo)
               (values (floater-div o/flo) (floater-rect o/flo))
               )
-             (else (values o/flo (rect2D 0 0 800 640)))
+             (else (values o/flo (rect2D 0 0 1000 600)))
              )))
         (let*((size (rect2D-size rect))
+              (w (size2D-width size))
+              (h (size2D-height size))
               (props (and (div-record-type? o) (view o =>div-properties*!)))
               (title (prop-lookup 'title: props))
-              (layout
-               (gi:make
-                <GtkBox>
-                #:expand #t
-                #:visible #t
-                #:valign 'fill
-                #:halign 'fill
-                #:orientation 'vertical
-                ))
+              ;; (layout-box
+              ;;  (gi:make
+              ;;   <GtkBox>
+              ;;   #:visible #t
+              ;;   #:orientation 'vertical
+              ;;   #:vexpand #t
+              ;;   #:hexpand #t
+              ;;   #:valign 'fill
+              ;;   #:halign 'fill
+              ;;   #:resize-mode 'parent
+              ;;   ))
+              (child (gtk-draw-content o #f))
+              (child-wref (gtk-get-outer-widget child))
               (win-wref
                (gi:make
                 <GtkApplicationWindow>
+                #:visible #t
+                #:child child-wref
                 #:application *gtk-application-object*
-                #:title (or title *default-window-title*)
+                #:default-width (size->default w 1000)
+                #:default-height (size->default h 600)
+                #:hexpand (size->expand w)
+                #:vexpand (size->expand h)
                 #:valign 'fill
                 #:halign 'fill
-                #:child layout
+                #:title (or title *default-window-title*)
                 ))
-              (child (gtk-draw-content o layout))
-              (child-wref (gtk-get-outer-widget child))
               )
           (gobject-ref win-wref)
-          (gobject-ref layout)
-          (widget:set-hexpand child-wref #t)
-          (widget:set-vexpand child-wref #t)
-          (container:add layout child-wref)
+          ;;(gobject-ref layout-box)
+          ;;(box:pack-start layout-box child-wref #t #t 0)
           (lens-set win-wref o =>div-widget*!)
+          (gtk-setup-size-alloc-handler o win-wref "main")
           o/flo
           )))
 
-    (define (gtk-draw-string o props)
+    (define (gtk-draw-string o content props)
       (let ((wref
              (gi:make
               <GtkLabel>
-              #:label o
+              #:label content
               #:visible (not (prop-lookup 'hidden: props))
-              #:halign 'start
-              #:valign 'start
               #:selectable #t
               #:has-default #f
               #:focus-on-click #t
               #:can-default #f
-              #:expand #f
+              ;; #:halign 'start
+              ;; #:valign 'start
+              ;; #:vexpand #f
+              ;; #:hexpand #f
               ;; TODO: set the #:attributes with Pango font properties
               )))
         (gobject-ref wref)
-        (gtk-widget-set-event-handlers wref props)
+        (gtk-widget-set-event-handlers o wref props)
         wref
         ))
 
-    (define (gtk-draw-push-button label props)
+    (define (gtk-draw-push-button o label props)
       (let*((action (prop-lookup 'on-button-push: props))
             (wref
              (gi:make
@@ -709,10 +777,11 @@
               #:label label
               #:visible (not (prop-lookup 'hidden: props))
               #:sensitive (procedure? action)
-              #:expand #f
+              #:vexpand #f
+              #:hexpand #f
               )))
         (gobject-ref wref)
-        (gtk-widget-set-event-handlers wref props)
+        (gtk-widget-set-event-handlers o wref props)
         (when (procedure? action)
           (gi:connect
            wref button:clicked
@@ -725,38 +794,39 @@
 
     (define (gtk-draw-text-editor o buffer props)
       (let*((visible (not (prop-lookup 'hidden: props)))
-            (viewport
+            (textview
              (gi:make
               <GtkTextView>
               #:buffer buffer
+              #:visible visible
+              #:monospace (not (prop-lookup 'default-font: props))
+              #:input-purpose 'terminal
               #:vexpand #t
               #:hexpand #t
               #:valign 'fill
               #:halign 'fill
-              #:visible visible
-              #:monospace (not (prop-lookup 'default-font: props))
-              #:input-purpose 'terminal
+              #:resize-mode 'queue
               ))
             (scroll
              (gi:make
               <GtkScrolledWindow>
-              #:visible visible
               #:vscrollbar-policy 'automatic
               #:hscrollbar-policy 'automatic
               #:visible (not (prop-lookup 'hidden: props))
+              #:child textview
               #:vexpand #t
               #:hexpand #t
               #:valign 'fill
               #:halign 'fill
-              #:child viewport
+              #:resize-mode 'queue
               ))
             (wref
              (make<gtk-div-contain>
-              #f scroll viewport buffer
+              #f scroll textview buffer
               )))
-        (gobject-ref viewport)
+        (gobject-ref textview)
         (gobject-ref scroll)
-        (gtk-widget-set-event-handlers viewport props)
+        (gtk-widget-set-event-handlers o textview props)
         wref
         ))
 
@@ -777,11 +847,13 @@
             (wref
              (gi:make
               <GtkBox>
+              #:visible #t
               #:orientation orient
-              #:spacing 0
-              #:expand #t
-              #:valign 'start
-              #:halign 'start
+              ;; #:vexpand #t
+              ;; #:hexpand #t
+              ;; #:valign 'start
+              ;; #:halign 'start
+              #:resize-mode 'parent
               )))
         (gobject-ref wref)
         wref
@@ -810,6 +882,7 @@
                 (subdiv (gtk-draw-content (vector-ref subdivs 0) #f))
                 )
             (box:pack-start wref (gtk-get-outer-widget subdiv) #f #f 0)
+            ;;(container:add wref (gtk-get-outer-widget subdiv))
             (lens-set wref o =>div-widget*!)
             wref
             ))
@@ -915,7 +988,10 @@
            #:visible visible
            #:vscrollbar-policy 'automatic
            #:hscrollbar-policy 'never
-           #:expand #t
+           #:vexpand #t
+           #:hexpand #t
+           #:halign 'fill
+           #:valign 'fill
            ))
          ((eq? scrollprop 'horizontal)
           (gi:make
@@ -923,7 +999,10 @@
            #:visible visible
            #:vscrollbar-policy 'never
            #:hscrollbar-policy 'automatic
-           #:expand #t
+           #:vexpand #t
+           #:hexpand #t
+           #:halign 'fill
+           #:valign 'fill
            ))
          ((eq? scrollprop 'both)
           (gi:make
@@ -931,7 +1010,10 @@
            #:visible visible
            #:vscrollbar-policy 'automatic
            #:hscrollbar-policy 'automatic
-           #:expand #t
+           #:vexpand #t
+           #:hexpand #t
+           #:halign 'fill
+           #:valign 'fill
            ))
          (else (error "unknown value for 'scrollbar: property" scrollprop))
          )))
@@ -945,6 +1027,7 @@
              (gi:make
               <GtkFlowBox>
               #:visible visible
+              #:orientation
               (cond
                ((eq? orient cut-horizontal) 'vertical)
                ((eq? orient cut-vertical) 'horizontal)
@@ -952,7 +1035,10 @@
                (else (error "unknown box orientation value" orient))
                )
               #:selection-mode 'selection-multiple
-              #:expand #t
+              #:vexpand #t
+              #:hexpand #t
+              #:halign 'fill
+              #:valign 'fill
               ))
             (counter (vector-length (div-pack-subdiv-sizes o)))
             (pack-start
@@ -1010,12 +1096,13 @@
             (box-wref
              (gi:make
               <GtkBox>
-              #:spacing 0
+              #:orientation orient
               #:visible visible
               #:valign 'fill
               #:halign 'fill
-              #:expand #t
-              #:orientation orient
+              #:vexpand #t
+              #:hexpand #t
+              #:resize-mode 'parent
               ))
             (pack-start (lambda (widget) (box:pack-start box-wref widget #f #f 0)))
             (pack-end   (lambda (widget) (box:pack-end   box-wref widget #f #f 0)))
@@ -1040,9 +1127,8 @@
           )
          (else
           (when outer
-            (widget:set-hexpand box-wref #t)
-            (widget:set-vexpand box-wref #t)
-            (container:add outer box-wref)
+            (box:pack-start outer box-wref #t #t 0)
+            ;;(container:add outer box-wref)
             )))
         (vector-for-each
          (lambda (size child)
@@ -1266,7 +1352,7 @@
     (define gtk-get-cursor-index 
       (gtk-buffer-method
        (lambda (buffer)
-         (text-buffer:cursor-position bufrer)
+         (text-buffer:cursor-position buffer)
          )))
 
     (define gtk-set-cursor-index
