@@ -356,48 +356,51 @@
       (view        line-display-view          set!line-display-view)
       )
 
-    (define (new-line-display parent prompt-str hidden)
+    (define (new-line-display parent prompt-str)
       (let*((prompt-var (and prompt-str (state-var string=? prompt-str)))
             (buffer     (impl/new-buffer))
             (this       (make<line-display-type> parent prompt-var buffer #f))
+            (editline
+             (text-editor
+              buffer
+              (properties
+               'on-key-event:
+               (cond
+                (prompt-str
+                 (lambda (key-path)
+                   (let*((window (winframe-selected-window parent)))
+                     (parameterize
+                         ((selected-frame parent)
+                          (selected-window window)
+                          (current-buffer (window-buffer window))
+                          )
+                       (key-event-handler
+                        parent (*default-minibuffer-keymap*) key-path
+                        )))))
+                (else #f)
+                ))))
             (widget
-             (div-pack
-              cut-vertical
-              (view-type this)
-              (properties 'wrapping: #t)
-              (size2D expand enclose)
-              (and prompt-var
-                   (pack-elem
-                    (size2D enclose)
-                    (use-vars (list prompt-var) div)
-                    ))
-              (pack-elem
-               expand
-               (text-editor
-                buffer
-                (properties
-                 'hidden: hidden
-                 'on-key-event:
-                 (cond
-                  (prompt-str
-                   (lambda (key-path)
-                     (let*((window (winframe-selected-window parent)))
-                       (parameterize
-                           ((selected-frame parent)
-                            (selected-window window)
-                            (current-buffer (window-buffer window))
-                            )
-                         (key-event-handler
-                          parent (*default-minibuffer-keymap*) key-path
-                          )))))
-                  (else #f)
-                  )))))))
+             (cond
+              (prompt-var
+               (div-pack
+                cut-vertical
+                (view-type this)
+                (properties 'wrapping: #t)
+                (size2D expand enclose)
+                (pack-elem
+                 (size2D enclose)
+                 (use-vars (list prompt-var) div)
+                 )
+                (pack-elem (size2D expand enclose) editline)
+                ))
+              (else editline)
+              )))
         (set!line-display-view this widget)
         this
         ))
 
-    (define (new-echo-area  parent) (new-line-display parent #f #f))
-    (define (new-minibuffer parent) (new-line-display parent "" #t))
+    (define (new-echo-area  parent) (new-line-display parent #f))
+    (define (new-minibuffer parent) (new-line-display parent ""))
 
     (define (new-header-line parent-window st)
       (new-mode-line parent-window (or st *header-line-format*))
@@ -713,7 +716,8 @@
 
     (define-record-type <winframe-type>
       (make<winframe>
-       window  layout  modal  keymap  echo  minibuf  dispatch prompt  view
+       window  layout  modal  keymap  echo
+       minibuf  echo-st  dispatch  prompt  view
        )
       winframe-type?
       (window   winframe-selected-window set!winframe-selected-window)
@@ -722,6 +726,7 @@
       (keymap   winframe-local-keymap    set!winframe-local-keymap)
       (echo     winframe-echo-area       set!winframe-echo-area)
       (minibuf  winframe-minibuffer      set!winframe-minibuffer)
+      (echo-st  winframe-echo-state      set!winframe-echo-state)
       (dispatch winframe-event-dispatch  set!winframe-event-dispatch)  
       (prompt   winframe-prompt-stack    set!winframe-prompt-stack)
       (view     winframe-view            set!winframe-view)
@@ -749,20 +754,20 @@
             (modal-key-state #f)
             (echo-area       #f)
             (minibuffer      #f)
+            (echo-st         #f)
             (dispatch        (make-parameter #f))
             (prompt          '())
             (widget          #f)
             (this
              (make<winframe>
-              init-window  layout  modal-key-state
-              init-keymap  echo-area  minibuffer  dispatch
-              prompt  widget
+              init-window  layout  modal-key-state  init-keymap
+              echo-area  echo-st  minibuffer  dispatch  prompt  widget
               ))
             (init-window (new-window this init-buffer init-keymap))
             (echo-area   (new-echo-area this))
             (minibuffer  (new-minibuffer this))
             (layout      (state-var init-window))
-            (lo-size     (size2D expand enclose))
+            (echo-st     (state-var echo-area))
             (widget
              (floater
               (rect2D 0 0 expand expand)
@@ -774,14 +779,14 @@
                 (use-vars (list layout) window-view)
                 )
                (pack-elem
-                lo-size (line-display-view echo-area)
-                )
-               (pack-elem lo-size (line-display-view minibuffer))
-               ))))
+                (size2D expand enclose)
+                (use-vars (list echo-st) line-display-view)
+                )))))
         (set!winframe-selected-window this init-window)
         (set!winframe-layout          this layout)
         (set!winframe-echo-area       this echo-area)
         (set!winframe-minibuffer      this minibuffer)
+        (set!winframe-echo-state      this echo-st)
         (set!winframe-view            this widget)
         this
         ))
