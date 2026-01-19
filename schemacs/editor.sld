@@ -59,7 +59,8 @@
           div-pack  pack-elem  cut-horizontal  cut-vertical
           div-space   floater  print-div
           tiled-windows  text-editor
-          use-vars-value  div-set-focus!  is-graphical-display?
+          use-vars-value  update-var
+          div-set-focus!  is-graphical-display?
           ))
 
   (export
@@ -716,8 +717,8 @@
 
     (define-record-type <winframe-type>
       (make<winframe>
-       window  layout  modal  keymap  echo
-       minibuf  echo-st  dispatch  prompt  view
+       window  layout  modal  keymap  echo  minibuf
+       echo-st  dispatch  prompt  view
        )
       winframe-type?
       (window   winframe-selected-window set!winframe-selected-window)
@@ -726,7 +727,7 @@
       (keymap   winframe-local-keymap    set!winframe-local-keymap)
       (echo     winframe-echo-area       set!winframe-echo-area)
       (minibuf  winframe-minibuffer      set!winframe-minibuffer)
-      (echo-st  winframe-echo-state      set!winframe-echo-state)
+      (echo-st  winframe-echo-area-state set!winframe-echo-area-state)
       (dispatch winframe-event-dispatch  set!winframe-event-dispatch)  
       (prompt   winframe-prompt-stack    set!winframe-prompt-stack)
       (view     winframe-view            set!winframe-view)
@@ -755,13 +756,13 @@
             (echo-area       #f)
             (minibuffer      #f)
             (echo-st         #f)
-            (dispatch        (make-parameter #f))
+            (dispatch        #f)
             (prompt          '())
             (widget          #f)
             (this
              (make<winframe>
               init-window  layout  modal-key-state  init-keymap
-              echo-area  echo-st  minibuffer  dispatch  prompt  widget
+              echo-area  minibuffer  echo-st  dispatch  prompt  widget
               ))
             (init-window (new-window this init-buffer init-keymap))
             (echo-area   (new-echo-area this))
@@ -786,7 +787,7 @@
         (set!winframe-layout          this layout)
         (set!winframe-echo-area       this echo-area)
         (set!winframe-minibuffer      this minibuffer)
-        (set!winframe-echo-state      this echo-st)
+        (set!winframe-echo-area-st    this echo-st)
         (set!winframe-view            this widget)
         this
         ))
@@ -888,10 +889,20 @@
     ;; -------------------------------------------------------------------------------------------------
 
     (define-record-type <minibuffer-prompt-type>
-      (make<minibuffer-prompt> continuation selected-window)
+      ;; Contains information used to emulate the Emacs Lisp
+      ;; `read-from-minibuffer`. Holds the target window in which
+      ;; commands should update state, and a continuation which is to
+      ;; be continued with the string contents of the minibuffer
+      ;; argument after the end-user presses "enter" in the
+      ;; minibuffer. Note that this is only for Emacs Lisp emulation,
+      ;; reading from the minibuffer in Scheme using
+      ;; `focus-minibuffer` does not need to remember the continuation
+      ;; from which it was called.
+      ;;--------------------------------------------------------------
+      (make<minibuffer-prompt> display continuation)
       minibuffer-prompt-type?
-      (continuation    minibuffer-prompt-continuation)
-      (selected-window minibuffer-prompt-selected-window)
+      (selected-window  minibuffer-prompt-selected-window)
+      (continuation     minibuffer-prompt-continuation)
       )
 
     (define (winframe-awaiting-prompt? winframe)
@@ -942,7 +953,7 @@
                (update
                 (lambda (stack)
                   (cons ;; here is where we push the continuation onto the stack
-                   (make<minibuffer-prompt> cont window)
+                   (make<minibuffer-prompt> window cont)
                    stack))
                 winframe =>winframe-prompt-stack)
                (dispatch)               ; this does not return
@@ -972,8 +983,8 @@
             )
         (cond
          ((minibuffer-prompt-type? prompt-item)
-          (let ((prompt  (minibuffer-prompt-continuation     prompt-item))
-                (window  (minibuffer-prompt-selected-window  prompt-item))
+          (let ((prompt  (minibuffer-prompt-continuation    prompt-item))
+                (window  (minibuffer-prompt-selected-window prompt-item))
                 )
             (select-window window)
             (update
@@ -1081,16 +1092,45 @@
          (exit-minibuffer-with-return
           (get-minibuffer-text (selected-frame))))
        exit-minibuffer-with-return
-       "Terminate this minibuffer argument."))
+       "Terminate this minibuffer argument."
+       ))
 
-    (define (focus-minibuffer winframe prompt init-input)
-      ;; Move the keyboard focus to the minibuffer.
-      (lens-set (winframe-minibuffer winframe) winframe =>winframe-selected-window)
-      ((*old-impl/focus-minibuffer*) winframe prompt init-input))
+    (define (focus-minibuffer winframe prompt-str init-input)
+      ;; Move the keyboard focus to the minibuffer and change it's
+      ;; prompt string. For the `PROMTP` argument, you may pass `#f`
+      ;; to display no prompt string, or pass `#t` to reuse the
+      ;; previous prompt string values.
+      ;;--------------------------------------------------------------
+      (let*((echo-st (winframe-echo-area-state winframe))
+            (minibuf (winframe-minibuffer winframe))
+            )
+        (update-var
+         echo-st
+         (lambda (echo-area)
+           (cond
+            ((eq? echo-area minibuf)
+             (error "command attempted to use minibuffer while in minibuffer")
+             )
+            (else
+             (let*((prompt-var (line-display-prompt-var minibuf)))
+               (div-set-focus! winframe (line-display-view minibuf))
+               (cond
+                ((eq? #t prompt-str) (values))
+                (else
+                 (update-var
+                  prompt-var
+                  (lambda (old-prompt-str)
+                    (cond
+                     ((eq? #f prompt-str) "")
+                     ((string? prompt-str) prompt-str)
+                     (else (error "not a string" prompt-str))
+                     )))))
+               minibuf
+               )))))))
 
     (define (clear-minibuffer window)
-      ((*old-impl/clear-minibuffer*) window))
-
+      ((*old-impl/clear-minibuffer*) window)
+      )
 
     (define simple-read-minibuffer
       ;; This is a better API to use than the usual Emacs
@@ -1140,8 +1180,7 @@
               ((string=? received-input "") default)
               (else (read received-input))))
             (else received-input)
-            ))
-         )))
+            )))))
 
     (define eval-expression-string
       ;; This is the Scheme built-in implementation for the Emacs Lisp
@@ -1161,7 +1200,8 @@
                  (else (error "must be a string" input-string))))
                (_ (pretty
                    (print ";;eval-expression-string: "
-                          (qstr input-string) (line-break))))
+                          (qstr input-string) (line-break)
+                          )))
                (result
                 (cond
                  ((string=? "" input-string) #f)
@@ -1172,7 +1212,8 @@
                        (lambda ()
                          (call-with-values
                              (lambda () (eval-string input-string))
-                           (lambda args args)))))))))
+                           (lambda args args)
+                           ))))))))
                (output-string
                 (cond
                  (result
@@ -1181,11 +1222,13 @@
                       (write result port)
                       (flush-output-port port)
                       (get-output-string port))))
-                 (else #f)))
-               )
+                 (else #f)
+                 )))
            (when output-string
-             (display-in-echo-area winframe output-string))
-           result))))
+             (display-in-echo-area winframe output-string)
+             )
+           result
+           ))))
 
     (define eval-expression
       (new-command
