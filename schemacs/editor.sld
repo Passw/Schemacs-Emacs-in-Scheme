@@ -108,8 +108,7 @@
    *default-minibuffer-keymap*
    selected-frame
    key-event-handler
-   format-message
-   display-in-echo-area  clear-echo-area
+   message  display-in-echo-area  clear-echo-area
    simple-read-minibuffer  read-from-minibuffer
    exit-minibuffer
    focus-minibuffer
@@ -787,7 +786,7 @@
         (set!winframe-layout          this layout)
         (set!winframe-echo-area       this echo-area)
         (set!winframe-minibuffer      this minibuffer)
-        (set!winframe-echo-area-st    this echo-st)
+        (set!winframe-echo-area-state this echo-st)
         (set!winframe-view            this widget)
         this
         ))
@@ -899,10 +898,10 @@
       ;; `focus-minibuffer` does not need to remember the continuation
       ;; from which it was called.
       ;;--------------------------------------------------------------
-      (make<minibuffer-prompt> display continuation)
+      (make<minibuffer-prompt> current-window continuation)
       minibuffer-prompt-type?
-      (selected-window  minibuffer-prompt-selected-window)
-      (continuation     minibuffer-prompt-continuation)
+      (current-window  minibuffer-prompt-selected-window)
+      (continuation    minibuffer-prompt-continuation)
       )
 
     (define (winframe-awaiting-prompt? winframe)
@@ -986,7 +985,7 @@
           (let ((prompt  (minibuffer-prompt-continuation    prompt-item))
                 (window  (minibuffer-prompt-selected-window prompt-item))
                 )
-            (select-window window)
+            (select-window window #t)
             (update
              (lambda (stack) (cdr prompt-stack))
              winframe =>winframe-prompt-stack)
@@ -1039,15 +1038,23 @@
         )))
 
     (define (clear-echo-area winframe)
-      ((*old-impl/clear-echo-area*) winframe))
+      (let*((echo-area (winframe-echo-area winframe))
+            (textbuf (line-display-buffer echo-area))
+            )
+        (impl/delete-range echo-area 0 -1)
+        ))
 
     (define (display-in-echo-area winframe str)
-      (let*((msgbuf (messages-buffer)))
-        (clear-echo-area winframe)
+      (let*((msgbuf (messages-buffer))
+            (echo-area (winframe-echo-area winframe))
+            (textbuf (line-display-buffer echo-area))
+            )
+        (impl/delete-range textbuf 0 -1)
+        (impl/insert-string textbuf str)
         (impl/insert-string msgbuf str)
         ))
 
-    (define (format-message msgstr . objlist)
+    (define (message msgstr . objlist)
       (let*((winframe (selected-frame))
             (str (apply format (cons msgstr objlist)))
             )
@@ -1058,62 +1065,68 @@
       ;; Takes a window, calls *OLD-IMPL/IS-BUFFER-modified?* on the buffer
       ;; that the window is currently displaying
       ;; ------------------------------------------------------------------
-      ((*old-impl/is-buffer-modified?*) (view window =>window-buffer)))
-
-    ;; TODO: when constructing the editor, frames, windows, and buffers,
-    ;; make the construction happen in two passes. First, the record data
-    ;; types are all constructed. Then a second function is called,
-    ;; something like "init-views", which then evaluates the view
-    ;; *old-impl/...* function for the editor and all of its sub fields. The
-    ;; idea is that the whole editor data structure should exist in its
-    ;; entirity as early as possible, as a kind of "superstructure", and
-    ;; then the GUI is constructed on top of this superstructure.
-
-    (define (get-minibuffer-text frame)
-      ((*old-impl/get-minibuffer-text*) frame)
+      ((*old-impl/is-buffer-modified?*) (view window =>window-buffer))
       )
 
-    (define (exit-minibuffer-with-return return)
+    (define (get-minibuffer-text winframe)
+      (impl/copy-string
+       (line-display-buffer (winframe-minibuffer winframe)) 0 -1
+       ))
+
+    (define (exit-minibuffer-with-return winframe return)
       ;; This procedure (or the `EXIT-MINIBUFFER` command) should be bound
       ;; to the `<RETURN>` key for a minibuffer. If there has been a call
       ;; to `WINFRAME-AWAIT-PROMPT`, and therfore exists a continuation
       ;; saved which contains the stack of the procedure that called it,
       ;; this function resumes that continuation with the return value to
       ;; that procedure call given as an argument to this procedure.
-      (let ((winframe (selected-frame)))
-        ((*old-impl/exit-minibuffer*) winframe)
-        (winframe-prompt-resume winframe return)
+      (let*((window (winframe-selected-window winframe))
+            (echo-area (winframe-echo-area winframe))
+            (echo-st (winframe-echo-area-state winframe))
+            )
+        (update-var echo-st (lambda _ echo-area))
+        (select-window window #t)
         ))
 
     (define exit-minibuffer
       (new-command
        "exit-minibuffer"
        (lambda ()
-         (exit-minibuffer-with-return
-          (get-minibuffer-text (selected-frame))))
+         (let ((winframe (selected-frame)))
+           (exit-minibuffer-with-return
+            winframe
+            (winframe-prompt-resume
+             winframe
+             (clear-minibuffer winframe #t)
+             ))))
        exit-minibuffer-with-return
        "Terminate this minibuffer argument."
        ))
 
-    (define (focus-minibuffer winframe prompt-str init-input)
+    (define (focus-minibuffer winframe prompt-str init-input keymap)
       ;; Move the keyboard focus to the minibuffer and change it's
       ;; prompt string. For the `PROMTP` argument, you may pass `#f`
       ;; to display no prompt string, or pass `#t` to reuse the
-      ;; previous prompt string values.
+      ;; previous prompt string values. This function does not save
+      ;; the current continuation into the prompt stack, it simply
+      ;; asks the widget toolkit to show and swtich focus to the
+      ;; minibuffer.
       ;;--------------------------------------------------------------
       (let*((echo-st (winframe-echo-area-state winframe))
             (minibuf (winframe-minibuffer winframe))
             )
         (update-var
          echo-st
-         (lambda (echo-area)
+         (lambda (echo-st)
            (cond
-            ((eq? echo-area minibuf)
+            ((eq? echo-st minibuf)
              (error "command attempted to use minibuffer while in minibuffer")
              )
             (else
-             (let*((prompt-var (line-display-prompt-var minibuf)))
-               (div-set-focus! winframe (line-display-view minibuf))
+             (let*((prompt-var (line-display-prompt-var minibuf))
+                   (textbuf (line-display-buffer minibuf))
+                   )
+               (div-set-focus! (line-display-view minibuf))
                (cond
                 ((eq? #t prompt-str) (values))
                 (else
@@ -1125,45 +1138,58 @@
                      ((string? prompt-str) prompt-str)
                      (else (error "not a string" prompt-str))
                      )))))
+               (cond
+                ((string? init-input)
+                 (impl/delete-range textbuf 0 -1)
+                 (impl/insert-string textbuf init-input)
+                 )
+                ((eq? #f init-input)
+                 (impl/delete-range textbuf 0 -1)
+                 )
+                ((eq? #t init-input) (values))
+                (else "not an initial input string" init-input)
+                )
                minibuf
                )))))))
 
-    (define (clear-minibuffer window)
-      ((*old-impl/clear-minibuffer*) window)
-      )
+    (define (clear-minibuffer winframe get-string?)
+      (let*((minibuf (winframe-minibuffer winframe))
+            (textbuf (line-display-buffer minibuf))
+            (text    (and get-string? (impl/copy-string textbuf 0 -1)))
+            )
+        (impl/delete-range textbuf 0 -1)
+        text
+        ))
 
     (define simple-read-minibuffer
       ;; This is a better API to use than the usual Emacs
       ;; `READ-FROM-MINIBUFFER` API which is more procedural than
       ;; functional in style and also loaded with historical baggage.
+      ;; This procedure calls `read-from-minibuffer`.
       (case-lambda
-        ((prompt init-input)
-         (simple-read-minibuffer prompt init-input #f))
-        ((prompt init-input keymap)
+        ((prompt-str init-input)
+         (simple-read-minibuffer prompt-str init-input #f)
+         )
+        ((prompt-str init-input keymap)
          (let*((window   (selected-window))
                (winframe (window-parent-frame window))
-               ;;(minibuf  (winframe-minibuffer winframe))
                )
-           (focus-minibuffer winframe prompt init-input)
+           (focus-minibuffer winframe prompt-str init-input keymap)
            (winframe-await-prompt winframe window)
-           ))
-        ))
+           ))))
 
     (define read-from-minibuffer
       ;; This API mimics the Emacs API of the same name, but otherwise
-      ;; simply calls the `SIMPLE-READ-MINIBUFFER` procedure. It sets the
-      ;; UI into a mode in which the keyboard focus is on the minibuffer,
-      ;; and the enter or return keys are bound to procedures which
-      ;; collect that input and perform some action on it.
-      ;;
-      ;; TODO: for APIs like this, which wrap a simplified Scheme
-      ;; procedure such as `SIMPLE-READ-MINIBUFFER` in an API that mimics
-      ;; the Emacs API of the same name, I believe thse should be moved
-      ;; out of this `(SCHEMACS EDITOR)` library and into their own "compat"
-      ;; library. They are not useful to any other APIs here in this
-      ;; library and are cluttering-up the code. APIs like this are more
-      ;; useful to the Emacs Lisp evaluator, not to the core operation of
-      ;; the editor.
+      ;; simply calls the `SIMPLE-READ-MINIBUFFER` procedure. It sets
+      ;; the UI into a mode in which the keyboard focus is on the
+      ;; minibuffer, and the enter or return keys are bound to
+      ;; procedures which collect that input and perform some action
+      ;; on it. When you call this procedure, it will not return right
+      ;; away, it will save the current continuation into a slot of
+      ;; the current window frame. When the end-user presses the
+      ;; "enter" key, or otherwise somehow has `exit-minibuffer`
+      ;; invoked, the continuation which invoked this procedure will
+      ;; be continued with the result of the minibuffer input.
       ;;------------------------------------------------------------------
       (case-lambda
         ((a) (read-from-minibuffer a #f #f #f #f #f #f))

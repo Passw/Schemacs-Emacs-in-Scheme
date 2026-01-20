@@ -195,7 +195,9 @@
       ;; Delete characters between the two character positions. The
       ;; positions may be expressed as integers, in which case they
       ;; are character positions, or as `location` data structure as
-      ;; defined in the `(schemacs lexer)` library.
+      ;; defined in the `(schemacs lexer)` library. If the range is
+      ;; given as integers, negative integers count from the end of
+      ;; the buffer.
       ;;--------------------------------------------------------------
       (make-parameter
        (lambda (buffer from to)

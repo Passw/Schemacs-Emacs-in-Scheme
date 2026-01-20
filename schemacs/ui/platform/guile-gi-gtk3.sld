@@ -254,6 +254,18 @@
          (else (gtk-unref-destroy wref))
          )))
 
+    (define (gtk-div-set-focus! o)
+      (cond
+       ((div-record-type? o)
+        (let ((wref (div-widget o)))
+          (cond
+           (wref (widget:grab-focus wref))
+           (error "no widget reference" o)
+           )))
+       (else
+        (error "not a div type" o)
+        )))
+
     ;;----------------------------------------------------------------
 
     (define-record-type <gtk-div-contain-type>
@@ -1437,6 +1449,7 @@
     (define (parameterized-gtk-api thunk)
       (parameterize
           ((*impl/is-graphical-display?* gtk-is-graphical-display?)
+           (*impl/div-set-focus*         gtk-div-set-focus!)
            (*impl/buffer-type?*          gtk-buffer-type?)
            (*impl/new-buffer*            gtk-new-buffer)
            (*impl/style-type?*           gtk-style-type?)
