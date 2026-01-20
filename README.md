@@ -274,7 +274,8 @@ to render the view of a "buffer" or "window."
 
 ## Other resources
 
-- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/schemacs/)
+- [Presentation of this project at EmacsConf 2025](https://emacsconf.org/2025/talks/schemacs/)
+- [Presentation of this project at EmacsConf 2024](https://emacsconf.org/2024/talks/gypsum/)
 
 ## Contributors welcome!
 
