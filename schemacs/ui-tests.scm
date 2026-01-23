@@ -234,42 +234,48 @@
 
 (define (split-screen-test)
   (tiled-windows cut-vertical
-   (div "Left-side")
-   (div "Middle")
-   (div "Right-side")
+   (div "Left-side"  (selector 'left))
+   (div "Middle"     (selector 'middle))
+   (div "Right-side" (selector 'right))
    ))
 
 (define (layout-test)
   (define current-layout (state-var eq? #f))
-  (define (button label action)
+  (define (button sel label action)
     (push-button label
+     (selector sel)
      (properties
       'on-button-push: (update-var current-layout action)
       )))
-  (define (three-row-button) (button "Three in a row" three-row))
+  (define (three-row-button) (button 'b3r "Three in a row" three-row))
   (define (three-row _)
     (display "; three-row\n")
     (tiled-windows cut-vertical
+     (selector 'w1)
      (three-row-button)
      (two-above-button)
      (two-right-button)
      ))
-  (define (two-above-button) (button "Two up above" two-up-above))
+  (define (two-above-button) (button 'b2a "Two up above" two-up-above))
   (define (two-up-above _)
     (display "; two-up-above\n")
     (tiled-windows cut-horizontal
+     (selector 'w1)
      (tiled-windows cut-vertical
+      (selector 'w2)
       (three-row-button)
       (two-above-button)
       )
      (two-right-button)
      ))
-  (define (two-right-button) (button "Two on the right" two-right))
+  (define (two-right-button) (button 'b2r "Two on the right" two-right))
   (define (two-right _)
     (display "; two-right\n")
     (tiled-windows cut-vertical
+     (selector 'w1)
      (three-row-button)
      (tiled-windows cut-horizontal
+      (selector 'w2)
       (two-above-button)
       (two-right-button)
       )))
@@ -288,6 +294,53 @@
           )
       (check-simple-packed (div-content o))
       ))
+
+(define (unsafe-capture-div divsel o proc . selectors)
+  ;; Runs `div-select` but returns the selected elements, which is
+  ;; unsafe in an ordinary GUI, but fine for testing the `div-select`
+  ;; algorithm. The `proc` is applied the length of the list and the
+  ;; list of selected elements.
+  (let*((found '())
+        (count
+         (apply
+          divsel o
+          (lambda (o) (set! found (cons o found)) #t)
+          selectors
+          )))
+    (proc count (reverse found))
+    ))
+
+(test-assert
+    (unsafe-capture-div
+     div-select
+     (run-div-monad (space-test))
+     (lambda (count elems)
+       (and
+        (= 1 count)
+        (equal?
+         '("Scheme is like a ball of snow!")
+         (map (lambda (o) (div-content (floater-div o))) elems)
+         )))
+     1 ;; middle
+     ))
+
+(define b3r-labels
+  '("Two on the right" "Two up above" "Three in a row")
+  )
+
+(test-assert
+    (unsafe-capture-div
+     div-select-all
+     (run-div-monad (layout-test))
+     (lambda (count elems)
+       (let ((elems (map div-content elems)))
+         (display "; got elems: ") (write elems) (newline);;DEBUG
+         (and
+          (= 3 count)
+          (equal? b3r-labels)
+          )))
+     (by-div-type push-button)
+     ))
 
 (test-end "schemacs_ui")
 

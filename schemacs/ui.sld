@@ -71,13 +71,14 @@
           rect2D-type?  rect2D  copy-rect2D
           size2D-type?  size2D  rect2D-size
           point2D  point2D-type?  copy-2D
+          point2D-x  point2D-y
           print-point2D  print-rect2D  print-size2D
           )
     (only (schemacs ui text-buffer)
           buffer-type?
           )
     (only (schemacs lens)
-          record-unit-lens  lens  update
+          record-unit-lens  unit-lens  lens  update
           =>view-only-lens  =>canonical
           )
     (only (schemacs pretty)
@@ -92,14 +93,17 @@
    =>state-var-value*!  div-event-handler  use-vars-value
    ;;------------------------------------------------------------------
    div-type?   div-record-type?  div   copy-div  print-div
-   div-parent  div-view-type  div-content  div-from-var?
-   div-on-update  div-equality-test
+   div-parent  div-selector  selector
+   div-view-type  div-content  div-from-var?
+   div-on-update  div-equality-test  div-lens
    view-type  on-update  equality-test  widget   properties  content
    =>div-widget*!  =>div-on-delete*!  =>div-on-update*!
    =>div-rect*!  =>div-properties*!
    div-prop-lookup  prop-lookup  variable-size?  expand  enclose
    for-each-div  draw-div-tree  div-run-update  div-delete
    *default-copy-widget-ref*
+   div-select  div-select-all  top-div-select  top-div-select-all
+   by-div-type  *top-level-div-node*
    div-set-focus*  div-set-focus!
    is-graphical-display?*  is-graphical-display?
    ;;------------------------------------------------------------------
@@ -316,37 +320,95 @@
                  )))))))))
 
     (define (update-var var update-proc)
-      ;; When it comes time to modify a `STATE-VAR` in response to an
-      ;; event, you must use this procedure to specify which
-      ;; `STATE-VAR` you want to update, and you must specify an
-      ;; `UPDATE-PROC` procedure which will be the current value of
-      ;; the `STATE-VAR` and is expected to return a new value to be
-      ;; stored into the `STATE-VAR`. The equality test will compare
-      ;; the new and old value of `STATE-VAR` and if different an
+      ;; When it comes time to modify a `state-var` (the `VAR`
+      ;; argument) in response to an event, you must use this
+      ;; procedure to specify which `state-var` you want to update,
+      ;; and you must specify an `UPDATE-PROC` procedure which will be
+      ;; the current value of the `state-var` and is expected to
+      ;; return a new value to be stored into the `state-var`. The
+      ;; equality test associated with the `state-var` will compare
+      ;; the new and old value of `state-var`, and if different an
       ;; update to any `USE-VARS` monads will be enqueued to update
       ;; the view.
+      ;;
+      ;; This procedure returns a thunk which takes an arbitrary
+      ;; number of arguments. The event handler logic always applies
+      ;; the old value of `VAR` as the first argument to
+      ;; `UPDATE-PROC`, and then any arguments you apply to the this
+      ;; thunk are applied to `UPDATE-PROC` after that.
+      ;;
+      ;; The reason `UPDATE-VAR` returns a thunk is because the
+      ;; `UPDATE-VAR` procedure is most often used as an event handler
+      ;; in the `properties` of a `div` node, and it is easier to
+      ;; produce a thunk rather than ask programmers to always wrap
+      ;; calls to `UPDATE-VAR` into a `lambda`.
+      ;;
+      ;; For example:
+      ;;
+      ;; ```
+      ;; (push-button
+      ;;   label
+      ;;   (properties
+      ;;     'on-button-push: (update-var number action)
+      ;;     ))
+      ;; ```
+      ;;
+      ;; NOTE: if you are already inside of the event handler of a
+      ;; `div` node and you want to apply a `state-var` to this
+      ;; `UPDATE-VAR` procedure, you can simply apply the thunk
+      ;; immediately, like so:
+      ;;
+      ;; ```
+      ;;   ((update-var my-st-var (lambda (my-st-var-value) ...)))
+      ;;  ; ^ note the double-parens to apply the update immediately.
+      ;; ```
+      ;;
+      ;; Also note that if you you call `UPDATE-VAR` immediately, but not
+      ;; from within a `div` node event handler, an error will be raised.
       ;;------------------------------------------------------------------
       (%update-var #t var update-proc)
       )
 
     (define (signal-var var update-proc)
       ;; This procedure is similar to `update-var`, except that the
-      ;; `state-var-type?` `VAR` that is applied must contain a `DIV`
-      ;; node value, and the `UPDATE-PROC` is expected to perform a
-      ;; stateful update on the `DIV` node and trigger a redraw in the
-      ;; GUI. Updates are always dispatched, no equality testing is
-      ;; performed on the variable value.
+      ;; `state-var-type?` `VAR` that is applied is expected to
+      ;; contain some kind of mutable object such as a Scheme I/O
+      ;; port, and the `UPDATE-PROC` is expected to perform a stateful
+      ;; update on this object. This will always trigger a redraw in
+      ;; the GUI, updates are always dispatched, and no equality
+      ;; testing is performed on the variable value.
       ;;------------------------------------------------------------------
       (%update-var #f var update-proc)
       )
 
     (define (div-run-update old new)
-      (let ((update (div-on-update old)))
+      (let ((update (and old (div-on-update old))))
         (when update (update old new))
         new
         ))
 
     (define (%div-event-handler log-output proc)
+      (let ((box '()))
+        (parameterize
+            ((*push-to-var-list*
+              (lambda (val) (set! box (cons val box)))
+              ;; A function to put updated state variables into the above box.
+              ))
+          ;; Run event handler `PROC`, may call `UPDATE-VAR` with many vars.
+          (let ((result (proc)))
+            ;; `BOX` now contains a list of all state vars that were
+            ;; updated, so for each state var, dispatch updates on all
+            ;; `USE-VARS` instances that are subscribed each state var.
+            (let loop ((box (reverse box)))
+              (cond
+               ((null? box) result)
+               (else
+                (let ((stvar (car box)))
+                  (div-dispatch-updates log-output div-run-update stvar)
+                  (loop (cdr box))
+                  ))))))))
+
+    (define div-event-handler
       ;; This procedure is used to implemnent the Schemacs UI
       ;; semantics in lower-level GUI toolkits. Whenever an event
       ;; handler is installed, for example into a push button, that
@@ -369,27 +431,6 @@
       ;; applied, and the new `DIV` produced by the latest call to
       ;; `USE-VARS`.
       ;;--------------------------------------------------------------
-      (let ((box '()))
-        (parameterize
-            ((*push-to-var-list*
-              (lambda (val) (set! box (cons val box)))
-              ;; A function to put updated state variables into the above box.
-              ))
-          ;; Run event handler `PROC`, may call `UPDATE-VAR` with many vars.
-          (let ((result (proc)))
-            ;; `BOX` now contains a list of all state vars that were
-            ;; updated, so for each state var, dispatch updates on all
-            ;; `USE-VARS` instances that are subscribed each state var.
-            (let loop ((box (reverse box)))
-              (cond
-               ((null? box) result)
-               (else
-                (let ((stvar (car box)))
-                  (div-dispatch-updates log-output div-run-update stvar)
-                  (loop (cdr box))
-                  ))))))))
-
-    (define div-event-handler
       (case-lambda
         ((proc) (%div-event-handler #f proc))
         ((log-output proc) (%div-event-handler log-output proc))
@@ -398,8 +439,9 @@
     (define (div-dispatch-updates log-output div-run-update state-var)
       ;; After an update to state variables, every `USES-VAR` instance
       ;; in the DIV tree that is subscribed to those variables needs
-      ;; to be evaluated again with the new values of the state variables.
-      ;; This procedure is usually called from the 
+      ;; to be evaluated again with the new values of the state
+      ;; variables.  This procedure is called automatically from the
+      ;; `div-event-handler` procedure.
       (let loop ((var-users (state-var-subscribers state-var)))
         (cond
          ((null? var-users) (values))
@@ -575,10 +617,14 @@
       ;; constructor which is actually a monadic function that
       ;; constructs this tree.
       ;;--------------------------------------------------------------
-      (make<div> parent view-type props on-update equal widget delete content rect from-var)
+      (make<div>
+       parent  view-type  select  props  on-update  equal
+       widget  delete  content  rect  from-var
+       )
       div-record-type?
       (parent      div-parent         set!div-parent)
       (view-type   div-view-type      set!div-view-type)
+      (select      div-selector       set!div-selector)
       (props       div-properties     set!div-properties)
       (on-update   div-on-update      set!div-on-update)
       (equal       div-equality-test  set!div-equality-test)
@@ -595,7 +641,7 @@
             (check-cont-type o)
             )))
 
-    (define (%content->div o) (make<div> #f #f #f #f equal? #f #f o #f #f))
+    (define (%content->div o) (make<div> #f #f #f #f #f equal? #f #f o #f #f))
 
     (define (%copy-div copy-widget-ref)
       (lambda (o)
@@ -605,6 +651,7 @@
           (make<div>
            (div-parent o)
            (div-view-type o)
+           (div-selector o)
            (copy-2D (vbal-copy (div-properties o)))
            (div-on-update o)
            (div-equality-test o)
@@ -926,7 +973,7 @@
     (define div
       (new-constructor
        (lambda (tag) (eq? tag div-record-type?))
-       (lambda () (make<div> #f #f #f #f equal? #f #f #f #f #f))
+       (lambda () (make<div> #f #f #f #f #f equal? #f #f #f #f #f))
        (lambda (o init)
          (or (div-common-constr o init)
              (cond
@@ -966,6 +1013,23 @@
           (space-record-type? a)
           (floater-type? a)
           ))
+
+    (define (selector sym)
+      ;; Tag the `div` with a symbol that can be used to select the
+      ;; `div` object after the `div` tree has been rendered. This is
+      ;; similar to the idea of a `class` or `id` in the DOM which can
+      ;; be used by CSS code to select elements of the DOM tree. A
+      ;; selector must be a string or symbol value.
+      ;;--------------------------------------------------------------
+      (record-updater
+       div-record-type?
+       (lambda (o)
+         (cond
+          ((or (symbol? sym) (string? sym))
+           (set!div-selector o sym)
+           o)
+          (else (error "must be a string or symbol"))
+          ))))
 
     (define (vector-fill-list! vec i elems)
       (cond
@@ -1052,6 +1116,154 @@
         (vector-fill-list! vec 0 divs)
         vec
         ))
+
+    (define *top-level-div-node*
+      ;; This parameter is set by the implementation-specific
+      ;; mechanism for rendering a GUI from a `div` tree, it will hold
+      ;; the root `div` node from which all other `div` nodes can be
+      ;; searched using `top-div-select`.
+      ;;--------------------------------------------------------------
+      (make-parameter #f)
+      )
+
+    (define (div-select root-div proc . selectors)
+      ;; Sort-of like a view-only lens, finds a child `div` node
+      ;; within a root `div` node `ROOT` using a list of `SELECTORS`.
+      ;; Each selectors is one of:
+      ;;
+      ;;  1. an integer which selects a sub-`div` by it's index in the
+      ;;     `div`'s child array
+      ;;
+      ;;  2. a predicate which can filter child `div`s according to
+      ;;     some property
+      ;;
+      ;;  3. a pair of integers (or a `point2D`) to select a grid
+      ;;     element by it's (X,Y) coordinate in the grid.
+      ;;
+      ;; This procedure returns the number of `div` nodes that matched
+      ;; the `selectors`. The `div` node that is selected by the last
+      ;; of the `selectors` (if any) is applied to the `PROC` procedure
+      ;; along with it's integer path.
+      ;;
+      ;; The `PROC` procedure must be a procedure which takes two
+      ;; arguments:
+      ;;
+      ;;   1. the integer path to the selected `div` node. An integer
+      ;;      path is just a unique list of integers that can
+      ;;      efficiently find the exact same `div` node for as long
+      ;;      as that `div` tree exists.
+      ;;
+      ;;   2. the `div` node that was selected.
+      ;;--------------------------------------------------------------
+      ((apply %div-select #f proc selectors) '() root-div)
+      )
+
+    (define (div-select-all root-div proc . selectors)
+      ;; Like `div-select` but allows selectors that can match more
+      ;; than one element to apply `PROC` to all possible matching
+      ;; elements.
+      ;;--------------------------------------------------------------
+      ((apply %div-select #t proc selectors) '() root-div)
+      )
+
+    (define (top-div-select proc . selectors)
+      ;; Runs `div-select` on the `*top-level-div-node*`.
+      ;;--------------------------------------------------------------
+      (apply div-select (*top-level-div-node*) selectors)
+      )
+
+    (define (top-div-select-all proc . selectors)
+      ;; Runs `div-select` on the `*top-level-div-node*`.
+      ;;--------------------------------------------------------------
+      (apply div-select-all (*top-level-div-node*) selectors)
+      )
+
+    (define (%div-select for-all proc . selectors)
+      (lambda (path div-in-focus)
+        (let ((o (let loop ((o div-in-focus))
+                   (cond
+                    ((floater-type? div-in-focus) (floater-div o))
+                    ((div-record-type? div-in-focus) o)
+                    ((use-vars-type? content)
+                     (loop (use-vars-value div-in-focus))
+                     )
+                    (else 0)
+                    ))))
+          (and o
+               (cond
+                ((null? selectors) (proc div-in-focus) 1)
+                (else
+                 (let ((content (div-content div-in-focus))
+                       (div-sel (div-selector o))
+                       (select  (car selectors))
+                       )
+                   (cond
+                    ((grid-record-type? content)
+                     (div-grid-select
+                      for-all path content select
+                      (apply %div-select for-all proc (cdr selectors))
+                      ))
+                    ((pack-record-type? content)
+                     (div-vector-select
+                      for-all path (div-pack-subdivs content) select
+                      (apply %div-select for-all proc (cdr selectors))
+                      ))
+                    ((space-record-type? content)
+                     (div-vector-select
+                      for-all path (div-space-elements content) select
+                      (apply %div-select for-all proc (cdr selectors))
+                      ))
+                    (else 0)
+                    ))))))))
+
+    (define (by-div-type t)
+      ;; This procedure constructs selector procedure that can be used
+      ;; as an argument to `div-select`. It successfully selects a
+      ;; `div` if the `div-view-type` matches a view type constructor
+      ;; such as `push-button`, `text-editor`, `canvas`, and so on.
+      (lambda (o) (eq? t (div-view-type o)))
+      )
+
+    (define (div-vector-select for-all path vec select proc)
+      (let ((len (vector-length vec)))
+        (cond
+         ((integer? select)
+          (cond
+           ((and (<= 0 select) (< select len))
+            (proc (cons select path) (vector-ref vec select))
+            )
+           (else 0)
+           ))
+         (else
+          (let ((selector
+                 (cond
+                  ((eq? #t select) #t)
+                  ((string? select)
+                   (lambda (subdiv)
+                     (let ((id (div-selector subdiv)))
+                       (and (string? id) (string=? select id))
+                       )))
+                  ((symbol? select)
+                   (lambda (subdiv) (eq? select (div-selector subdiv)))
+                   )
+                  ((procedure? select) select)
+                  (else (error "cannot be used as div selector" select))
+                  )))
+            (let loop ((i 0) (match-count 0))
+              (cond
+               ((< i len)
+                (let*((subdiv (vector-ref vec i)))
+                  (cond
+                   ((or (eq? #t selector) (selector subdiv))
+                    (let ((result (proc (cons i path) subdiv)))
+                      (if for-all
+                          (loop (+ 1 i) (+ match-count result))
+                          result
+                          )))
+                   (else (loop (+ 1 i) match-count))
+                   )))
+               (else match-count)
+               )))))))
 
     (define (for-each-div proc)
       ;; A curried procedure which takes a `PROC` and a `<DIV-TYPE>`,
@@ -1153,12 +1365,36 @@
        ))
 
     (define div-set-focus*
+      ;; This parameter mus be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; single argument `O` where `O` is a `div` node
+      ;; (`div-record-type?`), a `state-var` node (`state-var-type?`),
+      ;; or a platform-specific widget object (you must declare a
+      ;; `cond` statement checking for all three), and tell the GUI to
+      ;; make that widget the focus of keyboard events. That this
+      ;; function should only be called from within an event handler,
+      ;; so it is OK to raise an `error` if it is called from a place
+      ;; where the event handling mechanisms have not been
+      ;; parameterized.
+      ;;--------------------------------------------------------------
       (make-parameter
        (lambda (o)
          (error "`div-set-focus` not defined")
          )))
 
-    (define (div-set-focus! o) ((div-set-focus*) o))
+    (define (div-set-focus! o)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object, `state-var` node object, or a platform
+      ;; specific widget object. This procedure will ask the GUI to
+      ;; set the widget as the current keyboard focused widget, which
+      ;; receives all keyboard events.
+      ;;--------------------------------------------------------------
+      (cond
+       ((div-record-type? o) ((div-set-focus*) o))
+       ((state-var-type? o) (div-set-focus! (state-var-value o)))
+       (error "expecting a <div-record-type> or <state-var-type>")
+       ))
 
     (define is-graphical-display?*
       (make-parameter
@@ -1467,6 +1703,32 @@
        cont
        ))
 
+    (define (div-grid-select for-all path cont select proc)
+      (let*((vec (div-grid-subdivs cont))
+            (len (vector-length vec))
+            (xlen (vector-length (div-grid-x-sizes cont)))
+            )
+        (cond
+         ((and
+           (pair? select)
+           (integer? (car select))
+           (integer? (cdr select))
+           )
+          ;; A pair of integers is treated as an (X,Y) coordinate.
+          (div-vector-select
+           for-all path vec
+           (+ (* (cdr select) xlen) (car select))
+           proc
+           ))
+         ((point2D-type? select)
+          (div-vector-select
+           for-all path vec
+           (+ (* (point2D-y select) xlen) (point2D-x select))
+           proc
+           ))
+         (else (div-vector-select for-all path vec select proc))
+         )))
+
     (define (print-div-grid depth cont)
       (define xs (div-grid-x-sizes cont))
       (define xs-len (vector-length xs))
@@ -1620,8 +1882,7 @@
            (set!div-pack-subdivs
             pack (cons elem (div-pack-subdivs pack))
             )
-           o
-           ))))
+           o))))
 
     (define (%pack o size elem)
       ((run-record-updater (%pack-init size elem)) o)
@@ -1706,14 +1967,26 @@
              )
            (make<div-monad>
             (lambda (log-output parent)
-              (let*((subdivs-vec
+              (let*((subdivs (div-pack-subdivs pack))
+                    (subdivs-vec
                      (construct-content
                       log-output parent cast-to-div-record
-                      (reverse (div-pack-subdivs pack))
-                      ))
+                      (cond
+                       ((or (null? subdivs) (pair? subdivs))
+                        (reverse subdivs)
+                        )
+                       ((vector? subdivs) subdivs)
+                       (else (error "subdivs is not a list" subdivs))
+                       )))
+                    (sizes (div-pack-subdiv-sizes pack))
                     (sizes-vec
-                     (list->vector
-                      (reverse (div-pack-subdiv-sizes pack))
+                     (cond
+                      ((or (null? sizes) (pair? sizes))
+                       (list->vector
+                        (reverse (div-pack-subdiv-sizes pack))
+                        ))
+                      ((vector? sizes) sizes)
+                      (else (error "subdiv-sizes is not a list" sizes))
                       )))
                 (set!div-pack-subdivs pack subdivs-vec)
                 (set!div-pack-subdiv-sizes pack sizes-vec)
