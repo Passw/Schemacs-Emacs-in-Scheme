@@ -58,10 +58,11 @@
           div  view-type  properties  =>div-properties*!
           div-pack  pack-elem  cut-horizontal  cut-vertical
           div-space   floater  print-div
-          div-select  top-div-select
+          div-select  top-div-select  by-div-type
           tiled-windows  text-editor
-          use-vars-value  update-var
+          use-vars-value  update-var  after-update
           div-set-focus!  is-graphical-display?
+          =>div-widget*!
           ))
 
   (export
@@ -590,6 +591,7 @@
              (properties
               'on-key-event:
               (lambda (_o key-path)
+                (display "; WV key ") (write key-path) (newline);;DEBUG
                 (parameterize
                     ((selected-frame parent)
                      (selected-window o)
@@ -1192,7 +1194,17 @@
                  ((eq? #t init-input) (values))
                  (else (error "not an initial input string" init-input))
                  )
-                (div-set-focus! (line-display-view minibuf))
+                (display "; top-div-select div-set-focus! 'minibuffer-area\n");;DEBUG
+                (after-update
+                 (lambda ()
+                   (top-div-select
+                    (lambda (o)
+                      (display "; div-set-focus! ") (write o) (newline) ;;DEBUG
+                      (div-set-focus! o)
+                      )
+                    'minibuffer-area
+                    (by-div-type text-editor)
+                    )))
                 minibuf
                 ))))))))
 
@@ -1282,11 +1294,8 @@
                   (call/cc
                    (lambda (halt)
                      (with-exception-handler (lambda (caught) (halt caught))
-                       (lambda ()
-                         (call-with-values
-                             (lambda () (eval-string input-string))
-                           (lambda args args)
-                           ))))))))
+                       (lambda () (eval-string input-string))
+                       ))))))
                (output-string
                 (cond
                  (result

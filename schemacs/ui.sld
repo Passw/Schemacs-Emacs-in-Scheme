@@ -89,7 +89,7 @@
     )
   (export
    state-var-type?  use-vars-type?
-   state-var  use-vars  get-var  update-var  signal-var
+   state-var  use-vars  get-var  update-var  signal-var  after-update
    =>state-var-value*!  div-event-handler  use-vars-value
    ;;------------------------------------------------------------------
    div-type?   div-record-type?  div   copy-div  print-div
@@ -270,14 +270,40 @@
        state-var (cons var-user (state-var-subscribers state-var))
        ))
 
+    (define *push-after-update-thunk*
+      ;; This parameter is set to contain a box which gathers actions
+      ;; to be performed after the `div` tree is finished updating in
+      ;; response to changes made to any state variables. The actions
+      ;; collected here are thunks which take zero arguments, and are
+      ;; executed in the order there are placed into the queue by the
+      ;; `after-update` procedure.
+      (make-parameter #f)
+      )
+
+    (define (after-update thunk)
+      (cond
+       ((procedure? thunk)
+        (let ((push (*push-after-update-thunk*)))
+          (cond
+           (push (push thunk))
+           (else
+            (error
+             "after-update not called within a `DIV-EVENT-HANDLER` context"
+             thunk
+             )))))
+       (else
+        (error "not a procedure/thunk" thunk)
+        )))
+
     (define *push-to-var-list*
-      ;; This parameter is set to contain a box for every event
-      ;; handler that can call `WITH-STATE`. Every time `WITH-STATE`
-      ;; is called, the state variable that is updated is placed into
-      ;; a list in the box in this parameter. When the `WITH-STATE`
-      ;; procedure finished executing, this list is checked for
-      ;; modified state variables, and all of the subscribers to those
-      ;; variables are updated.
+      ;; This parameter is set to contain a procedure that pushes
+      ;; elements into stack contained in a box. Each element is a
+      ;; value resulting from an event handler that can call
+      ;; `WITH-STATE`. Every time `WITH-STATE` is called, the state
+      ;; variable that is updated is placed into a list in the box in
+      ;; this parameter. When the `WITH-STATE` procedure finished
+      ;; executing, this list is checked for modified state variables,
+      ;; and all of the subscribers to those variables are updated.
       (make-parameter #f)
       )
 
@@ -388,11 +414,15 @@
         ))
 
     (define (%div-event-handler log-output proc)
-      (let ((box '()))
+      (let ((box '())
+            (after '()))
         (parameterize
             ((*push-to-var-list*
               (lambda (val) (set! box (cons val box)))
               ;; A function to put updated state variables into the above box.
+              )
+             (*push-after-update-thunk*
+              (lambda (thunk) (set! after (cons thunk after)))
               ))
           ;; Run event handler `PROC`, may call `UPDATE-VAR` with many vars.
           (let ((result (proc)))
@@ -401,7 +431,14 @@
             ;; `USE-VARS` instances that are subscribed each state var.
             (let loop ((box (reverse box)))
               (cond
-               ((null? box) result)
+               ((null? box)
+                (let loop ((after (reverse after)))
+                  (cond
+                   ((null? after) result)
+                   (else
+                    ((car after))
+                    (loop (cdr after))
+                    ))))
                (else
                 (let ((stvar (car box)))
                   (div-dispatch-updates log-output div-run-update stvar)
@@ -1169,13 +1206,13 @@
     (define (top-div-select proc . selectors)
       ;; Runs `div-select` on the `*top-level-div-node*`.
       ;;--------------------------------------------------------------
-      (apply div-select (*top-level-div-node*) selectors)
+      (apply div-select (*top-level-div-node*) proc selectors)
       )
 
     (define (top-div-select-all proc . selectors)
       ;; Runs `div-select` on the `*top-level-div-node*`.
       ;;--------------------------------------------------------------
-      (apply div-select-all (*top-level-div-node*) selectors)
+      (apply div-select-all (*top-level-div-node*) proc selectors)
       )
 
     (define (%div-select for-all proc . selectors)
@@ -1191,9 +1228,13 @@
                     ))))
           (and o
                (cond
-                ((null? selectors) (proc div-in-focus) 1)
+                ((null? selectors)
+                 (display "; apply to ") (write proc) (newline);;DEBUG
+                 (display ";   -- ") (write div-in-focus) (newline);;DEBUG
+                 (proc div-in-focus)
+                 1)
                 (else
-                 (let ((content (div-content div-in-focus))
+                 (let ((content (div-content o))
                        (div-sel (div-selector o))
                        (select  (car selectors))
                        )
