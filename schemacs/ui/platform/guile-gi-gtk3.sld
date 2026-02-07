@@ -3,6 +3,9 @@
     (scheme base)
     (scheme write)
     (scheme file)
+    (only (schemacs hash-table)
+          make-hash-table  hash-table-set!  hash-table-ref/default
+          )
     (only (scheme process-context) command-line)
     (only (schemacs lens) lens  view  lens-set  update)
     (only (schemacs vbal)
@@ -29,7 +32,7 @@
           div-pack-subdivs  div-pack-subdiv-sizes  div-pack-from
           div-pack-orientation  div-pack-flags  wrapping
           cut-vertical  cut-horizontal
-          from-start  from-end
+          from-start  from-end  expand  enclose
           use-vars-type?   use-vars-value
           div-event-handler  div-run-update
           div-delete  =>div-on-delete*!
@@ -42,7 +45,8 @@
             (is-graphical-display?* *impl/is-graphical-display?*)
             )
     (prefix (schemacs ui text-buffer-impl) *impl/)
-    (prefix (schemacs apps debugui) ed:)
+    ;;(prefix (schemacs apps emacs) ed:)
+    (prefix (schemacs apps debugui) ed:) ;; exports `main`
     (prefix (schemacs keymap) km:)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
     (only (schemacs pretty) display-lines pretty print line-break qstr)
@@ -148,8 +152,9 @@
     (define (main . scheme-args)
       ;; TODO: handle scheme-args
       (parameterized-gtk-api
-       (lambda () (gtk-draw-div (apply ed:main scheme-args)))
-       ))
+       (lambda ()
+         (gtk-draw-div (apply ed:main scheme-args))
+         )))
 
     ;;================================================================
 
@@ -696,7 +701,9 @@
     (define (size->default size deflt)
       (cond
        ((eq? 'expand size) deflt)
+       ((eq? expand size) deflt)
        ((eq? 'enclose size) 0)
+       ((eq? enclose size) 0)
        ((integer? size) size)
        (else (error "not a size value" size))
        ))

@@ -613,7 +613,7 @@
       ;; `DIV-PACK`, `DIV-SPACE`, or `DIV-GRID`, or some value that
       ;; can be translated to a `DIV`.
       ;;------------------------------------------------------------------
-      (use-vars (list state-var) state-var-value)
+      (use-vars (list state-var) (lambda (val) val))
       )
 
     (define (apply-use-vars log-output uses)
