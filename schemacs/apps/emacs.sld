@@ -1,18 +1,14 @@
-(define-library (schemacs editor)
-  ;; This is the base package for the Schemacs editor, which is a clone
-  ;; of Emacs written in Scheme. The reference implementation is
-  ;; written in Guile Scheme which comes with an Emacs Lisp compiler,
-  ;; and therefore is not just a clone of the Emacs editor, but of the
-  ;; Emacs Lisp programming language.
-
-  ;; TODO: consider possibly doing the following:
+(define-library (schemacs apps emacs)
+  ;; This is the base package for the Schemacs editor, which is a
+  ;; clone of Emacs written in Scheme. It should be thought of as one
+  ;; Schemacs apps among many, but the one most people expect to use
+  ;; given that the audience for this application is the Emacs
+  ;; community.
   ;;
-  ;;  1. changing this library to `(schemacs ui main)`
-  ;;
-  ;;  2. replacing `(schemacs editor-impl)` with `(schemacs ui
-  ;;     text-buffer-impl)`, which means getting rid of all calls to
-  ;;     the editor-impl APIs in `(schemacs editor)`.
-  ;;
+  ;; The reference implementation is written in Guile Scheme which
+  ;; comes with an Emacs Lisp compiler, and therefore is not just a
+  ;; clone of the Emacs editor, but of the Emacs Lisp programming
+  ;; language.
 
   (import
     (scheme base)

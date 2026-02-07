@@ -13,7 +13,7 @@
     (only (schemacs lens) view record-unit-lens lens-set =>hash-key!)
     (prefix (schemacs concurrent) th:)
     (only (schemacs pretty) pretty print line-break)
-    (prefix (schemacs editor) ed:)
+    (prefix (schemacs apps emacs) ed:)
     (prefix (schemacs editor-impl) *impl/)
     (prefix (schemacs keymap) km:)
     (prefix (schemacs eval) schemacs:)

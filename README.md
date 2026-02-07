@@ -252,8 +252,7 @@ setter functions that can be composed together.
 Conventionally, lens definitions are prefixed with the `=>`
 symbol. They may also be suffixed with `*!` or `!` whether a lens is
 canonical and/or whether a lens mutates the data structure when
-updating it. For example, the `(schemacs editor)` library exports
-symbols such as `=>editor-buffer-table*!` or `=>buffer-local-keymap*!`.
+updating it.
 
 Since it is usually much easier to use lenses rather than getters and
 setters, many Schemacs libraries export their own lenses for working

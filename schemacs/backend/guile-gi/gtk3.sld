@@ -22,7 +22,7 @@
                  eval null-environment
                  scheme-report-environment
                  interaction-environment)
-           (schemacs editor)
+           (schemacs apps emacs)
            (schemacs keymap)
            (schemacs pretty)
            (schemacs lens)

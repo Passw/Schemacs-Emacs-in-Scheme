@@ -6,7 +6,7 @@
   (only (schemacs editor command)
         new-command show-command command-procedure)
   (only (schemacs lens) view)
-  (prefix (schemacs editor) ed:)
+  (prefix (schemacs apps emacs) ed:)
   (prefix (schemacs keymap) km:)
   (only (schemacs lens) view =>hash-key)
   )

@@ -1,7 +1,7 @@
 (define-library (schemacs editor-impl)
   ;; This library provides a long list of parameters which must be
   ;; parameterized by a back-end implemention. APIs in lirbaries such
-  ;; as `(SCHEMACS EDITOR)` call the procedures stored into these
+  ;; as `(SCHEMACS APPS EMACS)` call the procedures stored into these
   ;; parameters.
 
   (import

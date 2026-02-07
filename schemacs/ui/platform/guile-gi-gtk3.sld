@@ -42,7 +42,7 @@
             (is-graphical-display?* *impl/is-graphical-display?*)
             )
     (prefix (schemacs ui text-buffer-impl) *impl/)
-    (prefix (schemacs editor) ed:)
+    (prefix (schemacs apps debugui) ed:)
     (prefix (schemacs keymap) km:)
     (only (schemacs ui text-buffer) *text-load-buffer-size*)
     (only (schemacs pretty) display-lines pretty print line-break qstr)

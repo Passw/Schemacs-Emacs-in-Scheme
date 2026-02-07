@@ -16,7 +16,7 @@
     (slib)
     ,@matcher-libdirs
     (schemacs lens)
-    (schemacs editor)
+    (schemacs apps emacs)
     (schemacs elisp-eval)
     (schemacs)
     ))
