@@ -9,7 +9,7 @@
           vbal-assq  vbal-for-each
           )
     (only (schemacs ui rectangle)
-          point2D  point2D-x  point2D-y
+          point2D  point2D-x  point2D-y  print-rect2D
           rect2D-type?  rect2D  rect2D-point  rect2D-size
           size2D-type?  size2D  size2D-width  size2D-height
           )
@@ -259,18 +259,23 @@
          (else (gtk-unref-destroy wref))
          )))
 
-    (define (gtk-div-set-focus! o)
-      (cond
-       ((div-record-type? o)
-        (let ((wref (div-widget o)))
-          (display "; div-set-focus! ") (write wref) (newline) ;;DEBUG
-          (cond
-           (wref (widget:grab-focus wref))
-           (error "no widget reference" o)
-           )))
-       (else
-        (error "not a div type" o)
-        )))
+    (define (gtk-div-set-focus! focus)
+      (let ((o (cond
+                ((floater-type? focus) (floater-div focus))
+                (else focus)
+                )))
+        (display "; div-set-focus ") (write o) (newline);;DEBUG
+        (cond
+         ((div-record-type? o)
+          (let ((wref (div-widget o)))
+            (display "; div-set-focus! wref ") (write wref) (newline) ;;DEBUG
+            (cond
+             (wref (widget:grab-focus wref))
+             (error "no widget reference" focus)
+             )))
+         (else
+          (error "not a div type" focus)
+          ))))
 
     ;;----------------------------------------------------------------
 
@@ -459,8 +464,9 @@
             (on-resize      (prop-lookup 'on-resize:      props))
             (lazy           (lambda (proc . args) (lambda _ (apply proc args))))
             (set-handler
-             (lambda (signal action) (gtk-set-event-handler o wref signal action))
-             ))
+             (lambda (signal action)
+               (gtk-set-event-handler o wref signal action)
+               )))
         (cond
          ((procedure? on-focus-event)
           (set-handler widget:focus-in-event  (lazy on-focus-event #t))
@@ -474,6 +480,7 @@
             (set-handler widget:focus-out-event (lazy on-focus-out))
             )))
         (when (procedure? on-key-event)
+          (display "; set key handler") (write on-key-event) (display " on ") (write wref) (newline);;DEBUG
           (set-handler
            (gi:make <signal> #:name "key-press-event")
            (lambda (o event)
@@ -491,6 +498,7 @@
            ((mod-bits)           (modifier-type->number modifiers))
            ((unicode)            (gtk-keyval-normalize keyval))
            )
+        ;; ;;--- complete debugging ---
         ;; (pretty ;;DEBUG
         ;;  (print ;;DEBUG
         ;;   ";;key-event (keyval: " keyval ;;DEBUG
@@ -500,8 +508,10 @@
         ;;   " unicode: " unicode           ;;DEBUG
         ;;   ")" (line-break)               ;;DEBUG
         ;;   ))                             ;;DEBUG
-        ;;;; Example output of the above format statement after pressing space bar:
-        ;;;;     (key-event #x20 #x41 ())
+        ;; ;; Example output of the above format statement after pressing space bar:
+        ;; ;;     (key-event #x20 #x41 ())
+        ;;--- simplified debugging ---
+        (display ";") (write unicode) (newline);;DEBUG
         (cond
          ((and (not (= 0 mod-bits)) (char=? unicode #\null))
           ;; Ignored because this is a key press of a modifier without an
@@ -725,8 +735,9 @@
         (gi:connect
          wref (gi:make <signal> #:name "size-allocate")
          (lambda (wref rect)
-           (handler o wref (gdk-rect->rect2D rect) user-handler)
-           )))
+           (let ((rect (gdk-rect->rect2D rect)))
+             (handler o wref rect user-handler)
+             ))))
        (else (error "not a div-record-type" o))
        ))
 
@@ -896,6 +907,8 @@
               ))
             (wref (make<gtk-text-edit-widget> scroll textview buffer))
             )
+        (display "; new ") (write textview) (display " <- ") (write buffer) (newline);;DEBUG
+        (display "; new ") (write scroll) (newline);;DEBUG
         (gobject-ref textview)
         (gobject-ref scroll)
         (gtk-widget-set-event-handlers o textview props)
@@ -1134,6 +1147,8 @@
               ))
             (wref (make<gtk-div-contain> outer scroll viewport flowbox))
             )
+        (display "; new ") (write scroll) (newline);;DEBUG
+        (display "; new ") (write flowbox) (newline);;DEBUG
         (gobject-ref flowbox)
         (gobject-ref viewport)
         (cond

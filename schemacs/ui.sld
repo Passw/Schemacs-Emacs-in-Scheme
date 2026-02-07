@@ -479,6 +479,7 @@
       ;; to be evaluated again with the new values of the state
       ;; variables.  This procedure is called automatically from the
       ;; `div-event-handler` procedure.
+      (display "; dispatch updates: ") (write state-var) (newline);;DEBUG
       (let loop ((var-users (state-var-subscribers state-var)))
         (cond
          ((null? var-users) (values))

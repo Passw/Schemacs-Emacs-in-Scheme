@@ -591,7 +591,7 @@
              (properties
               'on-key-event:
               (lambda (_o key-path)
-                (display "; WV key ") (write key-path) (newline);;DEBUG
+                (display "; WV key ") (write (km:keymap-index->list key-path)) (newline);;DEBUG
                 (parameterize
                     ((selected-frame parent)
                      (selected-window o)
