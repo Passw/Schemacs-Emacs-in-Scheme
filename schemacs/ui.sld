@@ -104,8 +104,13 @@
    *default-copy-widget-ref*
    div-select  div-select-all  top-div-select  top-div-select-all
    by-div-type  *top-level-div-node*
-   div-set-focus*  div-set-focus!
    is-graphical-display?*  is-graphical-display?
+   ;;------------------------------------------------------------------
+   signal-focus*       signal-focus!
+   signal-size*        signal-size!
+   signal-visible*     signal-visible!
+   signal-enabled*     signal-enabled!
+   signal-properties*  signal-properties!
    ;;------------------------------------------------------------------
    div-monad-type?  run-div-monad
    ;;------------------------------------------------------------------
@@ -479,7 +484,7 @@
       ;; to be evaluated again with the new values of the state
       ;; variables.  This procedure is called automatically from the
       ;; `div-event-handler` procedure.
-      (display "; dispatch updates: ") (write state-var) (newline);;DEBUG
+      (display "; dispatch updates: ") (write state-var) (newline) ;;DEBUG
       (let loop ((var-users (state-var-subscribers state-var)))
         (cond
          ((null? var-users) (values))
@@ -1164,6 +1169,8 @@
       (make-parameter #f)
       )
 
+    (define (identity o) o)
+
     (define (div-select root-div proc . selectors)
       ;; Sort-of like a view-only lens, finds a child `div` node
       ;; within a root `div` node `ROOT` using a list of `SELECTORS`.
@@ -1193,7 +1200,7 @@
       ;;
       ;;   2. the `div` node that was selected.
       ;;--------------------------------------------------------------
-      ((apply %div-select #f proc selectors) '() root-div)
+      ((%div-select #f proc selectors) '() root-div)
       )
 
     (define (div-select-all root-div proc . selectors)
@@ -1201,7 +1208,7 @@
       ;; than one element to apply `PROC` to all possible matching
       ;; elements.
       ;;--------------------------------------------------------------
-      ((apply %div-select #t proc selectors) '() root-div)
+      ((%div-select #t proc selectors) '() root-div)
       )
 
     (define (top-div-select proc . selectors)
@@ -1216,7 +1223,7 @@
       (apply div-select-all (*top-level-div-node*) proc selectors)
       )
 
-    (define (%div-select for-all proc . selectors)
+    (define (%div-select for-all proc selectors)
       (lambda (path div-in-focus)
         (let ((o (let loop ((o div-in-focus))
                    (cond
@@ -1225,38 +1232,38 @@
                     ((use-vars-type? content)
                      (loop (use-vars-value div-in-focus))
                      )
-                    (else 0)
+                    (else #f)
                     ))))
-          (and o
-               (cond
-                ((null? selectors)
-                 (display "; apply to ") (write proc) (newline);;DEBUG
-                 (display ";   -- ") (write div-in-focus) (newline);;DEBUG
-                 (proc div-in-focus)
-                 1)
-                (else
-                 (let ((content (div-content o))
-                       (div-sel (div-selector o))
-                       (select  (car selectors))
-                       )
-                   (cond
-                    ((grid-record-type? content)
-                     (div-grid-select
-                      for-all path content select
-                      (apply %div-select for-all proc (cdr selectors))
-                      ))
-                    ((pack-record-type? content)
-                     (div-vector-select
-                      for-all path (div-pack-subdivs content) select
-                      (apply %div-select for-all proc (cdr selectors))
-                      ))
-                    ((space-record-type? content)
-                     (div-vector-select
-                      for-all path (div-space-elements content) select
-                      (apply %div-select for-all proc (cdr selectors))
-                      ))
-                    (else 0)
-                    ))))))))
+          (cond
+           ((not o) 0)
+           ((null? selectors)
+            (proc path div-in-focus)
+            1)
+           (else
+            (let ((content (div-content o))
+                  (div-sel (div-selector o))
+                  (select  (car selectors))
+                  )
+              (cond
+               ((grid-record-type? content)
+                (div-grid-select
+                 for-all path content select
+                 (%div-select for-all proc (cdr selectors))
+                 ))
+               ((pack-record-type? content)
+                (div-vector-select
+                 for-all path (div-pack-subdivs content)
+                 select identity
+                 (%div-select for-all proc (cdr selectors))
+                 ))
+               ((space-record-type? content)
+                (div-vector-select
+                 for-all path (div-space-elements content)
+                 select (lambda (o) (and o (floater-div o)))
+                 (%div-select for-all proc (cdr selectors))
+                 ))
+               (else 0)
+               )))))))
 
     (define (by-div-type t)
       ;; This procedure constructs selector procedure that can be used
@@ -1266,7 +1273,7 @@
       (lambda (o) (eq? t (div-view-type o)))
       )
 
-    (define (div-vector-select for-all path vec select proc)
+    (define (div-vector-select for-all path vec select unwrap proc)
       (let ((len (vector-length vec)))
         (cond
          ((integer? select)
@@ -1296,7 +1303,7 @@
                ((< i len)
                 (let*((subdiv (vector-ref vec i)))
                   (cond
-                   ((or (eq? #t selector) (selector subdiv))
+                   ((or (eq? #t selector) (selector (unwrap subdiv)))
                     (let ((result (proc (cons i path) subdiv)))
                       (if for-all
                           (loop (+ 1 i) (+ match-count result))
@@ -1402,40 +1409,8 @@
            ((rect2D-type? val) (set!div-rect o val) o)
            (else (error "div has no record field for value of this type" val))
            ))
-        (lambda (o) o))
+        identity)
        constrs
-       ))
-
-    (define div-set-focus*
-      ;; This parameter mus be defined by the Schemacs
-      ;; platform-specific implementation. The parameter must take a
-      ;; single argument `O` where `O` is a `div` node
-      ;; (`div-record-type?`), a `state-var` node (`state-var-type?`),
-      ;; or a platform-specific widget object (you must declare a
-      ;; `cond` statement checking for all three), and tell the GUI to
-      ;; make that widget the focus of keyboard events. That this
-      ;; function should only be called from within an event handler,
-      ;; so it is OK to raise an `error` if it is called from a place
-      ;; where the event handling mechanisms have not been
-      ;; parameterized.
-      ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (o)
-         (error "`div-set-focus` not defined")
-         )))
-
-    (define (div-set-focus! o)
-      ;; This procedure must only be called from within an event
-      ;; handler, and may raise an error if not. The argument `O` is
-      ;; any `div` node object, `state-var` node object, or a platform
-      ;; specific widget object. This procedure will ask the GUI to
-      ;; set the widget as the current keyboard focused widget, which
-      ;; receives all keyboard events.
-      ;;--------------------------------------------------------------
-      (cond
-       ((div-record-type? o) ((div-set-focus*) o))
-       ((state-var-type? o) (div-set-focus! (state-var-value o)))
-       (error "expecting a <div-record-type> or <state-var-type>")
        ))
 
     (define is-graphical-display?*
@@ -1445,6 +1420,178 @@
          )))
 
     (define (is-graphical-display?) ((is-graphical-display?*)))
+
+    ;;----------------------------------------------------------------
+
+    (define signal-focus*
+      ;; This parameter must be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; single argument `O`, where `O` is a `div` node
+      ;; (`div-record-type?`), or a platform-specific widget object
+      ;; (you must declare a `cond` statement checking for all three),
+      ;; and tell the GUI to make that widget the focus of keyboard
+      ;; events. This function should only be called from within an
+      ;; event handler, so it is OK to raise an `error` if it is
+      ;; called from a place where the event handling mechanisms have
+      ;; not been parameterized.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (o)
+         (error "`signal-focus!` has not been implemented")
+         )))
+
+    (define (signal-focus! o)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. This procedure will ask the GUI to set the
+      ;; widget as the current keyboard focused widget, which receives
+      ;; all keyboard events.
+      ;;--------------------------------------------------------------
+      ((signal-focus*) o)
+      )
+
+    (define signal-size*
+      ;; This parameter must be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; two arguments `O` and `RECT`, where `O` is a `div` node
+      ;; (`div-record-type?`), and `RECT` is a new size value which
+      ;; should be used to resize the widget associated with the `div`
+      ;; node `O`. This function should only be called from within an
+      ;; event handler, so it is OK to raise an `error` if it is
+      ;; called from a place where the event handling mechanisms have
+      ;; not been parameterized.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (o size)
+         (error "`signal-size!` has not been implemented")
+         )))
+
+    (define (signal-size! o rect)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. This procedure will ask the GUI to set the
+      ;; size and position of the widget on screen according to the
+      ;; argument `RECT`. The size and position may be restricted by
+      ;; the layout, but setting an invalid size or position should
+      ;; not raise an error.
+      ;;--------------------------------------------------------------
+      ((signal-size*) o rect)
+      )
+
+    (define signal-visible*
+      ;; This parameter must be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; two arguments `O` and a boolan `IS-VISIBLE`.  The argument
+      ;; `O` is any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. The argument `IS-VISIBLE` is a boolean
+      ;; value which should be used to set the visibility of the
+      ;; widget associated with the `div` node `O`. This function
+      ;; should only be called from within an event handler, so it is
+      ;; OK to raise an `error` if it is called from a place where the
+      ;; event handling mechanisms has not been parameterized.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (o is-visible)
+         (error "`signal-visible!` has not been implemented")
+         )))
+
+    (define (signal-visible! o is-visible)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. This procedure will ask the GUI to set the
+      ;; visibility state of the widget on screen according to the
+      ;; argument `IS-VISIBLE`. When a widget is not visible, it is
+      ;; not rendered and so cannot receive mouse or keyboard events,
+      ;; and may bit ignored by the lyaout calculations as if it does
+      ;; not exist, although it otherwise retains it's position in
+      ;; layout arrays so it does not alter the index used to select
+      ;; it with procedures such as `div-select`. It can also still
+      ;; respond to animation events which could trigger it to become
+      ;; visible again.
+      ;;--------------------------------------------------------------
+      ((signal-visible*) o is-visible)
+      )
+
+    (define signal-enabled*
+      ;; This parameter must be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; two arguments `O` and a boolan `IS-VISIBLE`.  The argument
+      ;; `O` is any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. The argument `IS-ENABLED` is a boolean
+      ;; value which should be used to set the "enabled" state of the
+      ;; widget associated with the `div` node `O`. This function
+      ;; should only be called from within an event handler, so it is
+      ;; OK to raise an `error` if it is called from a place where the
+      ;; event handling mechanisms has not been parameterized.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (o is-visible)
+         (error "`signal-visible!` has not been implemented")
+         )))
+
+    (define (signal-enabled! o is-enabled)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. This procedure will ask the GUI to set the
+      ;; size and position of the widget on screen according to the
+      ;; argument `IS-ENABLED`. When a widget is not enabled, it is
+      ;; visible but does not respond to events, and is typically
+      ;; rendered with "faded" colors to indicate when it is in a
+      ;; state of being disabled.
+      ;;--------------------------------------------------------------
+      ((signal-enabled*) o is-enabled)
+      )
+
+    (define signal-properties*
+      ;; This parameter must be defined by the Schemacs
+      ;; platform-specific implementation. The parameter must take a
+      ;; two arguments `O` and properties list, where `O` is a `div`
+      ;; node (`div-record-type?`), and `props` is either a
+      ;; `procedure?` that can be used to update the properties of the
+      ;; `O` object, or a `vbal-type?` which can update the properties
+      ;; of the `O` object. This function should only be called from
+      ;; within an event handler, so it is OK to raise an `error` if
+      ;; it is called from a place where the event handling mechanisms
+      ;; have not been parameterized.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (o props)
+         (error "`signal-size!` has not been implemented")
+         )))
+
+    (define (signal-properties! o props)
+      ;; This procedure must only be called from within an event
+      ;; handler, and may raise an error if not. The argument `O` is
+      ;; any `div` node object which can be selected with
+      ;; `top-div-select`, `top-div-select-all`, `div-select`, or
+      ;; `div-select-all`. The `props` argument is either a
+      ;; `procedure?` that can be used to update the properties of the
+      ;; `O` object, or a `vbal-type?` which can update the properties
+      ;; of the `O` object, adding new properties that were not
+      ;; defined before, changing existing properties with new values,
+      ;; or removing proprties if it makes sense for an `#f` value to
+      ;; remove a particular property (boolean properties need not be
+      ;; removed by a `#f`). This procedure will usually also ask the
+      ;; GUI to re-redner the widget on screen according to the
+      ;; updated properties. Setting properties that do not make
+      ;; sense, for a given widget should have the properties set but
+      ;; otherwise trigger no change. This is because not all GUI
+      ;; implementations may make use of certain properties, for
+      ;; example, colors can be set but will be ignored by monochrome
+      ;; displays.
+      ;;--------------------------------------------------------------
+      ((signal-properties*) o props)
+      )
 
     ;;================================================================
 
@@ -1760,15 +1907,15 @@
           (div-vector-select
            for-all path vec
            (+ (* (cdr select) xlen) (car select))
-           proc
+           identity proc
            ))
          ((point2D-type? select)
           (div-vector-select
            for-all path vec
            (+ (* (point2D-y select) xlen) (point2D-x select))
-           proc
+           identity proc
            ))
-         (else (div-vector-select for-all path vec select proc))
+         (else (div-vector-select for-all path vec select identity proc))
          )))
 
     (define (print-div-grid depth cont)

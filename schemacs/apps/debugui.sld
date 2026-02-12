@@ -44,7 +44,7 @@
           =>div-rect*!  =>div-widget*!  =>div-properties*!
           =>div-on-delete*!  =>div-on-update*!
           div-select  selector  top-div-select
-          div-set-focus!
+          signal-focus!  signal-size!
           div-prop-lookup  prop-lookup
           div-grid-type?  for-each-div-grid
           div-pack-type?  for-each-div-pack
@@ -187,10 +187,10 @@
                (key        (km:modal-lookup-state-key-index state))
                (on-success (lambda (c) c))
                (on-fail    (lambda () #f))
-               (c (and key
-                       (km:keymap-index-to-char
-                        key #f on-success on-fail
-                        ))))
+               (c          (and key
+                            (km:keymap-index-to-char
+                             key #f on-success on-fail
+                             ))))
            (key-event-self-insert uarg c)
            ))
         ((uarg c)
@@ -252,41 +252,43 @@
       (case-lambda
         (() (eval-expression-string #f))
         ((input-string)
-         (let*((input-string
-                (cond
-                 ((string? input-string) input-string)
-                 ((not input-string)
-                  (simple-read-minibuffer "Eval: ")
-                  )
-                 (else (error "must be a string" input-string))))
-               (_ (pretty
-                   (print ";;eval-expression-string: "
-                          (qstr input-string) (line-break)
-                          )))
-               (result
-                (cond
-                 ((string=? "" input-string) #f)
-                 (else
-                  (call/cc
-                   (lambda (halt)
-                     (with-exception-handler (lambda (caught) (halt caught))
-                       (lambda () (eval-string input-string))
-                       ))))))
-               (output-string
-                (cond
-                 (result
-                  (call-with-port (open-output-string)
-                    (lambda (port)
-                      (write result port)
-                      (flush-output-port port)
-                      (get-output-string port))))
-                 (else #f)
-                 )))
-           (when output-string
-             (display-in-echo-area output-string)
-             )
-           result
-           ))))
+         (pretty
+          (print ";;eval-expression-string: "
+                 (qstr input-string) (line-break)
+                 ))
+         (call/cc
+          (lambda (wait-prompt)
+            (let*((input-string
+                   (cond
+                    ((string? input-string) input-string)
+                    ((not input-string)
+                     (simple-read-minibuffer wait-prompt "Eval: ")
+                     )
+                    (else (error "must be a string" input-string))))
+                  (result
+                   (cond
+                    ((string=? "" input-string) #f)
+                    (else
+                     (call/cc
+                      (lambda (halt)
+                        (with-exception-handler (lambda (caught) (halt caught))
+                          (lambda () (eval-string input-string))
+                          ))))))
+                  (output-string
+                   (cond
+                    (result
+                     (call-with-port (open-output-string)
+                       (lambda (port)
+                         (write result port)
+                         (flush-output-port port)
+                         (get-output-string port))))
+                    (else #f)
+                    )))
+              (when output-string
+                (display-in-echo-area output-string)
+                )
+              result
+              ))))))
 
     (define eval-expression
       (new-command
@@ -311,40 +313,51 @@
       (impl/insert-string (buffer-impl messages-buffer) str)
       )
 
-    (define (debug-div-select . args)
-      (apply top-div-select 'top args)
+    (define (debug-div-select proc . args)
+      (apply top-div-select (lambda (path o) (proc o)) 'top args)
       )
 
-    (define (focus-minibuffer)
-      (div-set-focus! (debug-div-select 'minibuffer))
-      )
+    (define (debug-focus which)
+      (debug-div-select signal-focus! which)
+      (when (not (eq? which 'minibuffer))
+        (set! last-focused which)
+        ))
 
-    (define (simple-read-minibuffer prompt)
+    (define (focus-minibuffer) (debug-focus 'minibuffer))
+    (define (focus-left) (debug-focus 'left))
+    (define (focus-right) (debug-focus 'right))
+
+    (define (focus-other)
+      (cond
+       ((eq? 'left last-focused) (focus-right))
+       (else (focus-left))
+       ))
+
+    (define (simple-read-minibuffer wait-prompt-cont prompt-str)
       (clear-minibuffer)
       (focus-minibuffer)
       (parameterize ((current-buffer minibuffer))
-        (insert prompt)
+        (insert prompt-str)
         (insert ": ")
         (set! minibuffer-prompt-length
           (+ (string-length ": ")
-             (string-length prompt)
+             (string-length prompt-str)
              ))
         (call/cc
-         (lambda (wait-prompt)
-           (call/cc
-            (lambda (resume-prompt)
-              (set! minibuffer-cont (cons resume-prompt minibuffer-cont))
-              (wait-prompt #t)
-              ))
-           (set! minibuffer-cont (cdr minibuffer-cont))
-           (let ((result
-                  (impl/copy-string
-                   minibuffer minibuffer-prompt-length -1
-                   )))
-             (clear-minibuffer)
-             (set! minibuffer-prompt-length 0)
-             result
-             )))))
+         (lambda (resume-prompt)
+           (set! minibuffer-cont (cons resume-prompt minibuffer-cont))
+           (wait-prompt-cont #t)
+           ))
+        (set! minibuffer-cont (cdr minibuffer-cont))
+        (let ((result
+               (impl/copy-string
+                minibuffer minibuffer-prompt-length -1
+                )))
+          (clear-minibuffer)
+          (set! minibuffer-prompt-length 0)
+          (debug-focus last-focused)
+          result
+          )))
 
     (define (minibuffer-prompt-resume)
       (cond
@@ -360,6 +373,14 @@
        "Terminate this minibuffer argument."
        ))
 
+    (define other-window
+      (new-command
+       "other-window"
+       focus-other
+       focus-other
+       "Switch the keyboard focus to the other window."
+       ))
+
     (define *command-list*
       (list
        keyboard-quit
@@ -368,6 +389,7 @@
        delete-backward-char
        eval-expression
        exit-minibuffer
+       other-window
        ))
 
     (define (list-debug-commands) *command-list*)
@@ -389,9 +411,10 @@
       (km:keymap
        '*default-keymap*
        (km:alist->keymap-layer
-        `(((#\backspace) . ,delete-backward-char)
-          ((#\delete)    . ,delete-char)
-          ((meta #\:)    . ,eval-expression)
+        `(((#\backspace)      . ,delete-backward-char)
+          ((#\delete)         . ,delete-char)
+          ((meta #\:)         . ,eval-expression)
+          ((ctrl #\x #\o)     . ,other-window)
           ))
        self-insert-layer
        ))
@@ -434,22 +457,98 @@
           (set! escape-counter 0)
           (cond
            ((debug-buffer-type? buf)
-            (let*((keymap (buffer-local-keymap buf))
+            (let*((keymap   (buffer-local-keymap buf))
                   (km-state (buffer-keymap-state buf))
-                  )
-              (unless km-state
-                (set! km-state (km:new-modal-lookup-state keymap))
-                (set!buffer-keymap-state buf km-state)
+                  (km-state
+                   (or km-state
+                       (let ((km-state (km:new-modal-lookup-state keymap)))
+                         (set!buffer-keymap-state buf km-state)
+                         km-state
+                         )))
+                  (partial-chord
+                   (km:modal-lookup-state-step!
+                    km-state key-path
+                    (lambda (key-path action)
+                      (dispatch-action o buf key-path action)
+                      #t)
+                    (lambda (key-path subkeymap)
+                      ;;TODO: show keys bound to other commands
+                      #t)
+                    (lambda (key-path)
+                      (message
+                       (print
+                        (qstr (km:keymap-index->list key-path))
+                        " is undefined"
+                        ))
+                      #t))))
+              (unless partial-chord
+                (set!buffer-keymap-state buf #f)
                 )
-              (km:modal-lookup-state-step!
-               km-state key-path
-               (lambda (key-path action) (dispatch-action o buf key-path action) #t)
-               (lambda (key-path subkeymap) #t) ;;TODO: show keys bound to other commands
-               (lambda (key-path) (message (print (qstr key-path) " is undefined")) #t)
-               )))
+              #t))
            (else
             (error "current buffer value unrecognized type" buf)
             ))))))
+
+    ;;----------------------------------------------------------------
+
+    (define-record-type <layout-dims-type>
+      (make<layout-dims> left linfo right rinfo minibuf)
+      layout-dims-type?
+      (left     layout-left-content)
+      (linfo    layout-left-info)
+      (right    layout-right-content)
+      (rinfo    layout-right-info)
+      (minibuf  layout-minibuffer)
+      )
+
+    (define (compute-layout w0 h0 text-height border-size)
+      ;; These define the framing of the elements on screen but not
+      ;; the actual position of the widgets in the space, because
+      ;; these widgets need to be offset by the borders. When wrapping
+      ;; text, the border size is added to the text size.
+      (let*((origin  0)
+            (w0  window-width)
+            (h0  window-height)
+            (both-borders     (* 2 border-size))
+            (right-h-offset   (/ w0 2))
+            (minibuf-height   (+ text-height both-borders))
+            (minibuf-width    w0)
+            (minibuf-v-offset (- h0 minibuf-height))
+            (info-width       (/ w0 2))
+            (info-height      minibuf-height)
+            (info-v-offset    (- minibuf-v-offset info-height))
+            (content-width    info-width)
+            (content-height   (- h0 info-height minibuf-height))
+            )
+        (define (make-content h-offset)
+          (rect2D
+           (+ h-offset        border-size)
+           (+ origin          border-size)
+           (- content-width   both-borders)
+           (- content-height  both-borders)
+           ))
+        (define (make-info h-offset)
+          (rect2D
+           (+ h-offset       border-size)
+           (+ info-v-offset  border-size)
+           (- info-width     both-borders)
+           (- info-height    both-borders)
+           ))
+        (make<layout-dims>
+         (make-content origin)
+         (make-info origin)
+         (make-content right-h-offset)
+         (make-info right-h-offset)
+         (rect2D
+          (+ origin            border-size)
+          (+ minibuf-v-offset  border-size)
+          (- minibuf-width     both-borders)
+          (- minibuf-height    both-borders)
+          ))))
+
+    (define (resize-widget sel rect)
+      (debug-div-select (lambda (o) (signal-size! o rect)) sel)
+      )
 
     (define (construct-gui . args)
       (unless buffer-list
@@ -462,86 +561,75 @@
         (set! minibuffer (%new-buffer minibuffer-hstr))
         )
       (let*((scratch-buffer (%new-buffer scratch-buffer-hstr))
-            ;; These define the framing of the elements on screen
-            ;; but not the actual position of the widgets in the
-            ;; space, because these widgets need to be offset by
-            ;; the borders. When wrapping text, the border size
-            ;; is added to the text size.
-            (origin  0)
-            (w0  window-width)
-            (h0  window-height)
-            (both-borders     (* 2 border-size))
-            (right-h-offset   (/ w0 2))
-            (minibuf-height   (+ text-height both-borders))
-            (minibuf-width    w0)
-            (minibuf-v-offset (- h0 minibuf-height))
-            (info-width       (/ w0 2))
-            (info-height      minibuf-height)
-            (info-v-offset    (- minibuf-v-offset info-height))
-            (content-width    info-width)
-            (content-height   (- h0 info-v-offset))
-            )
-        (define (make-content h-offset sel buf)
+            (layout
+             (compute-layout
+              window-width window-height
+              text-height border-size
+              )))
+        (define (make-content get-rect sel buf)
           (floater
-           (rect2D
-            (+ h-offset        border-size)
-            (+ origin          border-size)
-            (- content-width   both-borders)
-            (- content-height  both-borders)
-            )
+           (get-rect layout)
            (text-editor
             (selector sel)
             (properties 'on-key-event: (key-event-handler buf))
             (buffer-impl buf)
             )))
-        (define (make-info h-offset sel message)
+        (define (make-info get-rect sel message)
           (floater
-           (rect2D
-            (+ h-offset       border-size)
-            (+ info-v-offset  border-size)
-            (- info-width     both-borders)
-            (- info-height    both-borders)
-            )
+           (get-rect layout)
            (div (selector sel) message)
            ))
         (unless left-content-state-var
           (set! left-content-state-var
-            (state-var (make-content origin 'left scratch-buffer))
+            (state-var (make-content layout-left-content 'left scratch-buffer))
             ))
         (unless left-info-state-var
           (set! left-info-state-var
             (state-var
-             (make-info origin 'left-info scratch-buffer-hstr)
+             (make-info layout-left-info 'left-info scratch-buffer-hstr)
              )))
         (unless right-content-state-var
           (set! right-content-state-var
             (state-var
-             (make-content right-h-offset 'right messages-buffer)
+             (make-content layout-right-content 'right messages-buffer)
              )))
         (unless right-info-state-var
           (set! right-info-state-var
             (state-var
-             (make-info right-h-offset 'right-info messages-buffer-hstr)
+             (make-info layout-right-info 'right-info messages-buffer-hstr)
              )))
         (floater
-         (rect2D 0 0 w0 h0)
+         (rect2D 0 0 window-width window-height)
          (div-space
           (selector 'top)
-          (properties 'title: "Schemacs Debugger")
+          (properties
+           'title: "Schemacs Debugger"
+           'on-resize:
+           (lambda (o rect)
+             (let*((size (rect2D-size rect))
+                   (layout
+                    (compute-layout
+                     (size2D-width  size)
+                     (size2D-height size)
+                     text-height border-size
+                     )))
+               (resize-widget 'left (layout-left-content layout))
+               (resize-widget 'left-info (layout-left-info layout))
+               (resize-widget 'right (layout-right-content layout))
+               (resize-widget 'right-info (layout-right-info layout))
+               (resize-widget 'minibuffer (layout-minibuffer layout))
+               )))
           (get-var left-content-state-var)
           (get-var left-info-state-var)
           (get-var right-content-state-var)
           (get-var right-info-state-var)
           (floater
-           (rect2D
-            (+ origin            border-size)
-            (+ minibuf-v-offset  border-size)
-            (- minibuf-width     both-borders)
-            (- minibuf-height    both-borders)
-            )
+           (layout-minibuffer layout)
            (text-editor
             (selector 'minibuffer)
-            (properties 'on-key-event: (key-event-handler minibuffer))
+            (properties
+             'on-key-event: (key-event-handler minibuffer)
+             )
             (buffer-impl minibuffer)
             ))))))
 

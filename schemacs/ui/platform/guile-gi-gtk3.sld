@@ -41,7 +41,11 @@
           tiled-windows
           )
     (rename (schemacs ui)
-            (div-set-focus*  *impl/div-set-focus*)
+            (signal-focus*       *impl/signal-focus*)
+            (signal-size*        *impl/signal-size*)
+            (signal-visible*     *impl/signal-visible*)
+            (signal-enabled*     *impl/signal-enabled*)
+            (signal-properties*  *impl/signal-properties*)
             (is-graphical-display?* *impl/is-graphical-display?*)
             )
     (prefix (schemacs ui text-buffer-impl) *impl/)
@@ -264,7 +268,7 @@
          (else (gtk-unref-destroy wref))
          )))
 
-    (define (gtk-div-set-focus! focus)
+    (define (gtk-signal-focus! focus)
       (let ((o (cond
                 ((floater-type? focus) (floater-div focus))
                 (else focus)
@@ -281,6 +285,10 @@
          (else
           (error "not a div type" focus)
           ))))
+
+    (define (gtk-signal-size! focus size)
+      (values);;TODO
+      )
 
     ;;----------------------------------------------------------------
 
@@ -643,7 +651,7 @@
     ;;================================================================
     ;; Gtk widget rendering
 
-    (define (gtk-draw-content o outer)
+    (define (gtk-draw-content o rect outer)
       ;; Draw a `div` type `O`. In Gtk, every drawn `div` is placed in
       ;; it's own `GtkBox` so that if a state variable changes the
       ;; `div`, it can be modified in the widget tree by replacing
@@ -652,10 +660,10 @@
       (let*((cont (div-content o)))
         (cond
          ((not cont) o)
-         ((div-space-type? cont) (gtk-draw-div-space o outer cont))
-         ((div-pack-type?  cont) (gtk-draw-div-pack  o outer cont))
-         ((div-grid-type?  cont) (gtk-draw-div-grid  o outer cont))
-         ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) outer))
+         ((div-space-type? cont) (gtk-draw-div-space o rect outer cont))
+         ((div-pack-type?  cont) (gtk-draw-div-pack  o rect outer cont))
+         ((div-grid-type?  cont) (gtk-draw-div-grid  o rect outer cont))
+         ((use-vars-type?  cont) (gtk-draw-content (use-vars-value cont) rect outer))
          (else
           (let*((cont-str
                  (cond
@@ -670,7 +678,7 @@
                  (cond
                   ((eq? ptype push-button) (gtk-draw-push-button o cont props))
                   ((or (eq? ptype text-editor) (gtk-buffer-type? cont))
-                   (gtk-draw-text-editor o cont props)
+                   (gtk-draw-text-editor o rect cont props)
                    )
                   (else (gtk-draw-string o cont props))
                   ))
@@ -783,7 +791,7 @@
               ;;   #:halign 'fill
               ;;   #:resize-mode 'parent
               ;;   ))
-              (child (gtk-draw-content o #f))
+              (child (gtk-draw-content o rect #f))
               (child-wref (gtk-get-outer-widget child))
               (win-wref
                (gi:make
@@ -883,9 +891,10 @@
           (widget:destroy textview)
           )))
 
-    (define (gtk-draw-text-editor o buffer props)
-      (display "; gtk-draw-text-editor buffer ") (write buffer) (newline);;DEBUG
+    (define (gtk-draw-text-editor o rect buffer props)
+      (display "; gtk-draw-text-editor buffer ") (write buffer) (display " ") (write rect) (newline);;DEBUG
       (let*((visible (not (prop-lookup 'hidden: props)))
+            (size (rect2D-size rect))
             (textview
              (gi:make
               <GtkTextView>
@@ -897,7 +906,8 @@
               #:hexpand #t
               #:valign 'fill
               #:halign 'fill
-              #:resize-mode 'queue
+              #:width-request (size2D-width size)
+              #:height-request (size2D-height size)
               ))
             (scroll
              (gi:make
@@ -910,7 +920,8 @@
               #:hexpand #t
               #:valign 'fill
               #:halign 'fill
-              #:resize-mode 'queue
+              #:width-request (size2D-width size)
+              #:height-request (size2D-height size)
               ))
             (wref (make<gtk-text-edit-widget> scroll textview buffer))
             )
@@ -941,17 +952,17 @@
               <GtkBox>
               #:visible #t
               #:orientation orient
-              ;; #:vexpand #t
-              ;; #:hexpand #t
-              ;; #:valign 'start
-              ;; #:halign 'start
+              #:vexpand #t
+              #:hexpand #t
+              #:valign 'start
+              #:halign 'start
               #:resize-mode 'parent
               )))
         (gobject-ref wref)
         wref
         ))
 
-    (define (gtk-draw-div-pack o outer cont)
+    (define (gtk-draw-div-pack o rect outer cont)
       ;; Draw a `div-pack` node, branches off to several different
       ;; drawing procedures depending on the node's properties.
       (let*((cont    (div-content o))
@@ -971,7 +982,7 @@
             ))
          ((= 1 nelems)
           (let*((wref (gtk-empty-div orient))
-                (subdiv (gtk-draw-content (vector-ref subdivs 0) #f))
+                (subdiv (gtk-draw-content (vector-ref subdivs 0) rect #f))
                 )
             (display "; box:pack-start (outer-of subdiv) ") (write (gtk-get-outer-widget subdiv)) (newline);;DEBUG
             (box:pack-start wref (gtk-get-outer-widget subdiv) #f #f 0)
@@ -983,19 +994,18 @@
           (let ((outer (gtk-prepare-outer-box o outer)))
             (cond
              ((eq? flags wrapping)
-              (gtk-draw-pack-flow o outer from orient rect sizes subdivs)
+              (gtk-draw-pack-flow o rect outer from orient sizes subdivs)
               )
              ((eq? tiled-windows (div-view-type o))
-              (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
+              (gtk-draw-pack-tiled-windows o rect outer nelems from orient sizes subdivs)
               )
              (else
-              (gtk-draw-pack-nowrap o outer from orient rect sizes subdivs)
-              ))
-            )))
+              (gtk-draw-pack-nowrap o rect outer from orient sizes subdivs)
+              )))))
         (lens-set gtk-div-contain-delete-all o =>div-on-delete*!)
         o))
 
-    (define (gtk-draw-pack-tiled-windows o outer nelems from orient rect sizes subdivs)
+    (define (gtk-draw-pack-tiled-windows o rect outer nelems from orient sizes subdivs)
       (let*-values
           (((props) (view o =>div-properties*!))
            ((visible) (not (prop-lookup 'hidden: props)))
@@ -1017,7 +1027,7 @@
              ))
            ((first-size)   (vector-ref sizes 0))
            ((first-subdiv) (vector-ref subdivs 0))
-           ((first-subdiv) (gtk-draw-content first-subdiv #f))
+           ((first-subdiv) (gtk-draw-content first-subdiv rect #f))
            ((first-wref)   (view first-subdiv =>div-widget*!))
            ((splitpane)    (make-paned))
            ((nsplits)      (- nelems 1))
@@ -1033,7 +1043,7 @@
         (vector-set! split-wrefs 0 splitpane)
         (let loop ((i 1) (splitpane splitpane))
           (let*((size        (vector-ref sizes i))
-                (subdiv      (gtk-draw-content (vector-ref subdivs i) #f))
+                (subdiv      (gtk-draw-content (vector-ref subdivs i) rect #f))
                 (subdiv-wref (view subdiv =>div-widget*!))
                 )
             (cond
@@ -1049,7 +1059,7 @@
              )))
         (cond
          (outer
-          (display "; container:add splitpane ") (write splitpane) (newline);;DEBUG
+          (display "; container:add splitpane ") (write splitpane) (newline) ;;DEBUG
           (container:add outer splitpane)
           (widget:show outer)
           )
@@ -1112,7 +1122,7 @@
          (else (error "unknown value for 'scrollbar: property" scrollprop))
          )))
 
-    (define (gtk-draw-pack-flow o outer from orient rect sizes subdivs)
+    (define (gtk-draw-pack-flow o rect outer from orient sizes subdivs)
       (let*((props (view o =>div-properties*!))
             (visible (not (prop-lookup 'hidden: props)))
             (scroll (gtk-make-scroller o orient))
@@ -1154,31 +1164,31 @@
               ))
             (wref (make<gtk-div-contain> outer scroll viewport flowbox))
             )
-        (display "; new ") (write scroll) (newline);;DEBUG
-        (display "; new ") (write flowbox) (newline);;DEBUG
+        (display "; new ") (write scroll) (newline)  ;;DEBUG
+        (display "; new ") (write flowbox) (newline) ;;DEBUG
         (gobject-ref flowbox)
         (gobject-ref viewport)
         (cond
          (scroll
           (gobject-ref scroll)
           (when outer
-            (display "; container:add scroll ") (write scroll) (newline);;DEBUG
+            (display "; container:add scroll ") (write scroll) (newline) ;;DEBUG
             (container:add outer scroll)
             )
-          (display "; container:add viewport ") (write viewport) (newline);;DEBUG
+          (display "; container:add viewport ") (write viewport) (newline) ;;DEBUG
           (container:add scroll viewport)
           )
          (else
           (when outer
-            (display "; container:add viewport ") (write viewport) (newline);;DEBUG
+            (display "; container:add viewport ") (write viewport) (newline) ;;DEBUG
             (container:add outer viewport)
             )))
-        (display "; container:add flowbox ") (write flowbox) (newline);;DEBUG
+        (display "; container:add flowbox ") (write flowbox) (newline) ;;DEBUG
         (container:add viewport flowbox)
         (gtk-set-widget-width-height wref rect)
         (vector-for-each
          (lambda (size child)
-           (let*((child (gtk-draw-content child #f))
+           (let*((child (gtk-draw-content child rect #f))
                  (wref (view child =>div-widget*!))
                  )
              (when wref (pack (gtk-get-outer-widget wref)))
@@ -1190,7 +1200,7 @@
         (lens-set gtk-div-container-update o =>div-on-update*!)
         o))
 
-    (define (gtk-draw-pack-nowrap o outer from orient rect sizes subdivs)
+    (define (gtk-draw-pack-nowrap o rect outer from orient sizes subdivs)
       (let*((scroll (gtk-make-scroller o orient))
             (props (view o =>div-properties*!))
             (visible (not (prop-lookup 'hidden: props)))
@@ -1209,13 +1219,13 @@
               ))
             (pack-start
              (lambda (widget)
-               (display "; box:pack-start (outer-of widget) ") (write (gtk-get-outer-widget widget)) (newline);;DEBUG
+               (display "; box:pack-start (outer-of widget) ") (write (gtk-get-outer-widget widget)) (newline) ;;DEBUG
                (box:pack-start
                 box-wref (gtk-get-outer-widget widget) #f #f 0
                 )))
             (pack-end
              (lambda (widget)
-               (display "; box:pack-start (outer-of widget) ") (write (gtk-get-outer-widget widget)) (newline);;DEBUG
+               (display "; box:pack-start (outer-of widget) ") (write (gtk-get-outer-widget widget)) (newline) ;;DEBUG
                (box:pack-end
                 box-wref (gtk-get-outer-widget widget) #f #f 0
                 )))
@@ -1235,23 +1245,23 @@
           (gobject-ref scroll)
           (gobject-ref viewport)
           (when outer
-            (display "; container:add scroll ") (write scroll) (newline);;DEBUG
+            (display "; container:add scroll ") (write scroll) (newline) ;;DEBUG
             (container:add outer scroll)
             )
-          (display "; contanier:add viewport ") (write viewport) (newline);;DEBUG
+          (display "; contanier:add viewport ") (write viewport) (newline) ;;DEBUG
           (container:add scroll viewport)
-          (display "; container:add box-ref ") (write box-ref) (newline);;DEBUG
+          (display "; container:add box-ref ") (write box-ref) (newline) ;;DEBUG
           (container:add viewport box-wref)
           )
          (else
           (when outer
-            (display "; box:pack-start box-wref ") (write box-wref) (newline);;DEBUG
+            (display "; box:pack-start box-wref ") (write box-wref) (newline) ;;DEBUG
             (box:pack-start outer box-wref #t #t 0)
             ;;(container:add outer box-wref)
             )))
         (vector-for-each
          (lambda (size child)
-           (let*((child (gtk-draw-content child #f))
+           (let*((child (gtk-draw-content child rect #f))
                  (wref (view child =>div-widget*!))
                  )
              (when wref (pack (gtk-get-outer-widget wref)))
@@ -1263,9 +1273,8 @@
         (lens-set gtk-div-container-update o =>div-on-update*!)
         o))
 
-    (define (gtk-draw-div-space o outer cont)
-      (let ((elems (div-space-elements cont))
-            )
+    (define (gtk-draw-div-space o rect outer cont)
+      (let ((elems (div-space-elements cont)))
         (cond
          ((not elems) (gtk-empty-div cut-horizontal))
          (else
@@ -1287,7 +1296,7 @@
                      (y      (point2D-y pt))
                      (w      (size2D-width size))
                      (h      (size2D-height size))
-                     (subdiv (gtk-draw-content (floater-div flo) #f))
+                     (subdiv (gtk-draw-content (floater-div flo) rect #f))
                      (wid    (gtk-get-outer-widget subdiv))
                      )
                  (%gtk-set-widget-width-height wid w h)
@@ -1300,22 +1309,22 @@
              (scroll
               (gobject-ref scroll)
               (when outer
-                (display "; container:add scroll ") (write scroll) (newline);;DEBUG
+                (display "; container:add scroll ") (write scroll) (newline) ;;DEBUG
                 (container:add outer scroll)
                 )
-              (display "; container:add layout ") (write layout) (newline);;DEBUG
+              (display "; container:add layout ") (write layout) (newline) ;;DEBUG
               (container:add scroll layout)
               )
              (else
               (when outer
-                (display "; container:add layout ") (write layout) (newline);;DEBUG
+                (display "; container:add layout ") (write layout) (newline) ;;DEBUG
                 (container:add outer layout)
                 )))
             (lens-set wref o =>div-widget*!)
             (lens-set gtk-div-container-update o =>div-on-update*!)
             o)))))
 
-    (define (gtk-draw-div-grid o outer cont)
+    (define (gtk-draw-div-grid o rect outer cont)
       (let*((props (view o =>div-properties*!))
             (visible (not (prop-lookup 'hidden: props)))
             (outer (gtk-prepare-outer-box o outer))
@@ -1342,7 +1351,7 @@
         (lens-set gtk-div-delete o =>div-on-delete*!)
         ((for-each-div-grid
           (lambda (subdiv x y w h)
-            (let*((subdiv (gtk-draw-content subdiv #f))
+            (let*((subdiv (gtk-draw-content subdiv rect #f))
                   (subdiv-wref (view subdiv =>div-widget*!))
                   )
               (%gtk-set-widget-width-height subdiv-wref w h)
@@ -1359,17 +1368,17 @@
           (gobject-ref scroll)
           (gobject-ref viewport)
           (when outer
-            (display "; container:add scroll ") (write scroll) (newline);;DEBUG
+            (display "; container:add scroll ") (write scroll) (newline) ;;DEBUG
             (container:add outer scroll)
             )
-          (display "; container:add viewport ") (write viewport) (newline);;DEBUG
+          (display "; container:add viewport ") (write viewport) (newline) ;;DEBUG
           (container:add scroll viewport)
-          (displau "; container:add grid ") (write grid) (newline);;DEBUG
+          (displau "; container:add grid ") (write grid) (newline) ;;DEBUG
           (container:add viewport grid)
           )
          (else
           (when outer
-            (display "; container:add grid ") (write grid) (newline);;DEBUG
+            (display "; container:add grid ") (write grid) (newline) ;;DEBUG
             (container:add outer grid)
             )))
         (lens-set wref o =>div-widget*!)
@@ -1385,7 +1394,7 @@
 
     (define (gtk-new-buffer)
       (let ((buffer (gi:make <GtkTextBuffer>)))
-        (display "; gi:make <GtkTextBuffer> == ") (write buffer) (newline);;DEBUG
+        (display "; gi:make <GtkTextBuffer> == ") (write buffer) (newline) ;;DEBUG
         buffer
         ))
 
@@ -1414,41 +1423,32 @@
             style
             ))))
 
-    (define (gtk-buffer-method proc)
-      (lambda (buf . args)
-        (apply proc (view buf ed:=>buffer-view) args)
-        ))
+    (define (gtk-buffer-length buffer) 
+      (text-buffer:get-char-count buffer)
+      )
 
-    (define gtk-buffer-length 
-      (gtk-buffer-method
-       (lambda (buffer)
-         (text-buffer:get-char-count buffer)
-         )))
-
-    (define gtk-text-load-port 
+    (define (gtk-text-load-port buffer port flags) 
       ;; TODO: handle `FLAGS` to allow for markdown and HTML parsing.
-      (gtk-buffer-method
-       (lambda (buffer port flags)
-         (cond
-          ((not (gtk-buffer-type? buffer))
-           (error "not a GtkTextBuffer" buffer)
-           )
-          ((not (input-port-open? port))
-           (error "not an open input port" port)
-           )
-          (else
-           (let ((bufsize (gtk-buffer-length buffer)))
-             (let loop ((count 0))
-               (let*((next-chunk (read-string bufsize))
-                     (chunk-size (string-length next-chunk))
-                     )
-                 (cond
-                  ((eof-object? next-chunk) count)
-                  (else
-                   (text-buffer:insert-at-cursor buffer next-chunk chunk-size)
-                   ;;(display "; inserted ") (write chunk-size) (display " characters") (newline) ;;DEBUG
-                   (loop (+ count chunk-size))
-                   ))))))))))
+      (cond
+       ((not (gtk-buffer-type? buffer))
+        (error "not a GtkTextBuffer" buffer)
+        )
+       ((not (input-port-open? port))
+        (error "not an open input port" port)
+        )
+       (else
+        (let ((bufsize (gtk-buffer-length buffer)))
+          (let loop ((count 0))
+            (let*((next-chunk (read-string bufsize))
+                  (chunk-size (string-length next-chunk))
+                  )
+              (cond
+               ((eof-object? next-chunk) count)
+               (else
+                (text-buffer:insert-at-cursor buffer next-chunk chunk-size)
+                ;;(display "; inserted ") (write chunk-size) (display " characters") (newline);;DEBUG
+                (loop (+ count chunk-size))
+                ))))))))
 
     (define (gtk-buffer-range buffer from to)
       (values
@@ -1459,123 +1459,104 @@
         buffer (gi:make <GtkTextIter>) to
         )))
 
-    (define gtk-text-dump-port 
-      (gtk-buffer-method
-       (lambda (buffer port flags)
-         (cond
-          ((not (gtk-buffer-type? buffer))
-           (error "not a GtkTextBuffer" buffer)
-           )
-          ((not (output-port-open? port))
-           (error "not an open output port" port)
-           )
-          (else
-           (let*((chunk-size (*text-load-buffer-size*))
-                 (bufsize (gtk-buffer-length buffer))
-                 )
-             (let loop ((lo 0) (hi (min bufsize chunk-size)))
-               (cond
-                ((< lo bufsize)
-                 (let*-values
-                     (((lo-iter hi-iter) (gtk-buffer-range buffer lo hi))
-                      ((chunk) (text-buffer:get-slice lo-iter hi-iter #t))
-                      )
-                   (string-for-each (lambda (c) (write-char c port)) chunk)
-                   (loop (+ lo chunk-size) (min bufsize (+ hi chunk-size)))
-                   ))
-                (else (values))
-                ))))))))
+    (define (gtk-text-dump-port buffer port flags) 
+      (cond
+       ((not (gtk-buffer-type? buffer))
+        (error "not a GtkTextBuffer" buffer)
+        )
+       ((not (output-port-open? port))
+        (error "not an open output port" port)
+        )
+       (else
+        (let*((chunk-size (*text-load-buffer-size*))
+              (bufsize (gtk-buffer-length buffer))
+              )
+          (let loop ((lo 0) (hi (min bufsize chunk-size)))
+            (cond
+             ((< lo bufsize)
+              (let*-values
+                  (((lo-iter hi-iter) (gtk-buffer-range buffer lo hi))
+                   ((chunk) (text-buffer:get-slice lo-iter hi-iter #t))
+                   )
+                (string-for-each (lambda (c) (write-char c port)) chunk)
+                (loop (+ lo chunk-size) (min bufsize (+ hi chunk-size)))
+                ))
+             (else (values))
+             ))))))
 
-    (define gtk-get-cursor-index 
-      (gtk-buffer-method
-       (lambda (buffer)
-         (text-buffer:cursor-position buffer)
-         )))
+    (define (gtk-get-cursor-index buffer) 
+      (text-buffer:cursor-position buffer)
+      )
 
-    (define gtk-set-cursor-index
-      (gtk-buffer-method
-       (lambda (buffer index)
-         (text-buffer:cursor-position buffer index)
-         )))
+    (define (gtk-set-cursor-index buffer index)
+      (text-buffer:cursor-position buffer index)
+      )
 
-    (define gtk-move-cursor-index
-      (gtk-buffer-method
-       (lambda (buffer index)
-         (let*((cursor (text-buffer:cursor-position buffer)))
-           (text-buffer:cursor-position buffer (+ cursor index))
-           ))))
+    (define (gtk-move-cursor-index buffer index)
+      (let*((cursor (text-buffer:cursor-position buffer)))
+        (text-buffer:cursor-position buffer (+ cursor index))
+        ))
 
-    (define gtk-set-cursor-position
-      (gtk-buffer-method
-       (lambda (buffer line column)
-         (let*((iter
-                (text-buffer:get-iter-at-line-offset
-                 buffer (gi:make <GtkTextIter>) line column
-                 )))
-           (text-buffer:place-cursor buffer iter)
-           ))))
+    (define (gtk-set-cursor-position buffer line column)
+      (let*((iter
+             (text-buffer:get-iter-at-line-offset
+              buffer (gi:make <GtkTextIter>) line column
+              )))
+        (text-buffer:place-cursor buffer iter)
+        ))
 
-    (define gtk-index->line-column
-      (gtk-buffer-method
-       (lambda (buffer index)
-         (let*((iter
-                (text-buffer:get-iter-at-offset
-                 buffer (gi:make <GtkTextIter>) index
-                 ))
-               (line (text-iter:get-line iter))
-               (column (text-iter:get-line-offset iter))
-               )
-           (text-buffer:cursor-position buffer old-index)
-           (values line column)
-           ))))
+    (define (gtk-index->line-column buffer index)
+      (let*((iter
+             (text-buffer:get-iter-at-offset
+              buffer (gi:make <GtkTextIter>) index
+              ))
+            (line (text-iter:get-line iter))
+            (column (text-iter:get-line-offset iter))
+            )
+        (text-buffer:cursor-position buffer old-index)
+        (values line column)
+        ))
 
-    (define gtk-delete-range
-      (gtk-buffer-method
-       (lambda (buffer from to)
-         (let*-values
-             (((from-iter to-iter) (gtk-buffer-range buffer from to)))
-           (text-buffer:delete buffer from-iter to-iter)
-           ))))
+    (define (gtk-delete-range buffer from to)
+      (let*-values
+          (((from-iter to-iter) (gtk-buffer-range buffer from to)))
+        (text-buffer:delete buffer from-iter to-iter)
+        ))
 
-    (define gtk-delete-from-cursor
-      (gtk-buffer-method
-       (lambda (buffer to)
-         (let*-values
-             (((cursor) (text-buffer:cursor-position buffer))
-              ((cursor-iter to-iter)
-               (gtk-buffer-range buffer cursor (- cursor to))
-               ))
-           (text-buffer:delete buffer cursor-iter to-iter)
-           ))))
+    (define (gtk-delete-from-cursor buffer to)
+      (let*-values
+          (((cursor) (text-buffer:cursor-position buffer))
+           ((cursor-iter to-iter)
+            (gtk-buffer-range buffer cursor (- cursor to))
+            ))
+        (text-buffer:delete buffer cursor-iter to-iter)
+        ))
 
-    (define gtk-insert-string
-      (gtk-buffer-method
-       (lambda (buffer str)
-         (cond
-          ((char? str)
-           (text-buffer:insert-at-cursor buffer (make-string 1 str) 1)
-           )
-          ((string? str)
-           (text-buffer:insert-at-cursor buffer str (string-length str))
-           )
-          (else (error "not a string or character" str))
-          ))))
+    (define (gtk-insert-string buffer str)
+      (cond
+       ((char? str)
+        (text-buffer:insert-at-cursor buffer (make-string 1 str) 1)
+        )
+       ((string? str)
+        (text-buffer:insert-at-cursor buffer str (string-length str))
+        )
+       (else (error "not a string or character" str))
+       ))
 
-    (define gtk-copy-string
-      (gtk-buffer-method
-       (lambda (buffer start end)
-         (let*-values
-             (((start-iter end-iter)
-               (gtk-buffer-range buffer start end)
-               ))
-           (text-buffer:get-slice buffer start-iter end-iter #t)
-           ))))
+    (define (gtk-copy-string buffer start end)
+      (let*-values
+          (((start-iter end-iter)
+            (gtk-buffer-range buffer start end)
+            ))
+        (text-buffer:get-slice buffer start-iter end-iter #t)
+        ))
 
     (define (parameterized-gtk-api thunk)
       (parameterize
           ((*top-level-div-node*         *gtk-top-level-div*)
            (*impl/is-graphical-display?* gtk-is-graphical-display?)
-           (*impl/div-set-focus*         gtk-div-set-focus!)
+           (*impl/signal-focus*          gtk-signal-focus!)
+           (*impl/signal-size*           gtk-signal-size!)
            (*impl/buffer-type?*          gtk-buffer-type?)
            (*impl/new-buffer*            gtk-new-buffer)
            (*impl/style-type?*           gtk-style-type?)

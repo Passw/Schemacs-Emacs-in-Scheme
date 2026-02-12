@@ -304,7 +304,7 @@
         (count
          (apply
           divsel o
-          (lambda (o) (set! found (cons o found)) #t)
+          (lambda (_ o) (set! found (cons o found)) #t)
           selectors
           )))
     (proc count (reverse found))

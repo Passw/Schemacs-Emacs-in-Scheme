@@ -57,7 +57,7 @@
           div-select  top-div-select  by-div-type
           tiled-windows  text-editor
           use-vars-value  update-var  after-update
-          div-set-focus!  is-graphical-display?
+          signal-focus!  is-graphical-display?
           =>div-widget*!
           ))
 
@@ -912,7 +912,7 @@
       (case-lambda
         ((window) (select-window window #f))
         ((window norecord)
-         (let*((result (div-set-focus! (window-view window))))
+         (let*((result (signal-focus! (window-view window))))
            (when result
              (set!winframe-selected-window (selected-frame) window)
              )
@@ -1190,13 +1190,13 @@
                  ((eq? #t init-input) (values))
                  (else (error "not an initial input string" init-input))
                  )
-                (display "; top-div-select div-set-focus! 'minibuffer-area\n");;DEBUG
+                (display "; top-div-select signal-focus! 'minibuffer-area\n");;DEBUG
                 (after-update
                  (lambda ()
                    (top-div-select
                     (lambda (o)
-                      (display "; div-set-focus! ") (write o) (newline) ;;DEBUG
-                      (div-set-focus! o)
+                      (display "; signal-focus! ") (write o) (newline) ;;DEBUG
+                      (signal-focus! o)
                       )
                     'minibuffer-area
                     (by-div-type text-editor)
