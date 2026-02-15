@@ -276,7 +276,9 @@
         (display "; div-set-focus ") (write o) (newline);;DEBUG
         (cond
          ((div-record-type? o)
-          (let ((wref (div-widget o)))
+          (let*((wref (view o =>div-widget*!))
+                (wref (and wref (gtk-text-edit-widget-textview wref)))
+                )
             (display "; div-set-focus! wref ") (write wref) (newline) ;;DEBUG
             (cond
              (wref (widget:grab-focus wref))
@@ -751,8 +753,9 @@
          wref (gi:make <signal> #:name "size-allocate")
          (lambda (wref rect)
            (let ((rect (gdk-rect->rect2D rect)))
-             (handler o wref rect user-handler)
-             ))))
+             (gtk3-event-handler
+              (lambda _ (handler o wref rect user-handler))
+              )))))
        (else (error "not a div-record-type" o))
        ))
 
@@ -809,9 +812,9 @@
                 ))
               )
           (gobject-ref win-wref)
-          (window:resize win-wref def-w def-h)
           ;;(gobject-ref layout-box)
           ;;(box:pack-start layout-box child-wref #t #t 0)
+          (window:resize win-wref def-w def-h)
           (lens-set win-wref o =>div-widget*!)
           (gtk-setup-size-alloc-handler
            o win-wref "main" gtk-update-div-size on-resize
@@ -856,10 +859,8 @@
         (when (procedure? action)
           (gi:connect
            wref button:clicked
-           (lambda _
-             (gtk3-event-handler
-              (lambda () (div-event-handler (lambda _ (action o) #t)))
-              ))))
+           (lambda _ (gtk3-event-handler (lambda _ (action o) #t)))
+           ))
         wref
         ))
 

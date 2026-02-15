@@ -120,12 +120,12 @@
       (impl  buffer-impl           set!buffer-impl)
       )
 
-    (define (%new-buffer string-handle)
+    (define (%new-buffer string-handle keymap)
       (let ((buf (hash-table-ref/default buffer-list string-handle #f)))
         (or buf
             (let ((buf
                    (make<debug-buffer>
-                    string-handle *default-keymap* #f
+                    string-handle keymap #f
                     (impl/new-buffer)
                     )))
               (hash-table-set! buffer-list string-handle buf)
@@ -262,7 +262,7 @@
                    (cond
                     ((string? input-string) input-string)
                     ((not input-string)
-                     (simple-read-minibuffer wait-prompt "Eval: ")
+                     (simple-read-minibuffer wait-prompt "Eval")
                      )
                     (else (error "must be a string" input-string))))
                   (result
@@ -314,8 +314,10 @@
       )
 
     (define (debug-div-select proc . args)
-      (apply top-div-select (lambda (path o) (proc o)) 'top args)
-      )
+      (let ((found (apply top-div-select (lambda (path o) (proc o)) args)))
+        (when (<= found 0)
+          (display "; div not found: ") (write args) (newline);;LOG
+          )))
 
     (define (debug-focus which)
       (debug-div-select signal-focus! which)
@@ -349,9 +351,10 @@
            (wait-prompt-cont #t)
            ))
         (set! minibuffer-cont (cdr minibuffer-cont))
+        (display "; resume simple-read-minibuffer\n");;DEBUG
         (let ((result
                (impl/copy-string
-                minibuffer minibuffer-prompt-length -1
+                (buffer-impl minibuffer) minibuffer-prompt-length -1
                 )))
           (clear-minibuffer)
           (set! minibuffer-prompt-length 0)
@@ -415,6 +418,17 @@
           ((#\delete)         . ,delete-char)
           ((meta #\:)         . ,eval-expression)
           ((ctrl #\x #\o)     . ,other-window)
+          ))
+       self-insert-layer
+       ))
+
+    (define *minibuffer-keymap*
+      (km:keymap
+       '*minibuffer-keymap
+       (km:alist->keymap-layer
+        `(((#\backspace)      . ,delete-backward-char)
+          ((#\delete)         . ,delete-char)
+          ((#\return)         . ,exit-minibuffer)
           ))
        self-insert-layer
        ))
@@ -555,12 +569,12 @@
         (set! buffer-list (make-hash-table))
         )
       (unless messages-buffer
-        (set! messages-buffer (%new-buffer messages-buffer-hstr))
+        (set! messages-buffer (%new-buffer messages-buffer-hstr *default-keymap*))
         )
       (unless minibuffer
-        (set! minibuffer (%new-buffer minibuffer-hstr))
+        (set! minibuffer (%new-buffer minibuffer-hstr *minibuffer-keymap*))
         )
-      (let*((scratch-buffer (%new-buffer scratch-buffer-hstr))
+      (let*((scratch-buffer (%new-buffer scratch-buffer-hstr *default-keymap*))
             (layout
              (compute-layout
               window-width window-height
@@ -601,7 +615,6 @@
         (floater
          (rect2D 0 0 window-width window-height)
          (div-space
-          (selector 'top)
           (properties
            'title: "Schemacs Debugger"
            'on-resize:
@@ -633,7 +646,9 @@
             (buffer-impl minibuffer)
             ))))))
 
-    (define *main-procedure* (make-parameter construct-gui))
+    (define *main-procedure*
+      (make-parameter construct-gui)
+      )
 
     (define (repl-main . args)
       (display "; Hello, world!\n")
