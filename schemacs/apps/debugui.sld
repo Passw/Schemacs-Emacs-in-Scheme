@@ -287,6 +287,9 @@
               (when output-string
                 (display-in-echo-area output-string)
                 )
+              (when (error-object? result)
+                (display output-string) (newline);;LOG
+                )
               result
               ))))))
 

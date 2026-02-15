@@ -66,12 +66,10 @@
               (cond
                ((eof-object? next-form) results)
                (else
-                (display "; eval ") (write next-form) (newline);;DEBUG
-                (call-with-values (scheme:eval next-form env)
+                (call-with-values (lambda () (scheme:eval next-form env))
                   (lambda args
-                    (display "; result -> ") (write args) (newline);;DEBUG
-                    (loop args))
-                  ))))))))
+                    (loop args)
+                    )))))))))
 
     (define *eval-string-procedure*
       (make-parameter
