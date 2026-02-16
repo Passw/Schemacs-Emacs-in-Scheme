@@ -8,6 +8,7 @@
     (scheme base)
     (only (scheme case-lambda) case-lambda)
     (only (scheme write) display write)
+    (prefix (scheme read) scheme:)
     (prefix (scheme eval) scheme:)
     (prefix (scheme repl) scheme:)
     (prefix (scheme r5rs) scheme:)
@@ -54,13 +55,30 @@
     (define eval
       (case-lambda
         ((expr) (eval expr #f))
-        ((expr env) ((*eval-procedure*) expr env))))
+        ((expr env) ((*eval-procedure*) expr env))
+        ))
+
+    (define (default-eval-string str env)
+      (call-with-port (open-input-string str)
+        (lambda (port)
+          (let loop ((results '()))
+            (let ((next-form (scheme:read port)))
+              (cond
+               ((eof-object? next-form) results)
+               (else
+                (call-with-values (lambda () (scheme:eval next-form env))
+                  (lambda args
+                    (loop args)
+                    )))))))))
 
     (define *eval-string-procedure*
       (make-parameter
        (case-lambda
          ((str) ((*eval-string-procedure*) str (the-environment)))
-         ((str env) (display "eval-string: ")(write str)(newline)))))
+         ((str env)
+          (display "; eval-string: ")(write str)(newline);;DEBUG
+          (default-eval-string str env)
+          ))))
 
     (define eval-string
       (case-lambda

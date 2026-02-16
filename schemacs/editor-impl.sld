@@ -1,7 +1,7 @@
 (define-library (schemacs editor-impl)
   ;; This library provides a long list of parameters which must be
   ;; parameterized by a back-end implemention. APIs in lirbaries such
-  ;; as `(SCHEMACS EDITOR)` call the procedures stored into these
+  ;; as `(SCHEMACS APPS EMACS)` call the procedures stored into these
   ;; parameters.
 
   (import
@@ -16,9 +16,6 @@
     )
 
   (export
-   cell-factory*
-   make<cell-factory> is<cell-factory-type>?
-   factory-make-cell factory-set!cell-value
    new-buffer-view*
    delete-char*
    new-mode-line-view*
@@ -49,19 +46,6 @@
    )
 
   (begin
-
-    (define-record-type <cell-factory-type>
-      (make<cell-factory> make-cell set!cell-value)
-      is<cell-factory-type>?
-      (make-cell       factory-make-cell)
-      (set!cell-value  factory-set!cell-value))
-
-    (define cell-factory*
-      (make-parameter
-       (make<cell-factory>
-        (lambda _ #f)
-        (lambda _ #f))))
-
 
     (define is-graphical-display?* (make-parameter #f))
 
@@ -106,7 +90,7 @@
       ;; <window-type>, a view of <line-display-type>, and a list of
       ;; strings or propertized strings to be inserted into the display.
       (make-parameter
-       (lambda (window info)
+       (lambda (window line-disp info)
          (display ";; no implementation for mode-line-set-info\n")
          (display ";; ")
          (write info)
@@ -140,22 +124,27 @@
 
     (define get-minibuffer-text*
       ;; Copy the text currently in the minibuffer and return it.
-      (make-parameter (lambda (frame) #f)))
+      (make-parameter (lambda (frame) #f))
+      )
 
     (define exit-minibuffer*
       ;; If the minibuffer is visible, hide the minibuffer and show the echo area.
-      (make-parameter (lambda (frame) #f)))
+      (make-parameter (lambda (frame) #f))
+      )
 
     (define focus-minibuffer*
-      (make-parameter (lambda (winframe prompt) (display prompt))))
+      (make-parameter (lambda (winframe prompt) (display prompt)))
+      )
 
     (define clear-minibuffer*
-      (make-parameter (lambda (window) #f)))
+      (make-parameter (lambda (window) #f))
+      )
 
     (define (make-editor-state-closure data)
       (case-lambda
         (() data)
-        ((new-data) (set! data new-data) new-data)))
+        ((new-data) (set! data new-data) new-data)
+        ))
 
     (define *current-editor* (make-parameter (make-editor-state-closure #f)))
 
@@ -164,7 +153,8 @@
     (define select-window*
       (make-parameter
        (lambda (window)
-         (display ";; *impl/select-window* not implemented\n"))))
+         (display ";; *impl/select-window* not implemented\n")
+         )))
 
     ;; -------------------------------------------------------------------------------------------------
     ;; These are global variables from the point of view of Emacs

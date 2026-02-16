@@ -5,15 +5,18 @@
 # that segfaults caused by imported library code or by FFI code, can
 # be caught and inspected.
 
-GUILE_CMD_ARGS='guile --r7rs';
-GUILE_CMD_ARGS="${GUILE_CMD_ARGS} --fresh-auto-compile";
-GUILE_CMD_ARGS="${GUILE_CMD_ARGS} -L ${PWD}";
+A='guile --r7rs';
+#A="${A} --fresh-auto-compile"
+A="${A} -L ${PWD}";
+GUILE_CMD_ARGS="${A}";
+unset A;
 
 GUILE_REPL_IN_GDB=false;
 GUILE_IN_GUIX_SHELL=false;
 
-#export GDK_BACKEND='x11,wayland'
-#export GTK_DEBUG='all'
+#export GDK_BACKEND='x11,wayland';
+export GTK_DEBUG='interactive';
+#export GOBJECT_DEBUG='instance-count';
 
 #---------------------------------------------------------------------
 
