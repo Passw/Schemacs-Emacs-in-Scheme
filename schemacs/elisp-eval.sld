@@ -72,12 +72,13 @@
           env-with-elstkfrm!  env-trace!  
           env-resolve-function  env-reset-stack!  env-reset-obarray!
           env-intern!  env-setq-bind!  env-lex-sym-lookup
-          elstkfrm-from-args   elstkfrm-sym-intern!
+          elstkfrm-from-args   elstkfrm-sym-intern!  change-var-to-dynamic
           *elisp-input-port*  *elisp-output-port*  *elisp-error-port*
           *default-obarray-size*  *max-lisp-eval-depth*
           =>env-obarray-key!   =>env-symbol!  =>env-trace-max*!
           =>env-stack-trace*!  =>stack-trace-location*!  =>env-trace-depth*!
-          =>env-lexstack*!  =>env-obarray*!  =>env-lexical-mode?!
+          =>env-lexstack*!  =>env-dynstack*!  env-sym-lookup
+          =>env-obarray*!  =>env-lexical-mode?!
           sym-type?  sym-name  new-symbol  new-symbol-value
           =>sym-name  =>sym-value*!  =>sym-function*!  =>sym-plist*!
           =>sym-value!  =>sym-function!  =>sym-plist!
@@ -1850,28 +1851,57 @@
 
     (define variable-documentation "variable-documentation")
 
+    (define (eval-defvar sym-expr val-expr docstr)
+      (cond
+       ((symbol? sym-expr)
+        (let*((st (*the-environment*))
+              (name (symbol->string sym-expr))
+              (lens (=>env-obarray-key! name))
+              (sym (view st lens))
+              (old-val (and sym (view sym =>sym-value*!)))
+              (sym (or sym
+                       (let ((sym (new-symbol name)))
+                         (lens-set sym st lens)
+                         sym
+                         )))
+              ;; `val-expr` ignored if symbol is already defined.
+              (val (and (not old-val) val-expr (eval-form val-expr)))
+              )
+          (unless old-val
+            (lens-set val sym =>sym-value*!)
+            )
+          (when docstr
+            (lens-set
+             docstr sym
+             (=>sym-plist! (sym-name sym))
+             (=>hash-key! variable-documentation)
+             ))
+          val
+          ))
+       (else (eval-error "wrong type argument" sym-expr))
+       ))
+
+    (define (eval-dynamic-defvar sym-expr)
+      (cond
+       ((symbol? sym-expr)
+        (change-var-to-dynamic
+         (*the-environment*)
+         (symbol->string sym-expr)
+         ))
+       (else (eval-error "wrong type argument" sym-expr))
+       ))
 
     (define elisp-defvar
       (make<syntax>
        (lambda expr
          (let ((def (car expr))
-               (expr (cdr expr)))
-           (define (defvar sym-expr val-expr docstr)
-             (let*((sym (eval-ensure-interned sym-expr))
-                   (val (if val-expr (eval-form val-expr) #f))
-                   )
-               (lens-set val sym =>sym-value*!)
-               (when docstr
-                 (lens-set docstr sym
-                           (=>sym-plist! (sym-name sym))
-                           (=>hash-key! variable-documentation)))
-               val
-               ))
+               (expr (cdr expr))
+               )
            (match expr
              (() (eval-error "wrong number of arguments" def '()))
-             ((sym-expr) (defvar sym-expr #f #f))
-             ((sym-expr val-expr) (defvar sym-expr val-expr #f))
-             ((sym-expr val-expr docstr) (defvar sym-expr val-expr docstr))
+             ((sym-expr) (eval-dynamic-defvar sym-expr))
+             ((sym-expr val-expr) (eval-defvar sym-expr val-expr #f))
+             ((sym-expr val-expr docstr) (eval-defvar sym-expr val-expr docstr))
              (any (eval-error "wrong number of arguments" def any))
              )))))
 

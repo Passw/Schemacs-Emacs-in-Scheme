@@ -83,7 +83,7 @@
    *elisp-error-port*
 
    =>env-obarray-key!
-   =>env-lexstack*!
+   =>env-lexstack*!  =>env-dynstack*!
    =>env-obarray*!
    =>env-lexical-mode?!
    =>env-stack-trace*!
@@ -132,6 +132,7 @@
    new-elstkfrm  stack-lookup
    elstkfrm-from-args
    elstkfrm-sym-intern!
+   change-var-to-dynamic
 
    ;;----------------------------------------
    ;; Stack traces
@@ -1133,12 +1134,14 @@
        ))
 
     (define (env-sym-update updater st name newsym)
-      ;; Part of the Elisp "SETQ" semantics. This procedure updates the
-      ;; lexical variable stack, or if in dynamic binding mode, updating
-      ;; the dynamic variable stack. If there is no variable bound to
-      ;; `NAME` then apply `UPDATER`, `ST`, and `NAME` to the `NEWSYM`
-      ;; procedure. `NEWSYM` must return two values, the updated `ST` and
-      ;; an arbitrary return value for the `update&view` lens.
+      ;; Part of the Elisp "SETQ" semantics. This procedure updates
+      ;; the lexical variable stack, or if in dynamic binding mode,
+      ;; updating the dynamic variable stack. If there is no variable
+      ;; bound to `NAME` then apply `UPDATER`, `ST`, and `NAME` to the
+      ;; `NEWSYM` procedure. `NEWSYM` must return two values, the
+      ;; updated `ST` and an arbitrary return value for the
+      ;; `update&view` lens, the `env-intern!` procedure is typically
+      ;; passed as this argument.
       ;;--------------------------------------------------------------
       (let ((sym (env-sym-lookup st name)))
         (cond
@@ -1215,6 +1218,47 @@
     (define (hash-env-intern-soft hash name)
       (hash-table-ref/default hash (ensure-string name) #f)
       )
+
+    (define (change-var-to-dynamic st name)
+      ;; In Emacs Lisp if you apply only one argument, a symbol, to
+      ;; the `defvar` form, this macro can move a variable declared in
+      ;; a `let` binding from the lexical stack to the dynamic stack.
+      ;; This procedure implements that behavior. If the symbol is not
+      ;; defined, a new symbol is interned in the dynamic binding
+      ;; stack, even if the `defvar` form is at the top-level, so it
+      ;; is necessary for the `load` function to push the dynamic
+      ;; stack before evaluation begins.
+      ;;--------------------------------------------------------------
+      (define (intern sym)
+        (let*((sym (or sym (new-symbol name)))
+              (dynstk (env-dynstack st))
+              (hash (and (not (null? dynstk)) (car dynstk)))
+              )
+          (cond
+           ((not hash)
+            (error "empty dynamic variable stack (not pushed for `load`?)") 
+            )
+           (else
+            (update
+             (lambda (o) o) ;; <- do nothing if the symbol is already interned
+             dynstk
+             (=>stack!
+              name
+              (lambda () (hash-table-set! hash name sym))
+              ))))))
+      (let loop ((lexstk (env-lexstack st)))
+        (cond
+         ((null? lexstk) (intern name))
+         (else
+          (let*((hash (car lexstk))
+                (sym (hash-table-ref/default hash name #f))
+                )
+            (cond
+             ((not sym) (loop (cdr lexstk)))
+             (else
+              (hash-table-delete! hash name)
+              (intern sym)
+              )))))))
 
     (define (env-resolve-function st head)
       (let ((head
