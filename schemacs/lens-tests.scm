@@ -224,8 +224,6 @@
 
 ;; -------------------------------------------------------------------------------------------------
 
-(define (hash-table-for-each proc ht) (hash-table-for-each proc ht))
-
 (define (=>depth-first-search select?)
   ;; This lens finds the first node in a tree for which the `SELECT?`
   ;; predicate return #t. The full path to the node is returned.
@@ -516,6 +514,15 @@
 
 (test-equal '("Hello")
   (lens-set "Hello" '() =>initial))
+
+(test-equal (list 2 3 1 0)
+  (let*((field 0)
+        (s (lambda (i v)
+             (set! field (lens-set v field (=>bit-field*! i)))
+             (and (eq? v (view field (=>bit-field*! i))) field)
+             )))
+    (list (s 1 #t) (s 0 #t) (s 1 #f) (s 0 #f))
+    ))
 
 ;; -------------------------------------------------------------------------------------------------
 

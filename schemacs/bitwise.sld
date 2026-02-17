@@ -1,9 +1,11 @@
 (define-library (schemacs bitwise)
+  (import (scheme base))
   (cond-expand
     ((or guile (library (srfi 60)))
      (import
        (only (srfi 60)
-             bit-set?
+             bit-set?  copy-bit
+             logior  logand  logxor
              bitwise-ior  bitwise-and  bitwise-xor
              arithmetic-shift
              ))
@@ -18,7 +20,8 @@
     ((or chibi stklos (library (srfi 151)))
      (import
        (only (srfi 151)
-             bit-set?
+             bit-set?  logbit?  copy-bit
+             logand  logior  logxor
              bitwise-ior  bitwise-and  bitwise-xor
              arithmetic-shift
              ))
@@ -37,13 +40,17 @@
      ;; `DEFINE-LIBRARY` seems to be broken, but the `COND-EXPAND`
      ;; implementation used elsewhere in Guile works just fine.
      (export
-      bit-set?
+      bit-set?  logbit?  copy-bit
+      logior  logand  logxor
       bitwise-ior  bitwise-and  bitwise-xor
       arithmetic-shift
-      ))
+      )
+     (begin (define logbit? bit-set?))
+     )
     (else
      (export
-      bit-set?
+      bit-set?  logbit?  copy-bit
+      logior  logand  logxor
       bitwise-ior  bitwise-and  bitwise-xor
       arithmetic-shift
       ))))

@@ -75,6 +75,7 @@
           hash-table-fold   hash-table-ref/default
           hash-table-update!/default
           )
+    (only (schemacs bitwise) logbit? copy-bit)
     )
 
   (cond-expand
@@ -116,7 +117,7 @@
    ;; use unit-lens or record-unit-lens
    %unit-lens-type?  %lens-type?  unit-lens
    unit-lens-view  unit-lens-update  unit-lens-set  unit-lens-swap
-   record-unit-lens
+   record-unit-lens  =>bit-field*!
    unit-lens-getter  unit-lens-setter  unit-lens-updater  unit-lens->expr
    default-unit-lens-setter  default-unit-lens-updater
 
@@ -182,7 +183,8 @@
       (getter  unit-lens-getter)
       (setter  unit-lens-setter)
       (updater unit-lens-updater)
-      (*->expr unit-lens->expr))
+      (*->expr unit-lens->expr)
+      )
 
     (define unit-lens
       ;; Construct a new `<UNIT-LENS-TYPE>.` The `GETTER` is required, and
@@ -219,17 +221,20 @@
       ;;------------------------------------------------------------------
       (case-lambda
         ((getter update&view)
-         (unit-lens getter (default-unit-lens-setter update&view) update&view #f))
+         (unit-lens getter (default-unit-lens-setter update&view) update&view #f)
+         )
         ((getter setter update&view) (unit-lens getter setter update&view #f))
         ((getter setter update&view *->expr)
          (if (and (not setter) (not update&view))
              (error
               "unit-lens function given #f for both setter and update&view arguments"
-              setter update&view)
+              setter update&view
+              )
              (let ((setter (if setter setter (default-unit-lens-setter update&view)))
-                   (update&view (if update&view update&view (default-unit-lens-updater getter setter))))
-               (make-unit-lens getter setter update&view *->expr))))))
-
+                   (update&view (if update&view update&view (default-unit-lens-updater getter setter)))
+                   )
+               (make-unit-lens getter setter update&view *->expr)
+               )))))
 
     (define record-unit-lens
       ;; This function constructs a `<UNIT-LENS-TYPE>` from a `GETTER` and
@@ -257,8 +262,8 @@
            (unit-lens
             getter setter
             (default-unit-lens-updater getter setter)
-            label)))))
-
+            label
+            )))))
 
     ;; (cond-expand
     ;;   (guile-3
@@ -270,12 +275,11 @@
     ;;        port))))
     ;;   (else))
 
-
     (define (unit-lens-view record-in-focus unit-lens)
       ;; Evaluate the getter of a `UNIT-LENS`.
       ;;------------------------------------------------------------------
-      ((unit-lens-getter unit-lens) record-in-focus))
-
+      ((unit-lens-getter unit-lens) record-in-focus)
+      )
 
     (define (default-unit-lens-updater getter setter)
       ;; Construct an update procedure that works on some field of a
@@ -289,8 +293,8 @@
       ;;------------------------------------------------------------------
       (lambda (updater record-in-focus)
         (let-values (((new-info return) (updater (getter record-in-focus))))
-          (values (setter record-in-focus new-info) return))))
-
+          (values (setter record-in-focus new-info) return)
+          )))
 
     (define (default-unit-lens-setter updater)
       ;; Construct a setter procedure that works on record as long as the
@@ -300,9 +304,10 @@
       (lambda (record-in-focus new-info)
         (let-values
             (((record-in-focus _return)
-              (updater (lambda _ new-info) record-in-focus)))
-          record-in-focus)))
-
+              (updater (lambda _ new-info) record-in-focus)
+              ))
+          record-in-focus
+          )))
 
     (define (unit-lens-update updater record-in-focus unit-lens)
       ;; Evaluate the getter of a `UNIT-LENS` on the `RECORD-IN-FOCUS` and
@@ -320,14 +325,16 @@
       ;; arbitrary return value received from the `UPDATE&VIEW` function is returned
       ;; as the second value.
       ;;------------------------------------------------------------------
-      ((unit-lens-updater unit-lens) updater record-in-focus))
+      ((unit-lens-updater unit-lens) updater record-in-focus)
+      )
 
     (define (unit-lens-set new-info record-in-focus lens)
       ;; Similar to `UNIT-LENS-UPDATE` but takes a new piece of information
       ;; rather than an `UPDATE&VIEW` function. Returns only 1 value: the updated
       ;; `RECORD-IN-FOCUS.`
       ;;------------------------------------------------------------------
-      ((unit-lens-setter lens) record-in-focus new-info))
+      ((unit-lens-setter lens) record-in-focus new-info)
+      )
 
     (define (unit-lens-swap new-info record-in-focus lens)
       ;; Similar to `UNIT-LENS-SET` but returns the old information that
@@ -339,7 +346,17 @@
       ;;------------------------------------------------------------------
       (let ((old-info ((unit-lens-getter lens) record-in-focus)))
         ((unit-lens-setter lens) record-in-focus new-info)
-        old-info))
+        old-info
+        ))
+
+    (define (=>bit-field*! nth-bit)
+      (let ((getter (lambda (field) (logbit? nth-bit field)))
+            (setter (lambda (field bool) (copy-bit nth-bit field bool)))
+            )
+        (unit-lens
+         getter setter (default-unit-lens-updater getter setter)
+         `(=>logbits*! ,nth-bit)
+         )))
 
     ;; -------------------------------------------------------------------------------------------------
 
