@@ -21,14 +21,14 @@
     )
   (export
    (text-line-type?  new-text-line
-    gap-buffer-type?  new-gap-buffer
+                     gap-buffer-type?  new-gap-buffer
 
-    run-editor-engine
-      ;; ^ This procedure is called in the same way as the Scheme
-      ;; `apply` procedure, except that it parameterizes all of the
-      ;; relevant parameter variables in the
-      ;; `(schemacs ui text-buffer-impl)` library.
-    ))
+                     run-editor-engine
+                     ;; ^ This procedure is called in the same way as the Scheme
+                     ;; `apply` procedure, except that it parameterizes all of the
+                     ;; relevant parameter variables in the
+                     ;; `(schemacs ui text-buffer-impl)` library.
+                     ))
   (begin
 
     (define-record-type <text-line-type>
@@ -53,7 +53,7 @@
     ;;----------------------------------------------------------------
 
     (define-record-type <gap-buffer-type>
-      (make<gap-buffer> vec weight cursor)
+      (make<gap-buffer> vec weight cursor min max)
       gap-buffer-type?
       (vec     gap-buffer-vector  set!gap-buffer-vector)
       ;; ^ The backing vector. This may be an ordinary vector
@@ -64,10 +64,15 @@
       ;; ^ The number of characters that have been inserted so
       ;; far. This may be any number from zero up to one minus the
       ;; length of the `gap-buffer-vector`.
-      (cursor  gap-buffer-cursor  set!gap-buffer-cursor)
+      (cursor  gap-buffer-cursor   set!gap-buffer-cursor)
       ;; ^ The position where the gap begins, or you could think of it
       ;; as the position where the next element will be inserted by
       ;; `gap-buffer-insert!`.
+      (min     gap-buffer-minimum  set!gap-buffer-minimum)
+      (max     gap-buffer-maximum  set!gap-buffer-maximum)
+      ;; ^ Tracks the lowest and highest valued element inserted,
+      ;; useful only if the elements being buffered have some kind of
+      ;; ordering.
       )
 
     (define (new-gap-buffer make-vector store-size . fill-val)
@@ -82,8 +87,37 @@
       ;;---------------------------------------------------------------
       (make<gap-buffer>
        (apply make-vector store-size fill-val)
-       0 0
+       0 0 #f #f
        ))
+
+    (define gap-buffer-grow-size-function
+      (make-parameter
+       (lambda (len weight +size)
+         (let ((request (+ weight +size)))
+           (let loop ((len len))
+             (if (<= len request) (loop (* 2 len)) len)
+             )))))
+
+    (define (gap-buffer-grow length make copy gb +size)
+      (let*((weight (gap-buffer-weight gb))
+            (vec (gap-buffer-vector gb))
+            (cur (gap-buffer-cursor gb))
+            (len0 (length vec))
+            (len1 ((gap-buffer-grow-size-function) len0 weight +size))
+            )
+        (when (< len0 len1)
+          (let ((new-vec (make len1))
+                (above (- weight cur))
+                )
+            (set!gap-buffer-vector gb new-vec)
+            (when (< 0 cur)
+              (copy new-vec 0 old-vec 0 cursor)
+              )
+            (when (< 0 above)
+              (copy new-vec (- len1 above 1) vec (- len0 above 1) above)
+              )))
+        gb
+        ))
 
     ;;----------------------------------------------------------------
 
@@ -120,12 +154,91 @@
         (() (new-text-editor "\n"))
         ((lbrk) (new-text-editor lbrk #f))
         ((lbrk props)
-         (let ((size (init-text-editor-line-count)))
+         (let*((size (init-text-editor-line-count))
+               (line (new-gap-buffer make-u32vector size))
+               )
+           (set!gap-buffer-minimum line #xFFFFFFFF)
+           (set!gap-buffer-maximum line 0)
            (make<text-editor>
             (new-gap-buffer make-vector size)
-            (new-gap-buffer make-u32vector size)
-            lbrk (make-u32vector size) props
+            line lbrk (make-u32vector size) props
             )))))
+
+    (define (%text-editor-insert ed +size set!indices)
+      (let*((line-ed (gap-buffer-grow (text-editor-line-editor ed) +size))
+            (cur     (gap-buffer-cursor line-ed))
+            (weight  (gap-buffer-weight line-ed))
+            (vec     (gap-buffer-vector line-ed))
+            (vlen    (u32vector-length vec))
+            )
+        (set!indicies line-ed vec vlen cur weight)
+        ))
+
+    (define (%text-editor-insert-char ed at-index char)
+      (let ((int (char->integer char)))
+        (u32vector-set! (gap-buffer-vector ed) at-index int)
+        (set!gap-buffer-minimum line-ed (min int (gap-buffer-minimum line-ed)))
+        (set!gap-buffer-maximum line-ed (max int (gap-buffer-maximum line-ed)))
+        ))
+
+    (define text-editor-insert
+      (case-lambda
+        ((ed chars) (text-editor-insert #f ed chars))
+        ((before-or-after ed chars)
+         (let*((d before-or-after)
+               (after  (or (eq? d 'after)  (eq? d '>) (eq? d >)))
+               (before (or (eq? d 'before) (eq? d '<) (eq? d <)))
+               )
+           ;; TODO: handle insertion of #\newline characters.
+           (cond
+            ((char? chars)
+             (%text-editor-insert
+              ed 1
+              (cond
+               ((and before (not after))
+                (lambda (line-ed vec vlen cur weight)
+                  (set!gap-buffer-weight line-ed (+ weight 1))
+                  (set!gap-buffer-cursor line-ed (+ cur 1))
+                  (%text-editor-insert-char line-ed cur chars)
+                  ))
+               ((and after (not before))
+                (lambda (line-ed vec vlen cur weight)
+                  (%text-editor-insert-char line-ed (- vlen weight 1) chars)
+                  ))
+               (else (error "expecting 'before or 'after" d))
+               )))
+            ((string? chars)
+             (let ((strlen (string-length chars)))
+               (%text-editor-insert
+                ed strlen
+                (cond
+                 ((and before (not after))
+                  (lambda (line-ed vec vlen cur weight)
+                    (set!gap-buffer-weight line-ed (+ weight strlen))
+                    (set!gap-buffer-cursor line-ed (+ cur strlen))
+                    (string-for-each
+                     (lambda (char)
+                       (%text-editor-insert-char line-ed cur char)
+                       (set! cur (+ 1 cur))
+                       )
+                     chars
+                     )))
+                 ((and after (not before))
+                  (lambda (line-ed vec vlen cur weight)
+                    (let ((cur (- vlen weight strlen)))
+                      (string-for-each
+                       (lambda (char)
+                         (%text-editor-insert-char line-ed cur char)
+                         (set! cur (+ 1 cur))
+                         )
+                       (%text-editor-insert-char line-ed (- vlen weight 1) chars)
+                       ))))
+                 (else (error "expecting 'before or 'after" d))
+                 ))))
+            (else (error "cannot insert value into text editor" chars))
+            )
+           chars
+           ))))
 
     ;;----------------------------------------------------------------
 
