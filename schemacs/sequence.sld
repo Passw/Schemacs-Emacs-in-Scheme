@@ -21,6 +21,9 @@
    make-seq  seq-length  seq-ref  seq-set!
    seq-for-each  seq->list  list->seq
    typeof-vector?
+   seq-step-forward  seq-step-forward/index
+   seq-step-reverse  seq-step-reverse/index
+   seq-min-max
 
    get-sequence-iface  sequence-iface-type?
    iface-sequence  iface-make-sequence
@@ -457,5 +460,62 @@
       )
 
     (define (typeof-vector? o) (seq-dispatch o iface-is-vector?))
+
+    (define (%seq-step proc)
+      (lambda (subproc iface from to . seqs)
+        (cond
+         ((eq? iface list-sequence-iface)
+          (error "cannot step forward on list types")
+          )
+         (else
+          (let-values
+              (((from to)
+                (if (< from to) (values from to) (values to from))
+                ))
+            (apply proc subproc (iface-sequence-ref iface) from to seqs)
+            )))))
+
+    (define seq-step-forward/index
+      ;; Similar to `vector-for-each`, except iterates only on
+      ;; indicies starting at `FROM` and incrementing the index on
+      ;; each iteration step stopping at index `TO`.  Raises an error
+      ;; if `IFACE` is `list-sequence-iface`.
+      ;;--------------------------------------------------------------
+      (%seq-step
+       (lambda (proc ref lo hi seqs)
+         (let loop ((i lo))
+           (cond
+            ((< i hi)
+             (apply proc i (map (lambda (vec) (ref vec i)) seqs))
+             (loop (+ 1 i))
+             )
+            (else (values))
+            )))))
+
+    (define seq-step-reverse/index
+      ;; Similar to `vector-for-each`, except iterates only on
+      ;; indicies starting at `FROM` and decrementing the index on
+      ;; each iteration step stopping at index `TO`.  Raises an error
+      ;; if `IFACE` is `list-sequence-iface`.
+      ;;--------------------------------------------------------------
+      (%seq-step
+       (lambda (proc ref lo hi seqs)
+         (let loop ((i0 hi))
+           (let ((i (- i0 1)))
+             (cond
+              ((< lo i0)
+               (apply proc i (map (lambda (vec) (ref vec i)) seqs))
+               (loop i)
+               )
+              (else (values))
+              ))))))
+
+    (define (%apply-without-index op)
+      (lambda (proc . args)
+        (apply op (lambda (_i . args) (apply proc args)) args)
+        ))
+
+    (define seq-step-forward (%apply-without-index seq-step-forward/index))
+    (define seq-step-reverse (%apply-without-index seq-step-reverse/index))
 
     ))
