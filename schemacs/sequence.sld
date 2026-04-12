@@ -39,10 +39,10 @@
    u16vector-sequence-iface
    u32vector-sequence-iface
    u64vector-sequence-iface
-   u8vector-sequence-iface
-   u16vector-sequence-iface
-   u32vector-sequence-iface
-   u64vector-sequence-iface
+   s8vector-sequence-iface
+   s16vector-sequence-iface
+   s32vector-sequence-iface
+   s64vector-sequence-iface
    f32vector-sequence-iface
    f64vector-sequence-iface
    list-sequence-iface
@@ -63,7 +63,7 @@
               ((to at from start) (copy! to at from start #f))
               ((to at from start end)
                (let ((start (or start 0))
-                     (end (or end (length from)))
+                     (end (or end (vlength from)))
                      )
                  (let loop ((start start) (at at))
                    (cond
@@ -165,7 +165,7 @@
          (let*((to-cell   (list-ref to at))
                (from-cell (list-ref from start))
                )
-           (list-overwrite-until! to-cell from-cell (- end at))
+           (list-overwrite-until! to-cell from-cell (- end start))
            ))))
 
     (define (bytevector->list vec)
@@ -388,10 +388,10 @@
          ((eq? u16vector   seq) u16vector-sequence-iface)
          ((eq? u32vector   seq) u32vector-sequence-iface)
          ((eq? u64vector   seq) u64vector-sequence-iface)
-         ((eq? s8vector    seq) u8vector-sequence-iface)
-         ((eq? s16vector   seq) u16vector-sequence-iface)
-         ((eq? s32vector   seq) u32vector-sequence-iface)
-         ((eq? s64vector   seq) u64vector-sequence-iface)
+         ((eq? s8vector    seq) s8vector-sequence-iface)
+         ((eq? s16vector   seq) s16vector-sequence-iface)
+         ((eq? s32vector   seq) s32vector-sequence-iface)
+         ((eq? s64vector   seq) s64vector-sequence-iface)
          ((eq? f32vector   seq) f32vector-sequence-iface)
          ((eq? f64vector   seq) f64vector-sequence-iface)
          ((eq? list        seq) list-sequence-iface)
@@ -402,10 +402,10 @@
          ((eq? u16vector?  seq) u16vector-sequence-iface)
          ((eq? u32vector?  seq) u32vector-sequence-iface)
          ((eq? u64vector?  seq) u64vector-sequence-iface)
-         ((eq? s8vector?   seq) u8vector-sequence-iface)
-         ((eq? s16vector?  seq) u16vector-sequence-iface)
-         ((eq? s32vector?  seq) u32vector-sequence-iface)
-         ((eq? s64vector?  seq) u64vector-sequence-iface)
+         ((eq? s8vector?   seq) s8vector-sequence-iface)
+         ((eq? s16vector?  seq) s16vector-sequence-iface)
+         ((eq? s32vector?  seq) s32vector-sequence-iface)
+         ((eq? s64vector?  seq) s64vector-sequence-iface)
          ((eq? f32vector?  seq) f32vector-sequence-iface)
          ((eq? f64vector?  seq) f64vector-sequence-iface)
          ((eq? list?       seq) list-sequence-iface)
@@ -418,10 +418,10 @@
        ((u16vector?  seq) u16vector-sequence-iface)
        ((u32vector?  seq) u32vector-sequence-iface)
        ((u64vector?  seq) u64vector-sequence-iface)
-       ((s8vector?   seq) u8vector-sequence-iface)
-       ((s16vector?  seq) u16vector-sequence-iface)
-       ((s32vector?  seq) u32vector-sequence-iface)
-       ((s64vector?  seq) u64vector-sequence-iface)
+       ((s8vector?   seq) s8vector-sequence-iface)
+       ((s16vector?  seq) s16vector-sequence-iface)
+       ((s32vector?  seq) s32vector-sequence-iface)
+       ((s64vector?  seq) s64vector-sequence-iface)
        ((f32vector?  seq) f32vector-sequence-iface)
        ((f64vector?  seq) f64vector-sequence-iface)
        ((fast-list?  seq) list-sequence-iface)
@@ -459,7 +459,7 @@
       (generic-for-each seq-length seq-ref)
       )
 
-    (define (typeof-vector? o) (seq-dispatch o iface-is-vector?))
+    (define (typeof-vector? o) (seq-dispatch o iface-is-vector? o))
 
     (define (%seq-step proc)
       (lambda (subproc iface from to . seqs)
