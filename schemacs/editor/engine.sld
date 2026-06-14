@@ -272,13 +272,25 @@
     ;;----------------------------------------------------------------
 
     (define-record-type <text-editor-type>
-      (make<text-editor> lines line-ed cdf ins-char lbrk textprops)
+      (make<text-editor>
+       lines  count  line-ed  line-ch
+       cdf  cdf-ix  ins-char  lbrk  textprops
+       )
       text-editor-type?
       (lines      text-editor-lines         set!text-editor-lines)
       ;; ^ A <gap-buffer-type> which buffers <text-line-type> values.
+      (count      text-editor-char-count    set!text-editor-char-count)
+      ;; ^ Counting the number of characters.
       (line-ed    text-editor-line-editor   set!text-editor-line-editor)
       ;; ^ A <gap-buffer-type> which buffers characters, edits the
       ;; current line under the cursor.
+      (line-ch    text-editor-line-changed  set!text-editor-line-changed)
+      ;; A boolean value indicating that the current line being edited
+      ;; by the `text-editor-line-editor` has actually changed. This
+      ;; allows the editor to decide whether the current line editor
+      ;; needs to be frozen and written-back to the line buffer. If
+      ;; there have been no edits when the cursor is moved, the freeze
+      ;; and write-back step can be skipped.
       (cdf        text-editor-cdf           set!text-editor-cdf)
       ;; ^ The "Cumulative Distribution Function" kept up to date for
       ;; faster random access to arbitrary characters in the buffer, a
@@ -288,6 +300,14 @@
       ;; example, if you lookup index 5 in the CDF, this will be an
       ;; unsigned integer that counts how many characters exist before
       ;; and including line 5 in the line editor.
+      (cdf-ix     text-editor-cdf-index      set!text-editor-cdf-index)
+      ;; ^ The CDF above becomes out-of-date after every edit, but
+      ;; only lines of text after a line that was edited become
+      ;; out-of-date.  Every time an edit is made to an index that is
+      ;; less than the current `text-editor-cdf-index` index value,
+      ;; the index of the line that was edited should be recored here.
+      ;; When a character in the buffer is looked-up by index, the CDF
+      ;; is recomputed starting from this index.
       (ins-char   %text-editor-insert-char   set!text-editor-insert-char)
       ;; ^ A function which inserts characters into the editor.
       (lbrk       text-editor-line-break     set!text-editor-line-break)
@@ -320,7 +340,7 @@
                      (set!gap-buffer-maximum line 0)
                      (make<text-editor>
                       (new-gap-buffer make-vector size)
-                      line (make-u32vector size)
+                      0 line #f (make-u32vector size) 0
                       #f lbrk props
                       ))))
            ((line-break-setup-editor! lbrk) ed)
@@ -481,6 +501,7 @@
             )
         (gap-buffer-insert-before line-ed-iface line-ed chi)
         (gap-buffer-insert-min-max! line-ed chi)
+        (set!text-editor-char-count ed (+ 1 (text-editor-char-count ed)))
         ch
         ))
 
@@ -499,6 +520,64 @@
 
     (define (text-editor-insert-line-from-port ed port)
       (text-editor-insert-from-port-until text-line-type? ed port)
+      )
+
+    (define (text-editor-dump-from-cursor ed port)
+      ;;TODO
+      )
+
+    (define (text-editor-dump-before ed port)
+      (let*((line-gb (text-editor-lines ed))
+            (line (gap-buffer-cursor line-gb))
+            (changed (text-editor-line-changed ed))
+            )
+        (cond
+         (changed
+          (let ((end (max 0 (- line 1))))
+            (gap-buffer-for-each-before/index
+             (lambda (i text-line)
+               (when (< i end) (write-text-line text-line port))
+               )
+             line-gb
+             )
+            (gap-buffer-for-each-before
+             (lambda (ch) (write-char (integer->char ch) port))
+             (text-editor-line-editor ed)
+             )))
+         (else
+          (gap-buffer-for-each-before
+           (lambda (text-line)
+             (write-text-line text-line port)
+             )
+           line-gb
+           )))))
+
+    (define (text-editor-dump-after ed port)
+      (let*((line-gb (text-editor-buffer ed))
+            (line    (gap-buffer-cursor line-gb))
+            (changed (text-editor-line-changed ed))
+            )
+        (when changed
+          (gap-buffer-for-each-after
+           (lambda (ch) (write-char (integer->char ch) port))
+           (text-editor-line-editor ed)
+           ))
+        (gap-buffer-for-each-after
+         (lambda (text-line) (write-text-line text-line port))
+         line-gb
+         )))
+
+    (define (text-editor-dump ed port)
+      (text-editor-dump-before ed port)
+      (text-editor-dump-after ed port)
+      )
+
+    (define (text-load-port ed port _flags)
+      (text-editor-insert-from-port ed port)
+      )
+
+    (define (text-dump-port ed port _flags)
+      (text-editor-dump ed port)
       )
 
     (define (text-editor-cursor-line ed)
@@ -524,6 +603,9 @@
       (parameterize
           ((impl/new-buffer*       new-text-editor)
            (impl/buffer-type?*     text-editor-type?)
+           (impl/buffer-length*    text-editor-char-count)
+           (impl/text-load-port*   text-load-port)
+           (impl/text-dump-port*   text-dump-port)
            )
         (apply proc args)
         ))

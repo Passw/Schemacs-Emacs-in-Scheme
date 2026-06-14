@@ -44,33 +44,36 @@
          )))
 
     (define text-load-port*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-input-file`, open a text file for reading at the
-      ;; `FILEPATH` and place it's content into the text buffer at the
-      ;; current cursor position. The `FLAGS` argument is a set of
-      ;; properties expressed as a `(schemacs vbal)` data structure,
-      ;; it can tweak the parameters of the file loading
-      ;; operation. This could, for example, tell Gtk to parse HTML in
-      ;; the file and set text properties according to HTML tags.
+      ;; Takes a `BUFFER`, and a character `PORT` similar to ports
+      ;; created by `open-input-file`. This function must read
+      ;; characters from the given `PORT` until it returns a value
+      ;; that satisfies the `eof-object?` predicate, each character
+      ;; should be buffered into the text buffer. The port is not
+      ;; closed. Takes a third `FLAGS` argument, which is used to
+      ;; specify a set of properties expressed as a `(schemacs vbal)`
+      ;; data structure, it can tweak the parameters of the file
+      ;; loading operation. This could, for example, tell Gtk to parse
+      ;; HTML in the file and set text properties according to HTML
+      ;; tags.
       ;;--------------------------------------------------------------
       (make-parameter
-       (lambda (buffer filepath flags)
-         (error "`text-load-port` not defined" buffer filepath flags)
+       (lambda (buffer port flags)
+         (error "`text-load-port` not defined" buffer port flags)
          )))
 
     (define text-dump-port*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-output-file`, open a text file for writing at the
-      ;; `FILEPATH` and write the content of the buffer to the file.
-      ;; The `FLAGS` argument is a set of properties expressed as a
+      ;; Takes a `BUFFER` and a character `PORT` similar to ports
+      ;; created by `open-output-file`, and write all characters in
+      ;; the buffer to this port. The port argument is not closed. The
+      ;; `FLAGS` argument is a set of properties expressed as a
       ;; `(schemacs vbal)` data structure, it can tweak the parameters
       ;; of the file loading operation. This could, for example, tell
       ;; Gtk to parse HTML in the file and set text properties
       ;; according to HTML tags.
       ;;--------------------------------------------------------------
       (make-parameter
-       (lambda (buffer filepath flags)
-         (error "`text-dump-port` not defined" buffer filepath flags)
+       (lambda (buffer port flags)
+         (error "`text-dump-port` not defined" buffer port flags)
          )))
 
     (define style-type?*
