@@ -14,6 +14,7 @@
     (scheme case-lambda)
     (only (schemacs vector)
           u32vector?  make-u32vector  u32vector-ref  u32vector-set!
+          u64vector?  make-u64vector
           )
     (only (schemacs vbal)
           vbal-type?  vbal->alist  alist->vbal
@@ -21,9 +22,11 @@
     (only (schemacs lexer) make<source-file-location>)
     (prefix (schemacs ui text-buffer-impl) impl/)
     (only (schemacs sequence)
+          sequence-grow
           vector-sequence-iface
           u16vector-sequence-iface
           u32vector-sequence-iface
+          u64vector-sequence-iface
           bytevector-sequence-iface
           get-sequence-iface
           iface-make-sequence
@@ -47,6 +50,8 @@
           gap-buffer-map/index   gap-buffer-map
           gap-buffer-update-min-max!
           gap-buffer-insert-min-max!
+          gap-buffer-move-cursor
+          gap-buffer-set-cursor
           gap-buffer-cursor-to-start!
           gap-buffer-cursor-to-end!
           gap-buffer-insert-before
@@ -60,7 +65,7 @@
   (export
    ;; Text lines, these are contain individual lines of text possibly
    ;; terminated with some line breaking character sequence.
-   text-line-type?  new-text-line
+   text-line-type?  new-text-line  text-line-size
    write-text-line  text-line-for-each
 
    ;; The text editor data type
@@ -85,6 +90,199 @@
    )
 
   (begin
+
+    ;;----------------------------------------------------------------
+    ;; Cumulative Distribution Function (CDF): since most text editors
+    ;; require moving the cursor to a precise index, as though the
+    ;; text buffer were an array of characters, and since this editor
+    ;; engine buffers variable-length lines and not characters, we
+    ;; provide a way to efficiently map arbitrary character indicies
+    ;; to line indicies. This is accomplished with a CDF which
+    ;; precisely describes how characters are distributed throughout
+    ;; the text buffer, that way character lookup by index can be
+    ;; performed with a simple binary search in O(log n) time. The CDF
+    ;; implementation defined here provides APIs for changing the
+    ;; characters and lazily re-computing the distribution whenever
+    ;; characters are inserted or removed from somewhere in the middle
+    ;; of the text buffer.
+
+    (define-record-type <cdf-vector-type>
+      ;; This is a cumultative distribution function (CDF) that is
+      ;; designed to grow and shrink with a dynamic probability
+      ;; distribution function (PDF) that can change over time. The
+      ;; CDF is re-computed lazily, only recomputed when `CDF-FIND` is
+      ;; called on a `CDF` for which it's associated PDF has changed.
+      (make<cdf-vector> iface vec cur max)
+      cdf-vector-type?
+      (iface  cdf-vector-iface)
+      (vec    cdf-vector   set!cdf-vector)
+      (cur    cdf-cursor   set!cdf-cursor)
+      (max    cdf-maximum  set!cdf-maximum)
+      )
+
+    (define cdf-vector
+      ;; Construct a cumulative distribution function (CDF) of type
+      ;; `<cdf-vector-type>` of a given `SIZE` and (optionally) using
+      ;; a given sequence interface `IFACE`. If `IFACE` is not provided
+      ;; then the `u64vector-sequence-iface` is selected by default.
+      ((size) (cdf-vector size u64vector-sequence-iface))
+      ((size iface)
+       (make<cdf-vector> iface ((make-vector iface) size) 0 0)
+       ))
+
+    (define (cdf-ref cdf i)
+      ((iface-sequence-ref (cdf-vector-iface cdf)) (cdf-vector cdf) i)
+      )
+
+    (define (cdf-fill cdf generate)
+      ;; Internally, the CDF is modeled as vector and as a stack. The
+      ;; stack is modeled by keeping a `cdf-cursor` value pointing at
+      ;; the index that represents the top of the stack. You can push
+      ;; or pop integers onto or off-of the stack, this stores
+      ;; integers into the vector and moves the cursor.
+      ;;
+      ;; The `GENERATE` function must take two values, (1) `INDEX` is
+      ;; the current index of the CDF vector, and (2) `ACCUM`, which
+      ;; will be the value of the current top of the CDF stack when
+      ;; `GENERATE` is applied. The `GENERATE` function must return
+      ;; the integer value to be pushed to the CDF stack, or if the
+      ;; generator is out of values, it must return `#f`.
+      ;;
+      ;; This function generates integers from the `GENERATE` function
+      ;; given as an argument and pushes to the top of the CDF stack
+      ;; the sum of each generated integer with the previous top of
+      ;; the stack.  The last value pushed to the CDF stack is the
+      ;; value returned by this function.
+      ;;--------------------------------------------------------------
+      (let*((iface  (cdf-vector-iface cdf))
+            (vec    (cdf-vector cdf))
+            (len    ((iface-sequence-length iface) vec))
+            (cursor (cdf-cursor cdf))
+            (accum
+             (if (< 0 cursor)
+                 ((iface-sequence-ref iface) vec (- cursor 1))
+                 0)))
+        (let loop ((cursor cursor) (accum accum) (vec vec) (len len))
+          (let ((next (generate cursor accum)))
+            (cond
+             (next
+              (let*-values
+                  ((vec len)
+                   (let ((new-vec (sequence-grow iface vec 1)))
+                     (if new-vec
+                         (values new-vec ((iface-sequence-length iface) new-vec))
+                         (values vec len)
+                         ))
+                   ((accum) (+ accum next))
+                   )
+                ((iface-sequence-set! iface) vec cursor accum)
+                (loop (+ 1 cursor) accum vec len)
+                ))
+             (else
+              (set!cdf-cursor cdf cursor)
+              (set!cdf-maximum cdf accum)
+              accum
+              ))))))
+
+    (define (cdf-invalidate! cdf cursor)
+      ;; Set the new `cursor` for the CDF. If the cursor is less than
+      ;; the current `cdf-cursor` value, this means every element
+      ;; after the `cursor` is invalid and needs to be
+      ;; recomputed. This function simply sets the `cdf-cursor` and
+      ;; returns the value of the CDF at the new cursor position. If
+      ;; `cursor` is greater than the current `cdf-cursor`, then the
+      ;; `cdf-cursor` is not changed and `#f` is returned.
+      ;;--------------------------------------------------------------
+      (let ((iface (cdf-vector-iface cdf))
+            (old-cursor (cdf-cursor cdf))
+            )
+        (cond
+         ((< old-cursor cursor) #f)
+         (else
+          (set!cdf-cursor cdf cursor)
+          (cond
+           ((< 0 cursor)
+            (let ((maximum
+                   ((iface-sequence-ref iface)
+                    (cdf-vector cdf)
+                    )))
+              (set!cdf-maximum cdf maximum)
+              maximum
+              ))
+           (else
+            (set!cdf-maximum cdf 0)
+            0))))))
+
+    (define (cdf-push cdf . elems)
+      (cdf-fill
+       cdf
+       (lambda (cursor accum)
+         (cond
+          ((null? elems) #f)
+          (else
+           (let ((next (car elems)))
+             (set! elems (cdr elems))
+             (car elems)
+             ))))))
+
+    (define (cdf-pop cdf n)
+      (cdf-invalidate! cdf (max 0 (- (cdf-cursor cdf) n)))
+      )
+
+    (define cdf-find
+      ;; Binary search returning which "bucket" I in a PDF does the
+      ;; integer argument `N` fall into given a CDF computed for the
+      ;; PDF. Takes two or three arguments
+      ;;
+      ;;   - `CDF` is the <cdf-vector-type>
+      ;;
+      ;;   - `INIT` (optional) from which index should the search begin.
+      ;;      Defaults to the middle index.
+      ;;
+      ;;   - `N` the number to search for, and return which bucket
+      ;;      into which it would be placed.
+      ;;
+      ;; In simpler terms, a discrete probability distribution
+      ;; function (PDF) can be thought of as a sequence of buckets of
+      ;; varying sizes modeled by a vector of integers where the index
+      ;; of the bucket in the vector describes it's "address". A PDF
+      ;; has a discrete cumulative distribution function (CDF) which
+      ;; is a vector of integers, but at each address in the CDF we
+      ;; store the sum of all bucket sizes before that address in the
+      ;; PDF. When a random integer `N` is "dropped" onto the field of
+      ;; buckets (modeled by the PDF), we may want to know the address
+      ;; into which bucket the random integer N will fall. This
+      ;; function computes the address of the bucket using a binary
+      ;; search.
+      (case-lambda
+        ((cdf n) (cdf-find cdf #f n))
+        ((cdf init n)
+         (let*((iface (cdf-sequence-iface cdf))
+               (ref (iface-sequence-ref iface))
+               (vec (cdf-vector cdf))
+               (len ((iface-sequence-length iface) vec))
+               (init
+                (or (and init (max 0 (min init (- len 1))))
+                    (floor-quotient len 2)
+                    )))
+           (let loop ((interval 1) (i0 init))
+             (let*((i0 (min i0 (- len 1)))
+                   (i1 (+ 1 i0))
+                   (lo (ref vec i0))
+                   (hi (if (>= i1 len) #f (ref vec i1)))
+                   )
+               (cond
+                ((and (<= lo n) (or (not hi) (< n hi)))
+                 (values i0 lo)
+                 )
+                ((< n lo)
+                 (let ((interval (floor-quotient interval 2)))
+                   (loop interval (- i0 interval))
+                   ))
+                (else
+                 (let ((interval (floor-quotient (- len i0) 2)))
+                   (loop interval (+ i0 interval))
+                   )))))))))
 
     ;;----------------------------------------------------------------
     ;; Line breaking state machine (not to be confused with a
@@ -240,6 +438,18 @@
       (make<text-line> string #f #f #f #f #f (get-sequence-iface string))
       )
 
+    (define (text-line-size line)
+      ((iface-sequence-length (text-line-sequence-iface line))
+       (text-line-string line)
+       ))
+
+    (define (text-line-ref line i)
+      (integer->char
+       (+ (text-line-char-offset line)
+          ((iface-sequence-ref (text-line-sequence-iface line))
+           (text-line-string line) i
+           ))))
+
     (define (text-line-for-each proc line)
       (let ((str (text-line-string line)))
         (cond
@@ -273,8 +483,8 @@
 
     (define-record-type <text-editor-type>
       (make<text-editor>
-       lines  count  line-ed  line-ch
-       cdf  cdf-ix  ins-char  lbrk  textprops
+       lines  count  line-ed  line-ch  moved
+       cdf  ins-char  lbrk  textprops
        )
       text-editor-type?
       (lines      text-editor-lines         set!text-editor-lines)
@@ -285,29 +495,22 @@
       ;; ^ A <gap-buffer-type> which buffers characters, edits the
       ;; current line under the cursor.
       (line-ch    text-editor-line-changed  set!text-editor-line-changed)
-      ;; A boolean value indicating that the current line being edited
+      ;; ^ A boolean value indicating that the current line being edited
       ;; by the `text-editor-line-editor` has actually changed. This
       ;; allows the editor to decide whether the current line editor
       ;; needs to be frozen and written-back to the line buffer. If
       ;; there have been no edits when the cursor is moved, the freeze
       ;; and write-back step can be skipped.
+      (moved      text-editor-line-moved    set!text-editor-line-moved)
+      ;; ^ A boolean value indicating that the cursor of the
+      ;; `text-editor-lines` gap buffer has moved and the line editor
+      ;; need to be reset with the content of the current line.
       (cdf        text-editor-cdf           set!text-editor-cdf)
-      ;; ^ The "Cumulative Distribution Function" kept up to date for
-      ;; faster random access to arbitrary characters in the buffer, a
-      ;; <u32vector> which records the total number of characters that
-      ;; exist before each <text-line-type> in the <gap-buffer-type>
-      ;; of the `TEXT-EDITOR-LINES` field of this data structure. For
-      ;; example, if you lookup index 5 in the CDF, this will be an
-      ;; unsigned integer that counts how many characters exist before
-      ;; and including line 5 in the line editor.
-      (cdf-ix     text-editor-cdf-index      set!text-editor-cdf-index)
-      ;; ^ The CDF above becomes out-of-date after every edit, but
-      ;; only lines of text after a line that was edited become
-      ;; out-of-date.  Every time an edit is made to an index that is
-      ;; less than the current `text-editor-cdf-index` index value,
-      ;; the index of the line that was edited should be recored here.
-      ;; When a character in the buffer is looked-up by index, the CDF
-      ;; is recomputed starting from this index.
+      ;; ^ The "Cumulative Distribution Function" is a gap buffer that
+      ;; keeps a running total number of characters for each line in
+      ;; the `text-editor-lines` gap buffer. Any change to the
+      ;; `text-editor-lines` buffer erases everything after the cursor
+      ;; in the CDF so that they can be re-computed.
       (ins-char   %text-editor-insert-char   set!text-editor-insert-char)
       ;; ^ A function which inserts characters into the editor.
       (lbrk       text-editor-line-break     set!text-editor-line-break)
@@ -340,7 +543,8 @@
                      (set!gap-buffer-maximum line 0)
                      (make<text-editor>
                       (new-gap-buffer make-vector size)
-                      0 line #f (make-u32vector size) 0
+                      0 line #f #f
+                      (cdf-vector size sequence-u64vector-iface)
                       #f lbrk props
                       ))))
            ((line-break-setup-editor! lbrk) ed)
@@ -350,36 +554,12 @@
     ;;----------------------------------------------------------------
     ;; Line editor procedures
 
-    (define (%line-editor-insert-char op)
-      ;; This is the logic that is common to both insert before and
-      ;; insert after, and assuming the `CHAR` is not a line break. If
-      ;; you do insert a `#\newline` character, it will be written
-      ;; into the buffer without actually performing a line break.
-      ;;--------------------------------------------------------------
-      (lambda (line-ed char)
-        (let*((int (char->integer char))
-              (lo (gap-buffer-minimum line-ed))
-              (hi (gap-buffer-maximum line-ed))
-              )
-          (op line-ed-iface line-ed int)
-          (when (< int lo) (set!gap-buffer-minimum line-ed int))
-          (when (< hi int) (set!gap-buffer-maximum line-ed int))
-          )))
-
     (define (line-editor-cursor-to-end! line-ed)
       (gap-buffer-cursor-to-end! line-ed-iface line-ed)
       )
 
     (define (line-editor-cursor-to-start! line-ed)
       (gap-buffer-cursor-to-start! line-ed-iface line-ed)
-      )
-
-    (define line-editor-insert-char-before 
-      (%line-editor-insert-char gap-buffer-insert-before)
-      )
-
-    (define line-editor-insert-char-after 
-      (%line-editor-insert-char gap-buffer-insert-after)
       )
 
     (define (%line-editor-pre-freeze lo hi)
@@ -394,6 +574,7 @@
       ;; Freeze all characters in the line buffer into a new
       ;; `<text-line-type>` object that contains the exact right size
       ;; to hold all of the characters.
+      ;;--------------------------------------------------------------
       (gap-buffer-update-min-max! line-ed-iface line-ed)
       (let*((weight   (gap-buffer-weight  line-ed))
             (cursor   (gap-buffer-cursor  line-ed))
@@ -413,8 +594,42 @@
         (make<text-line> vec #f #f lo hi lbrk iface)
         ))
 
+    (define (text-editor-line-editor-unfreeze ed)
+      (when (text-editor-line-moved ed)
+        (let*((line-ed  (text-editor-line-editor ed))
+              (col-num  (gap-buffer-cursor line-ed))
+              (lines    (text-editor-lines ed))
+              (line-num (gap-buffer-cursor lines))
+              (line
+               (if (<= 0 line-num) #f (gap-buffer-ref lines (- line-num 1)))
+               )
+              (size (text-line-size line))
+              )
+          ;; Clear the current line editor, and size it to fit the new line.
+          (gap-buffer-clear line-ed)
+          (gap-buffer-allocate line-ed size)
+          ;; First loop, fill the line editor from the start of the line.
+          (let loop ((i 0))
+            (cond
+             ((< i col-num)
+              (gap-buffer-insert-before line-ed (text-line-ref line i))
+              (loop (+ 1 i))
+              )
+             (else (values))
+             ))
+          ;; Second loop, fill the line editor from the end of the line.
+          (let loop ((i size))
+            (cond
+             ((<= col-num i)
+              (let ((i (- i 1)))
+                (gap-buffer-insert-after line-ed (text-line-ref line i))
+                (loop i)
+                ))
+             (else (values))
+             )))))
+
     (define (line-editor-char-range ref foreach line-ed)
-      (let*((lo (ref line-ed-iface line-ed))
+      (let*((lo (ref line-ed #f))
             (hi lo)
             )
         (foreach
@@ -464,14 +679,23 @@
     ;; Inserting text
 
     (define (text-editor-force-line-break ed)
-      (let ((line
+      (let*((line-ed (text-editor-line-editor ed))
+            (line
              (line-editor-freeze-line-before
-              (text-editor-line-editor ed)
-              (text-editor-line-break ed)
-              )))
-        (gap-buffer-insert-before
-         vector-sequence-iface (text-editor-lines ed) line
-         )
+              line-ed (text-editor-line-break ed)
+              ))
+            (lines (text-editor-lines ed))
+            (cur (gap-buffer-cursor lines))
+            (cdf (text-editor-cdf ed))
+            (sum (cdf-invalidate! cdf cur))
+            )
+        ;; insert the line into the line buffer
+        (gap-buffer-insert-before (text-editor-lines ed) line)
+        ;; insert the next running total into the CDF buffer, if the
+        ;; CDF is up-to-date. If not, do nothing, the CDF buffer will
+        ;; have to be brought up-to-date later.
+        (when sum (cdf-push cdf (+ (text-line-size line) sum)))
+        (gap-buffer-clear line-ed)
         line
         ))
 
@@ -496,12 +720,14 @@
        ))
 
     (define (text-editor-force-insert-char ed ch)
+      (text-editor-line-editor-unfreeze ed)
       (let ((line-ed (text-editor-line-editor ed))
             (chi (char->integer ch))
             )
         (gap-buffer-insert-before line-ed-iface line-ed chi)
         (gap-buffer-insert-min-max! line-ed chi)
         (set!text-editor-char-count ed (+ 1 (text-editor-char-count ed)))
+        (set!text-editor-line-changed ed #t)
         ch
         ))
 
@@ -520,10 +746,6 @@
 
     (define (text-editor-insert-line-from-port ed port)
       (text-editor-insert-from-port-until text-line-type? ed port)
-      )
-
-    (define (text-editor-dump-from-cursor ed port)
-      ;;TODO
       )
 
     (define (text-editor-dump-before ed port)
@@ -553,7 +775,7 @@
            )))))
 
     (define (text-editor-dump-after ed port)
-      (let*((line-gb (text-editor-buffer ed))
+      (let*((line-gb (text-editor-lines ed))
             (line    (gap-buffer-cursor line-gb))
             (changed (text-editor-line-changed ed))
             )
@@ -597,17 +819,170 @@
        (text-editor-cursor-column-number ed)
        ))
 
+    (define (text-editor-make-cdf-fill-range lines to)
+      ;; Creates a closure that acts as a generator of lines in the
+      ;; `LINES` gap buffer between the indices of the current cursor
+      ;; position of the CDF up until the index given by the argument
+      ;; `TO` (not including `TO`) using `gap-buffer-ref`, and
+      ;; `text-line-size` to produce the output values.
+      ;;--------------------------------------------------------------
+      (lambda (cursor accum)
+        (cond
+         ((< cursor to)
+          (text-line-size (gap-buffer-ref lines cursor))
+          )
+         (else #f)
+         )))
+
+    (define (text-editor-make-cdf-fill-until lines accum-max-value)
+      ;; Creates a closure that acts as a generator of lines in the
+      ;; `LINES` gap buffer and continues until the end of the buffer
+      ;; is reached or until the accumulator matches or exceeds that
+      ;; of `ACCUM-MAX-VALUE`.
+      ;;--------------------------------------------------------------
+      (let ((weight (gap-buffer-weight lines)))
+        (lambda (cursor accum)
+          (cond
+           ((and (< accum accum-max-value) (< from weight))
+            (text-line-size (gap-buffer-ref lines cursor))
+            )
+           (else #f)
+           ))))
+
+    (define (text-editor-text-line-ref ed offset)
+      ;; Used internally to get the character on the current
+      ;; line. Checks if the line has been editted first, then decides
+      ;; whether to lookup the character from the line buffer or from
+      ;; the text line under the cursor.
+      (let*((lines (text-editor-lines ed))
+            (line-cur (gap-buffer-cursor lines))
+            )
+        (cond
+         ;; Under two conditions do we read from the line editor: (1)
+         ;; if the cursor is at zero, which means the line editor is
+         ;; editing a line at the beginning of the buffer, or (2) if
+         ;; the line editor contains changes from the text-line in the
+         ;; line buffer.
+         ((or (= 0 line-cur) (text-editor-line-changed ed))
+          (gap-buffer-ref (text-editor-line-editor ed) offset)
+          )
+         ;; Otherwise we read from the text line in the line buffer
+         (else
+          (text-line-ref (gap-buffer-ref lines (- line-cur 1)) offset)
+          ))))
+
+    (define (text-editor-get-cursor ed)
+      ;; Check if the CDF needs updating, and if so, recompute all
+      ;; elements up to the current cursor position. Returns the
+      ;; character position of the text editor's cursor when complete.
+      ;;--------------------------------------------------------------
+      (let*((lines    (text-editor-lines ed))
+            (line-num (gap-buffer-cursor lines))
+            (line-ed  (text-editor-line-editor ed))
+            (vec      (gap-buffer-vector lines))
+            (cdf      (text-editor-cdf ed))
+            (cdf-cur  (cdf-cursor cdf))
+            (offset
+             (cond
+              ((< cdf-cur line-num)
+               (cdf-fill
+                cdf (text-editor-make-cdf-fill-range lines line-num)
+                ))
+              (else
+               (cdf-ref cdf line-num)
+               ))))
+        (+ offset (or (and line-ed (gap-buffer-cursor line-ed)) 0))
+        ))
+
+    (define (text-editor-move-cursor ed move-by)
+      (let*-values
+          (((lines) (text-editor-lines ed))
+           ((line-num-before) (gap-buffer-cursor lines))
+           ((cdf-cur offset)
+            (text-editor-index-line-offset ed (+ ch-index move-by))
+            )
+           ;; First set the cursor position according to the value
+           ;; computed from the CDF.
+           (() (gap-buffer-set-cursor (text-editor-lines ed) cdf-cur))
+           ((line-num-after)  (gap-buffer-cursor lines))
+           )
+        ;; Then make a note that the text editor line changed and
+        ;; needs to be reset.
+        (set!text-editor-line-changed ed #t)
+        (unless (= line-num-before line-num-after)
+          (set!text-editor-line-moved ed #t)
+          )))
+
+    (define (text-editor-set-cursor ed index)
+      (let ((cursor (text-editor-get-cursor ed)))
+        (text-editor-move-cursor ed (- index cursor))
+        ))
+
+    (define (text-editor-index-line-offset ed ch-index)
+      ;; This function is used to update the CDF and to return the
+      ;; line number, and character index offset of that line, for the
+      ;; character index `CH-INDEX`. Returns two values: (1) the line
+      ;; index to which the `CH-INDEX` is pointing, and (2) the
+      ;; character offset of that line relative to the start of the
+      ;; text buffer.
+      ;;--------------------------------------------------------------
+      (let*((lines (text-editor-lines ed))
+            (cdf (text-editor-cdf ed))
+            (cdf-max (cdf-maximum cdf))
+            )
+        (cond
+         ((< ch-index cdf-max)
+          (let*((cdf-cur (cdf-find cdf ch-index))
+                (offset (cdf-ref cdf cdf-cur))
+                )
+            (values cdf-cur offset)
+            ))
+         (else
+          (cdf-fill cdf (text-editor-make-cdf-fill-until lines ch-index))
+          (let((cdf-cur (cdf-cursor cdf)))
+            (cond
+             ((<= cdf-cur 0) #f)
+             (else
+              (let*((cdf-cur (- cdf-cur 1))
+                    (offset (cdf-ref cdf-cur))
+                    )
+                (values cdf-cur offset)
+                ))))))))
+
+    (define (text-buffer-get-char-index ed ch-index)
+      ;; Get the character at the given index `CH-INDEX`. This
+      ;; recomputes part of the CDF for the editor buffer.
+      ;;--------------------------------------------------------------
+      (let*-values
+          (((cdf-cur offset) (text-editor-index-line-offset ed ch-index))
+           ((lines) (text-editor-lines ed))
+           )
+        (cond
+         ((= cdf-cur (text-editor-line-index ed))
+          (text-editor-line-editor-ref ed offset)
+          )
+         (else
+          (let ((line (gap-buffer-ref lines cdf-cur)))
+            (text-line-ref line (- ch-index offset))
+            )))))
+
     ;;----------------------------------------------------------------
 
     (define (run-editor-engine proc . args)
       (parameterize
-          ((impl/new-buffer*       new-text-editor)
-           (impl/buffer-type?*     text-editor-type?)
-           (impl/buffer-length*    text-editor-char-count)
-           (impl/text-load-port*   text-load-port)
-           (impl/text-dump-port*   text-dump-port)
+          ((impl/new-buffer*           new-text-editor)
+           (impl/buffer-type?*         text-editor-type?)
+           (impl/buffer-length*        text-editor-char-count)
+           (impl/text-load-port*       text-load-port)
+           (impl/text-dump-port*       text-dump-port)
+           (impl/style-type?*          vbal-type?)
+           (impl/new-style*            alist->vbal)
+           (impl/get-cursor-index*     text-editor-get-cursor)
+           (impl/move-cursor-index*    text-editor-move-cursor)
+           (impl/set-cursor-position*  text-editor-set-cursor)
            )
         (apply proc args)
         ))
 
-    ))
+    )
+  )

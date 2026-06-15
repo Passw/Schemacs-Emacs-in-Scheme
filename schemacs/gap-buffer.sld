@@ -1,6 +1,7 @@
 (define-library (schemacs gap-buffer)
   (import
     (scheme base)
+    (scheme case-lambda)
     (only (scheme write) display write);;DEBUG
     (scheme case-lambda)
     (only (schemacs sequence)
@@ -16,7 +17,8 @@
   (export
    gap-buffer-type?             new-gap-buffer
    gap-buffer-insert-before     gap-buffer-insert-after
-   gap-buffer-move-cursor       gap-buffer-delete
+   gap-buffer-move-cursor       gap-buffer-set-cursor
+   gap-buffer-delete            gap-buffer-clear
 
    gap-buffer-end-of-line?      gap-buffer-start-of-line?
    gap-buffer-for-each          gap-buffer-for-each/index
@@ -27,13 +29,14 @@
 
    gap-buffer-length            gap-buffer-weight
    gap-buffer-cursor            gap-buffer-free-space
-   gap-buffer-update-min-max   gap-buffer-insert-min-max
+   gap-buffer-update-min-max    gap-buffer-insert-min-max
 
    gap-buffer-ref
    gap-buffer-ref-before        gap-buffer-ref-after
-   gap-buffer-cursor-to-start  gap-buffer-cursor-to-end
+   gap-buffer-cursor-to-start   gap-buffer-cursor-to-end
 
-   gap-buffer-grow            *gap-buffer-grow-size-function*
+   *gap-buffer-grow-size-function*
+   gap-buffer-grow              gap-buffer-allocate
    gap-buffer-minimum           set!gap-buffer-minimum
    gap-buffer-maximum           set!gap-buffer-maximum
    )
@@ -152,6 +155,20 @@
            gb
            ))))
 
+    (define (gap-buffer-allocate gb new-size)
+      ;; Similar to `gap-buffer-grow` but ensures the gap buffer is at
+      ;; least `NEW-SIZE` elements large and grows the gap buffer
+      ;; allocation if it is not big enough. If the requested
+      ;; `NEW-SIZE` is smaller than the current allocation, no change
+      ;; is made.
+      ;;--------------------------------------------------------------
+      (let*((vec (gap-buffer-vector gb))
+            (old-size (vector-length vec))
+            )
+        (when (< old-size new-size)
+          (gap-buffer-grow gb (- new-size old-size))
+          )))
+
     (define (gap-buffer-free-space gb)
       (- ((iface-sequence-length (gap-buffer-seq-iface gb)) (gap-buffer-vector gb))
          (gap-buffer-weight gb)
@@ -190,8 +207,8 @@
          )))
 
     (define (%gap-buffer-without-index op)
-      (lambda (proc iface gb)
-        (op (lambda (_i . args) (apply proc args)) iface gb)
+      (lambda (proc gb)
+        (op (lambda (_i . args) (apply proc args)) gb)
         ))
 
     (define (gap-buffer-for-each/index proc gb)
@@ -367,20 +384,23 @@
             (else gb)
             )))))
 
-    (define (gap-buffer-ref-before gb)
+    (define (gap-buffer-ref-before gb nothing)
+      ;; Get the item just before the cursor
       (gap-buffer-update
        gb
        (lambda (iface vec len weight cursor)
          (cond
-          ((< 0 weight)
-           ((iface-sequence-ref iface) vec cursor)
+          ((> cursor 0)
+           ((iface-sequence-ref iface) vec (- cursor 1))
            )
           (else
-           (error "cannot reference empty gap buffer" gb)
+           ;;(error "cannot reference empty gap buffer" gb)
+           nothing
            )))))
 
 
-    (define (gap-buffer-ref-after gb)
+    (define (gap-buffer-ref-after gb nothing)
+      ;; Get the item just after the cursor
       (gap-buffer-update
        gb
        (lambda (iface vec len weight cursor)
@@ -389,18 +409,20 @@
            ((iface-sequence-ref iface) vec (- len 1 (- weight cursor)))
            )
           (else
-           (error "cannot reference empty gap buffer" gb)
+           ;;(error "cannot reference empty gap buffer" gb)
+           nothing
            )))))
 
     (define (gap-buffer-ref gb i)
-      (let ((iface (gap-buffer-seq-iface gb)))
-        (cond
-         ((< i (gap-buffer-cursor gb))
-          (gap-buffer-ref-before gb)
-          )
-         (else
-          (gap-buffer-ref-after gb)
-          ))))
+      (gap-buffer-update
+       gb
+       (lambda (iface vec len weight cursor)
+	 (cond
+	  ((< i (gap-buffer-cursor gb))
+           (vector-ref vec (%gapbuf-get-index-before cursor weight len))
+	   )
+	  (else (vector-ref vec (%gapbuf-get-index-after cursor weight len)))
+	  ))))
 
     (define (%gapbuf-get-index-before cur _wt _len) cur)
     (define (%gapbuf-get-index-after  cur  wt  len) (- len 1 (- wt cur)))
@@ -529,6 +551,17 @@
              limit
              ))))))
 
+    (define (gap-buffer-set-cursor gb index)
+      ;; Move the gap buffer cursror to a given `INDEX`. The index
+      ;; must be greater than or equal to 0 and less than the
+      ;; `gap-buffer-weight` value. This function calls
+      ;; `gap-buffer-move-cursor` after computing the difference of
+      ;; the current `gap-buffer-cursor` and the given `INDEX`
+      ;; argument.
+      ;;--------------------------------------------------------------
+      (gap-buffer-move-cursor gb (- index (gap-buffer-cursor gb)))
+      )
+
     (define gap-buffer-delete
       ;; Delete N characters after the cursor. If N is negative,
       ;; delete N characters before the cursor. As an optional third
@@ -580,7 +613,16 @@
                   (when del (on-range after (+ after n)))
                   n))
                (else 0) ;; nothing to do
-               ))))
-         )))
+               )))))))
+
+    (define (gap-buffer-clear gb)
+      ;; Reset the cursor and weight to zero, but otherwise do not
+      ;; change the allocation of the gap buffer.
+      ;;--------------------------------------------------------------
+      (set!gap-buffer-weight  gb 0)
+      (set!gap-buffer-cursor  gb 0)
+      (set!gap-buffer-minimum gb #f)
+      (set!gap-buffer-maximum gb #f)
+      )
 
     ))

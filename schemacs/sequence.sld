@@ -18,6 +18,9 @@
      ))
 
   (export
+   sequence-grow
+   *sequence-grow-size-function*
+
    make-seq  seq-length  seq-ref  seq-set!
    seq-for-each  seq->list  list->seq
    typeof-vector?
@@ -265,6 +268,46 @@
       (list->  iface-list->sequence)
       (foreach iface-sequence-for-each)
       )
+
+    ;;----------------------------------------------------------------
+    ;; Function for resizing sequences
+
+    (define *sequence-grow-size-function*
+      ;; A parameter which defines the function that should be used to
+      ;; compute a new size for a sequence when it needs to be grown
+      ;; to fit more elements than it has room to hold. The default is
+      ;; to simply double the size of the current allocation.
+      ;;--------------------------------------------------------------
+      (make-parameter
+       (lambda (len +size)
+         (let ((request (+ len +size)))
+           (let loop ((len len))
+             (if (< len request) (loop (* 2 len)) len)
+             )))))
+
+    (define (sequence-grow iface old-seq +size)
+      ;; Grow a sequence by allocating a new one and copying the old
+      ;; values. Uses the `*sequence-grow-size-function*` parameter to
+      ;; increase the size of the old sequence to at least the size of
+      ;; `(+ old-length +size)`. If the new size is the same as the
+      ;; old size, #f is returned, otherwise the newly allocated and
+      ;; filled vector is returned.
+      (let*((old-len ((iface-sequence-length iface) old-seq))
+            (new-len
+             ((*sequence-grow-size-function*)
+              old-len +size
+              )))
+        (cond
+         ((< old-len new-len)
+          (let ((new-vec ((iface-make-sequence iface) new-len)))
+            ((iface-sequence-copy! iface) new-vec 0 old-vec 0 old-len)
+            new-vec
+            ))
+         (else #f)
+         )))
+
+    ;;----------------------------------------------------------------
+    ;; Sequence interfaces for SRFI-4 and SRFI-160
 
     (define vector-sequence-iface
       (make<sequence-iface>
