@@ -21,6 +21,11 @@
           )
     (only (schemacs lexer) make<source-file-location>)
     (prefix (schemacs ui text-buffer-impl) impl/)
+    (only (schemacs ui text-buffer-impl)
+          make<text-location>
+          text-location-line
+          text-location-column
+          )
     (only (schemacs sequence)
           sequence-grow
           vector-sequence-iface
@@ -914,17 +919,27 @@
           )))
 
     (define (text-editor-set-cursor ed index)
-      (let ((cursor (text-editor-get-cursor ed)))
-        (text-editor-move-cursor ed (- index cursor))
-        ))
+      (cond
+       ((text-location-type? index)
+        ;;TODO
+        )
+       ((integer? index)
+        (let ((cursor (text-editor-get-cursor ed)))
+          (text-editor-move-cursor ed (- index cursor))
+          ))
+       (else
+        (error
+         "text editor index must be set with integer or text-location-type"
+         index
+         ))))
 
     (define (text-editor-index-line-offset ed ch-index)
       ;; This function is used to update the CDF and to return the
       ;; line number, and character index offset of that line, for the
-      ;; character index `CH-INDEX`. Returns two values: (1) the line
-      ;; index to which the `CH-INDEX` is pointing, and (2) the
-      ;; character offset of that line relative to the start of the
-      ;; text buffer.
+      ;; character index `CH-INDEX` relative to the start of the text
+      ;; buffer. Returns two values: (1) the line index to which the
+      ;; `CH-INDEX` is pointing, and (2) the character offset of that
+      ;; line.
       ;;--------------------------------------------------------------
       (let*((lines (text-editor-lines ed))
             (cdf (text-editor-cdf ed))
@@ -966,6 +981,54 @@
             (text-line-ref line (- ch-index offset))
             )))))
 
+    (define (text-buffer-get-line-column ed ch-index)
+      (cond
+       ;; If `index` is not `#f` compute the line and column number of
+       ;; that character index.
+       (ch-index
+        (let*-values
+            (((line-index offset)
+              (text-editor-index-line-offset ed ch-index)
+              ))
+          (make<text-location> (+ 1 line-index) (+ 1 offset))
+          ))
+       ;; Otherwise get the current cursor position.
+       (else
+        (make<text-location>
+         (+ 1 (text-edtior-cursor-line ed))
+         (+ 1 (text-editor-cursor-column ed))
+         ))))
+
+    (define (text-editor-get-end-of-line ed)
+      (text-editor-get-cursor ed)
+      (let*((lines (text-editor-lines ed))
+            (line-num (gap-buffer-cursor lines))
+            )
+        (cond
+         ((= 0 line-num)
+          (cond
+           ((text-editor-line-moved ed) #f)
+           (else (- (gap-buffer-weight (text-editor-line-editor ed)) 1))
+           ))
+         (else
+          (- (cdf-ref (text-editor-cdf ed) (- line-num 1)) 1)
+          ))))
+
+    (define (text-editor-get-start-of-line ed)
+      (text-editor-get-cursor ed)
+      (let*((lines (text-editor-lines ed))
+            (line-num (gap-buffer-cursor lines))
+            )
+        (cond
+         ((< line-num 2)
+          (cond
+           ((text-editor-line-moved ed) #f)
+           (else 0)
+           ))
+         (else
+          (- (cdf-ref (text-editor-cdf ed) (- line-num 2)) 1)
+          ))))
+
     ;;----------------------------------------------------------------
 
     (define (run-editor-engine proc . args)
@@ -980,6 +1043,22 @@
            (impl/get-cursor-index*     text-editor-get-cursor)
            (impl/move-cursor-index*    text-editor-move-cursor)
            (impl/set-cursor-position*  text-editor-set-cursor)
+           (impl/index->line-column*   text-editor-get-line-column)
+           (impl/get-end-of-line*      text-editor-get-end-of-line)
+           (impl/get-start-of-line*    text-editor-get-start-of-line)
+           (impl/insert*               text-editor-insert)
+           (impl/copy-string*          '*TODO*)
+           (impl/get-char*             '*TODO*)
+           (impl/delete-range*         '*TODO*)
+           (impl/delete-from-cursor*   '*TODO*)
+           (impl/get-default-style*    '*TODO*)
+           (impl/set-default-style*    '*TODO*)
+           (impl/get-text-style*       '*TODO*)
+           (impl/set-text-style*       '*TODO*)
+           (impl/get-selection*        '*TODO*)
+           (impl/set-selection*        '*TODO*)
+           (impl/scan-for-char*        '*TODO*)
+           (impl/scan-for-string*      '*TODO*)
            )
         (apply proc args)
         ))
