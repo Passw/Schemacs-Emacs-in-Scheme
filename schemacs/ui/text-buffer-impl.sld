@@ -12,14 +12,23 @@
    get-cursor-index*  set-cursor-index*
    move-cursor-index*  set-cursor-position*
    index->line-column*  get-end-of-line*  get-start-of-line*
-   insert-string*  insert-char*  copy-string*  get-char*
+   insert*  copy-string*  get-char*
    delete-range*  delete-from-cursor*
    get-default-style*  set-default-style*
    get-text-style*  set-text-style*
    get-selection*  set-selection*
    scan-for-char*  scan-for-string*
+
+   make<text-location>  text-location-line  text-location-column
    )
   (begin
+
+    (define-record-type <text-location-type>
+      (make<text-location> line column)
+      text-location-type?
+      (line    text-location-line)
+      (column  text-location-column)
+      )
 
     (define buffer-type?*
       ;; Returns `#t` only if the applied argument `BUFFER` is an
@@ -161,19 +170,13 @@
          (error "`get-start-of-line` not defined" buffer)
          )))
 
-    (define insert-string*
-      ;; Insert a Scheme string into the current buffer at the current
-      ;; cursor position using the current style.
+    (define insert*
+      ;; Insert a Scheme string or char into the current buffer at the
+      ;; current cursor position using the current style.
       ;;--------------------------------------------------------------
       (make-parameter
-       (lambda (buffer str)
-         (error "`insert-string` not defined" buffer str)
-         )))
-
-    (define insert-char*
-      (make-parameter
-       (lambda (buffer ch)
-         (error "`insert-char` not defined" buffer ch)
+       (lambda (buffer str-or-char)
+         (error "`insert-string` not defined" buffer str-or-char)
          )))
 
     (define copy-string*

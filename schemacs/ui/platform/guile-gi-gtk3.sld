@@ -1533,7 +1533,7 @@
         (text-buffer:delete buffer cursor-iter to-iter)
         ))
 
-    (define (gtk-insert-string buffer str)
+    (define (gtk-insert buffer str)
       (cond
        ((char? str)
         (text-buffer:insert-at-cursor buffer (make-string 1 str) 1)
@@ -1571,8 +1571,7 @@
            (*impl/set-cursor-position*   gtk-set-cursor-position)
            (*impl/index->line-column*    gtk-index->line-column)
            (*impl/delete-from-cursor*    gtk-delete-from-cursor)
-           (*impl/insert-string*         gtk-insert-string)
-           (*impl/insert-char*           gtk-insert-string)
+           (*impl/insert*                gtk-insert)
            (*impl/delete-range*          gtk-delete-range)
            (*impl/delete-from-cursor*    gtk-delete-from-cursor)
            (*impl/copy-string*           gtk-copy-string)
