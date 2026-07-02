@@ -488,7 +488,7 @@
 
     (define-record-type <text-editor-type>
       (make<text-editor>
-       lines  count  line-ed  line-ch  moved
+       lines  count  line-ed  line-ch  moved  column
        cdf  ins-char  lbrk  textprops
        )
       text-editor-type?
@@ -510,6 +510,9 @@
       ;; ^ A boolean value indicating that the cursor of the
       ;; `text-editor-lines` gap buffer has moved and the line editor
       ;; need to be reset with the content of the current line.
+      (column     text-editor-column        set!text-editor-column)
+      ;; ^ When the selected line changes, the column number of the cursor
+      ;; may be lost. This field keeps a record of the column number.
       (cdf        text-editor-cdf           set!text-editor-cdf)
       ;; ^ The "Cumulative Distribution Function" is a gap buffer that
       ;; keeps a running total number of characters for each line in
@@ -548,7 +551,7 @@
                      (set!gap-buffer-maximum line 0)
                      (make<text-editor>
                       (new-gap-buffer make-vector size)
-                      0 line #f #f
+                      0 line #f #f 0
                       (cdf-vector size sequence-u64vector-iface)
                       #f lbrk props
                       ))))
@@ -602,7 +605,7 @@
     (define (text-editor-line-editor-unfreeze ed)
       (when (text-editor-line-moved ed)
         (let*((line-ed  (text-editor-line-editor ed))
-              (col-num  (gap-buffer-cursor line-ed))
+              (col-num  (text-editor-column ed))
               (lines    (text-editor-lines ed))
               (line-num (gap-buffer-cursor lines))
               (line
@@ -631,7 +634,11 @@
                 (loop i)
                 ))
              (else (values))
-             )))))
+             ))
+          ;; Be sure to reset the `text-editor-line-changed`
+          (set!text-editor-line-changed ed #f)
+          (set!text-editor-line-moved ed #f)
+          )))
 
     (define (line-editor-char-range ref foreach line-ed)
       (let*((lo (ref line-ed #f))
@@ -716,12 +723,6 @@
         (text-editor-insert-line-from-port ed thing)
         )
        (else (error "editor cannot insert text from" thing))
-       ))
-
-    (define (text-editor-insert-char ed ch)
-      (cond
-       ((char? ch) ((%text-editor-insert-char ed) ch))
-       (else (error "not a character" ch))
        ))
 
     (define (text-editor-force-insert-char ed ch)
@@ -913,16 +914,21 @@
            )
         ;; Then make a note that the text editor line changed and
         ;; needs to be reset.
-        (set!text-editor-line-changed ed #t)
         (unless (= line-num-before line-num-after)
           (set!text-editor-line-moved ed #t)
+          (set!text-editor-column ed offset)
+          (gap-buffer-clear (text-editor-line-editor ed))
           )))
 
     (define (text-editor-set-cursor ed index)
       (cond
        ((text-location-type? index)
-        ;;TODO
-        )
+        (let ((lines (text-editor-lines ed)))
+          (gap-buffer-set-cursor lines (text-location-line index))
+          (set!text-editor-line-moved ed #t)
+          (gap-buffer-clear (text-editor-line-editor ed))
+          (set!text-editor-column ed (text-location-line index))
+          ))
        ((integer? index)
         (let ((cursor (text-editor-get-cursor ed)))
           (text-editor-move-cursor ed (- index cursor))
