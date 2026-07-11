@@ -10,6 +10,7 @@
   ;;------------------------------------------------------------------
   (import
     (scheme base)
+    (scheme case-lambda)
     (only (scheme write) display write) ;;DEBUG
     (scheme case-lambda)
     (only (schemacs vector)
@@ -22,12 +23,12 @@
     (only (schemacs lexer) make<source-file-location>)
     (prefix (schemacs ui text-buffer-impl) impl/)
     (only (schemacs ui text-buffer-impl)
-          make<text-location>
-          text-location-line
-          text-location-column
+          make<text-location>  text-location-type?
+          text-location-line   text-location-column
           )
     (only (schemacs sequence)
-          sequence-grow
+          *sequence-allocate-function*
+          sequence-resize
           vector-sequence-iface
           u16vector-sequence-iface
           u32vector-sequence-iface
@@ -51,41 +52,55 @@
           gap-buffer-for-each-after/index
           gap-buffer-for-each-before
           gap-buffer-for-each-before/index
-          gap-buffer-map/index!  gap-buffer-map!
-          gap-buffer-map/index   gap-buffer-map
-          gap-buffer-update-min-max!
-          gap-buffer-insert-min-max!
-          gap-buffer-move-cursor
+          gap-buffer-update-min-max
+          gap-buffer-insert-min-max
           gap-buffer-set-cursor
-          gap-buffer-cursor-to-start!
-          gap-buffer-cursor-to-end!
+          gap-buffer-cursor-to-start
+          gap-buffer-cursor-to-end
           gap-buffer-insert-before
           gap-buffer-insert-after
           gap-buffer-minimum     set!gap-buffer-minimum
           gap-buffer-maximum     set!gap-buffer-maximum
           gap-buffer-ref-before  gap-buffer-ref-after
           gap-buffer-cursor      gap-buffer-weight
+          gap-buffer-ref         gap-buffer-clear
+          gap-buffer-allocate
           )
     )
   (export
    ;; Text lines, these are contain individual lines of text possibly
    ;; terminated with some line breaking character sequence.
-   text-line-type?  new-text-line  text-line-size
+   text-line-type?  new-text-line
+   text-line-inner-size  text-line-outer-size
    write-text-line  text-line-for-each
+   text-line-ref    text-line-code-ref
 
    ;; The text editor data type
-   new-text-editor  text-editor-insert
-   text-editor-force-line-break
-   text-editor-cursor-line
-   text-editor-cursor-column
-   text-editor-cursor-location
+   new-text-editor  text-editor-type?
+   *init-text-editor-line-count*
+   text-editor-char-count
+   text-load-port  text-dump-port
+   text-editor-insert
 
    ;; Changing the line-break protocol for the editor
    text-editor-set-line-break!
    line-break-newline  line-break-return
    line-break-null  line-break-crlf  line-break-lfcr
+   line-break-as-string  line-break-write-to-port
+   line-break-size   *default-line-break*
 
-   *init-text-editor-line-count*
+   ;; Getting and setting the cursor index
+   text-editor-char-count
+   text-editor-cursor-line
+   text-editor-cursor-column
+   text-editor-cursor-location
+   text-editor-get-start-of-line
+   text-editor-get-end-of-line
+   text-editor-get-line-column
+   text-editor-set-cursor
+   text-editor-move-cursor
+   text-editor-get-cursor
+   text-editor-get-char-index
 
    run-editor-engine
    ;; ^ This procedure is called in the same way as the Scheme
@@ -125,15 +140,18 @@
       (max    cdf-maximum  set!cdf-maximum)
       )
 
-    (define cdf-vector
+    (define cdf-sequence-iface u64vector-sequence-iface)
+
+    (define new-cdf
       ;; Construct a cumulative distribution function (CDF) of type
       ;; `<cdf-vector-type>` of a given `SIZE` and (optionally) using
       ;; a given sequence interface `IFACE`. If `IFACE` is not provided
       ;; then the `u64vector-sequence-iface` is selected by default.
-      ((size) (cdf-vector size u64vector-sequence-iface))
-      ((size iface)
-       (make<cdf-vector> iface ((make-vector iface) size) 0 0)
-       ))
+      (case-lambda
+       ((size) (new-cdf u64vector-sequence-iface size))
+       ((iface size)
+        (make<cdf-vector> iface ((iface-make-sequence iface) size) 0 0)
+        )))
 
     (define (cdf-ref cdf i)
       ((iface-sequence-ref (cdf-vector-iface cdf)) (cdf-vector cdf) i)
@@ -172,12 +190,19 @@
             (cond
              (next
               (let*-values
-                  ((vec len)
-                   (let ((new-vec (sequence-grow iface vec 1)))
-                     (if new-vec
-                         (values new-vec ((iface-sequence-length iface) new-vec))
-                         (values vec len)
-                         ))
+                  (((vec len)
+                    (let*((new-len
+                           ((*sequence-allocate-function*) cursor (+ 1 cursor))
+                           )
+                          (new-vec (sequence-resize iface vec new-len))
+                          )
+                      (cond
+                       ((not (eq? vec new-vec))
+                        (set!cdf-vector cdf new-vec)
+                        (values new-vec new-len)
+                        )
+                       (else (values vec len))
+                       )))
                    ((accum) (+ accum next))
                    )
                 ((iface-sequence-set! iface) vec cursor accum)
@@ -210,6 +235,7 @@
             (let ((maximum
                    ((iface-sequence-ref iface)
                     (cdf-vector cdf)
+                    (- cursor 1)
                     )))
               (set!cdf-maximum cdf maximum)
               maximum
@@ -227,7 +253,7 @@
           (else
            (let ((next (car elems)))
              (set! elems (cdr elems))
-             (car elems)
+             next
              ))))))
 
     (define (cdf-pop cdf n)
@@ -262,19 +288,18 @@
       (case-lambda
         ((cdf n) (cdf-find cdf #f n))
         ((cdf init n)
-         (let*((iface (cdf-sequence-iface cdf))
-               (ref (iface-sequence-ref iface))
-               (vec (cdf-vector cdf))
-               (len ((iface-sequence-length iface) vec))
-               (init
-                (or (and init (max 0 (min init (- len 1))))
-                    (floor-quotient len 2)
-                    )))
-           (let loop ((interval 1) (i0 init))
-             (let*((i0 (min i0 (- len 1)))
+         (let*((iface cdf-sequence-iface)
+               (ref    (iface-sequence-ref iface))
+               (vec    (cdf-vector cdf))
+               (cursor (cdf-cursor cdf))
+               (half   (floor-quotient cursor 2))
+               (init   (or (and init (max 0 (min init (- cursor 1)))) half))
+               )
+           (let loop ((interval half) (i0 init))
+             (let*((i0 (min i0 (- cursor 1)))
                    (i1 (+ 1 i0))
                    (lo (ref vec i0))
-                   (hi (if (>= i1 len) #f (ref vec i1)))
+                   (hi (if (>= i1 cursor) #f (ref vec i1)))
                    )
                (cond
                 ((and (<= lo n) (or (not hi) (< n hi)))
@@ -285,7 +310,7 @@
                    (loop interval (- i0 interval))
                    ))
                 (else
-                 (let ((interval (floor-quotient (- len i0) 2)))
+                 (let ((interval (floor-quotient (- cursor i0) 2)))
                    (loop interval (+ i0 interval))
                    )))))))))
 
@@ -311,6 +336,10 @@
       (str       line-break-as-string)
       (to-port   line-break-write-to-port)
       (ins-char  line-break-setup-editor!)
+      )
+
+    (define (line-break-size lbrk)
+      (string-length (line-break-as-string lbrk))
       )
 
     (define (line-break-2-state break-ch0 break-ch1)
@@ -439,21 +468,47 @@
       ;; `text-line-string` field of this value.
       )
 
-    (define (new-text-line string)
-      (make<text-line> string #f #f #f #f #f (get-sequence-iface string))
-      )
+    (define new-text-line
+      (case-lambda
+       ((string) (new-text-line (get-sequence-iface string) string))
+       ((iface string)
+        (make<text-line> string #f #f #f #f #f iface)
+        )))
 
-    (define (text-line-size line)
-      ((iface-sequence-length (text-line-sequence-iface line))
-       (text-line-string line)
-       ))
+    (define (text-line-inner-size line)
+      ;; Return the number of characters in the text line
+      ;; *NOT_INCLUDING* the line break.
+      ;;--------------------------------------------------------------
+      (let ((iface (text-line-sequence-iface line)))
+        ;; If `iface` is `#f` this is an indication that the line is empty
+        (cond
+         (iface ((iface-sequence-length iface) (text-line-string line)))
+         (else 0)
+         )))
+
+    (define (text-line-outer-size line)
+      ;; Return the number of characters in the text line including
+      ;; the line break.
+      ;;--------------------------------------------------------------
+      (let ((lbrk (text-line-break line)))
+        (+ (text-line-inner-size line)
+           (if lbrk (line-break-size lbrk) 0)
+           )))
 
     (define (text-line-ref line i)
-      (integer->char
-       (+ (text-line-char-offset line)
-          ((iface-sequence-ref (text-line-sequence-iface line))
-           (text-line-string line) i
-           ))))
+      ;; Lookup a character in the `LINE` at the given index `I`.
+      ;;--------------------------------------------------------------
+      (integer->char (text-line-code-ref line i))
+      )
+
+    (define (text-line-code-ref line i)
+      ;; Like `text-line-ref` but returns the UTF code point, rather
+      ;; than a `char?` value.
+      ;;--------------------------------------------------------------
+      (+ (text-line-char-offset line)
+         ((iface-sequence-ref (text-line-sequence-iface line))
+          (text-line-string line) i
+          )))
 
     (define (text-line-for-each proc line)
       (let ((str (text-line-string line)))
@@ -480,7 +535,7 @@
         ((line) (write-text-line line (current-output-port)))
         ((line port)
          (let ((lbrk (text-line-break line)))
-           (text-line-for-each (lambda (i) (write-char (integer->char i))) line)
+           (text-line-for-each (lambda (c) (write-char c port)) line)
            (when lbrk ((line-break-write-to-port lbrk) port))
            ))))
 
@@ -530,13 +585,13 @@
       ;; two (line,colunm) coordinates to have a particular tag.
       )
 
-    (define line-ed-iface u32vector-sequence-iface)
-
     (define *init-text-editor-line-count* (make-parameter 4096))
+
+    (define *default-line-break* (make-parameter line-break-newline))
 
     (define new-text-editor
       (case-lambda
-        (() (new-text-editor line-break-newline))
+        (() (new-text-editor #f #f))
         ((lbrk)
          (cond
           ((line-break-type? lbrk) (new-text-editor lbrk #f))
@@ -544,30 +599,39 @@
           (else (error "expecting properties list, or `line-break-type?`" lbrk))
           ))
         ((lbrk props)
-         (let*((size (*init-text-editor-line-count*))
-               (line (new-gap-buffer make-u32vector size))
-               (ed (let ()
-                     (set!gap-buffer-minimum line #xFFFFFFFF)
-                     (set!gap-buffer-maximum line 0)
-                     (make<text-editor>
-                      (new-gap-buffer make-vector size)
-                      0 line #f #f 0
-                      (cdf-vector size sequence-u64vector-iface)
-                      #f lbrk props
-                      ))))
-           ((line-break-setup-editor! lbrk) ed)
-           ed
-           ))))
+         (cond
+          ((and lbrk (not (line-break-type? lbrk)))
+           (error "first argument not a line-break-type" lbrk)
+           )
+          ((and props (not (or (vbal-type? props) (list? props))))
+           (error "second argument not a properties list" props)
+           )
+          (else
+           (let*((size (*init-text-editor-line-count*))
+                 (line (new-gap-buffer u32vector-sequence-iface size))
+                 (lbrk (or lbrk (*default-line-break*)))
+                 (ed (let ()
+                       (set!gap-buffer-minimum line #xFFFFFFFF)
+                       (set!gap-buffer-maximum line 0)
+                       (make<text-editor>
+                        (new-gap-buffer vector-sequence-iface size)
+                        0 line #f #f 0
+                        (new-cdf u64vector-sequence-iface size)
+                        #f lbrk props
+                        ))))
+             ((line-break-setup-editor! lbrk) ed)
+             ed
+             ))))))
 
     ;;----------------------------------------------------------------
     ;; Line editor procedures
 
     (define (line-editor-cursor-to-end! line-ed)
-      (gap-buffer-cursor-to-end! line-ed-iface line-ed)
+      (gap-buffer-cursor-to-end line-ed)
       )
 
     (define (line-editor-cursor-to-start! line-ed)
-      (gap-buffer-cursor-to-start! line-ed-iface line-ed)
+      (gap-buffer-cursor-to-start line-ed)
       )
 
     (define (%line-editor-pre-freeze lo hi)
@@ -583,7 +647,7 @@
       ;; `<text-line-type>` object that contains the exact right size
       ;; to hold all of the characters.
       ;;--------------------------------------------------------------
-      (gap-buffer-update-min-max! line-ed-iface line-ed)
+      (gap-buffer-update-min-max line-ed)
       (let*((weight   (gap-buffer-weight  line-ed))
             (cursor   (gap-buffer-cursor  line-ed))
             (lo       (gap-buffer-minimum line-ed))
@@ -593,11 +657,8 @@
             (seq-set! (iface-sequence-set! iface))
             )
         (gap-buffer-for-each/index
-         (lambda (i n)
-           (seq-set! vec i (- n lo))
-           (set! i (+ 1 i))
-           )
-         line-ed-iface line-ed
+         (lambda (i n) (seq-set! vec i (- n lo)))
+         line-ed
          )
         (make<text-line> vec #f #f lo hi lbrk iface)
         ))
@@ -609,9 +670,9 @@
               (lines    (text-editor-lines ed))
               (line-num (gap-buffer-cursor lines))
               (line
-               (if (<= 0 line-num) #f (gap-buffer-ref lines (- line-num 1)))
+               (if (<= line-num 0) #f (gap-buffer-ref lines (- line-num 1)))
                )
-              (size (text-line-size line))
+              (size (or (and line (text-line-inner-size line)) 0))
               )
           ;; Clear the current line editor, and size it to fit the new line.
           (gap-buffer-clear line-ed)
@@ -620,7 +681,9 @@
           (let loop ((i 0))
             (cond
              ((< i col-num)
-              (gap-buffer-insert-before line-ed (text-line-ref line i))
+              (gap-buffer-insert-before
+               line-ed (text-line-code-ref line i)
+               )
               (loop (+ 1 i))
               )
              (else (values))
@@ -630,7 +693,9 @@
             (cond
              ((<= col-num i)
               (let ((i (- i 1)))
-                (gap-buffer-insert-after line-ed (text-line-ref line i))
+                (gap-buffer-insert-after
+                 line-ed (text-line-code-ref line i)
+                 )
                 (loop i)
                 ))
              (else (values))
@@ -651,46 +716,69 @@
             ((< hi n) (set! hi n))
             (else (values))
             ))
-         line-ed-iface line-ed
+         line-ed
          )
         (values lo hi)
         ))
 
-    (define (line-editor-freeze-part ref foreach foreach/index)
+    (define (line-editor-freeze-part calc-frozen-size ref foreach foreach/index)
       (lambda (line-ed lbrk)
-        (cond
-         ((gap-buffer-end-of-line? line-ed)
-          (make<text-line> #f #f #f #f #f lbrk #f)
-          )
-         (else
-          (let-values (((lo hi) (line-editor-char-range ref foreach line-ed)))
-            (let*((iface    (%line-editor-pre-freeze hi lo))
-                  (weight   (gap-buffer-weight line-ed))
-                  (vec      ((iface-make-sequence iface) weight))
-                  (seq-set! (iface-sequence-set! iface))
-                  )
-              (foreach/index line-ed-iface line-ed (lambda (i n) (seq-set! vec i n)))
-              (make<text-line> vec #f #f lo hi lbrk iface)
-              ))))))
+        (let*((weight (gap-buffer-weight line-ed))
+              (cursor (gap-buffer-cursor line-ed))
+              (frozen-size (calc-frozen-size weight cursor))
+              )
+          (cond
+           ((< 0 weight)
+            (let-values (((lo hi) (line-editor-char-range ref foreach line-ed)))
+              (let*((iface    (%line-editor-pre-freeze lo hi))
+                    (vec      ((iface-make-sequence iface) frozen-size))
+                    (seq-set! (iface-sequence-set! iface))
+                    )
+                (foreach/index (lambda (i n) (seq-set! vec i (- n lo))) line-ed)
+                (make<text-line> vec #f #f lo hi lbrk iface)
+                )))
+           (else (make<text-line> #f #f #f #f #f lbrk #f))
+           ))))
 
     (define line-editor-freeze-line-before
       (line-editor-freeze-part
+       (lambda (_weight cursor) cursor)
        gap-buffer-ref-before
        gap-buffer-for-each-before
        gap-buffer-for-each-before/index
        ))
 
-    (define line-editor-freeze-line-after
-      (line-editor-freeze-part
-       gap-buffer-ref-after
-       gap-buffer-for-each-after
-       gap-buffer-for-each-after/index
-       ))
+    (define (line-editor-freeze-line-after line-ed lbrk)
+      (cond
+       ((gap-buffer-end-of-line? line-ed)
+        (make<text-line> #f #f #f #f #f lbrk #f)
+        )
+      (else
+       (let ((freeze
+              (line-editor-freeze-part
+               (lambda (weight cursor) (- weight cursor))
+               gap-buffer-ref-after
+               gap-buffer-for-each-after
+               gap-buffer-for-each-after/index
+               )))
+       (freeze line-ed lbrk)
+       ))))
 
     ;;----------------------------------------------------------------
     ;; Inserting text
 
     (define (text-editor-force-line-break ed)
+      ;; Forces a line break regardless of whether an actual line
+      ;; breaking character has been inserted. This will create a new
+      ;; <text-line-type> object by freezing all characters in the
+      ;; line edtior before the cursor and pushing the
+      ;; <text-line-type> object to the buffer before the line
+      ;; cursor. The characters after the line editor cursor remain
+      ;; buffered in the line editor, this way, if a line break occurs
+      ;; while the line editor cursor is in the middle of a line, only
+      ;; the characters before the cursor are frozen and buffered, the
+      ;; line editor characters after the cursor remain on the same
+      ;; line as the cursor.
       (let*((line-ed (text-editor-line-editor ed))
             (line
              (line-editor-freeze-line-before
@@ -706,8 +794,7 @@
         ;; insert the next running total into the CDF buffer, if the
         ;; CDF is up-to-date. If not, do nothing, the CDF buffer will
         ;; have to be brought up-to-date later.
-        (when sum (cdf-push cdf (+ (text-line-size line) sum)))
-        (gap-buffer-clear line-ed)
+        (when sum (cdf-push cdf (text-line-outer-size line)))
         line
         ))
 
@@ -730,8 +817,8 @@
       (let ((line-ed (text-editor-line-editor ed))
             (chi (char->integer ch))
             )
-        (gap-buffer-insert-before line-ed-iface line-ed chi)
-        (gap-buffer-insert-min-max! line-ed chi)
+        (gap-buffer-insert-before line-ed chi)
+        (gap-buffer-insert-min-max line-ed chi)
         (set!text-editor-char-count ed (+ 1 (text-editor-char-count ed)))
         (set!text-editor-line-changed ed #t)
         ch
@@ -800,13 +887,17 @@
       (text-editor-dump-after ed port)
       )
 
-    (define (text-load-port ed port _flags)
-      (text-editor-insert-from-port ed port)
-      )
+    (define text-load-port
+      (case-lambda
+       ((ed port) (text-load-port ed port #f))
+       ((ed port _flags) (text-editor-insert-from-port ed port))
+       ))
 
-    (define (text-dump-port ed port _flags)
-      (text-editor-dump ed port)
-      )
+    (define text-dump-port
+      (case-lambda
+       ((ed port) (text-dump-port ed port #f))
+       ((ed port _flags) (text-editor-dump ed port))
+       ))
 
     (define (text-editor-cursor-line ed)
       (let ((lines (text-editor-lines ed)))
@@ -817,6 +908,14 @@
       (let ((line-ed (text-editor-line-editor ed)))
         (or (and line-ed (gap-buffer-cursor line-ed)) 0)
         ))
+
+    (define (text-editor-cursor-line-number ed)
+      (gap-buffer-cursor (text-editor-lines ed))
+      )
+
+    (define (text-editor-cursor-column-number ed)
+      (gap-buffer-cursor (text-editor-line-editor ed))
+      )
 
     (define (text-editor-cursor-location ed)
       (make<source-file-location>
@@ -835,7 +934,7 @@
       (lambda (cursor accum)
         (cond
          ((< cursor to)
-          (text-line-size (gap-buffer-ref lines cursor))
+          (text-line-outer-size (gap-buffer-ref lines cursor))
           )
          (else #f)
          )))
@@ -849,8 +948,8 @@
       (let ((weight (gap-buffer-weight lines)))
         (lambda (cursor accum)
           (cond
-           ((and (< accum accum-max-value) (< from weight))
-            (text-line-size (gap-buffer-ref lines cursor))
+           ((and (< accum accum-max-value) (< cursor weight))
+            (text-line-outer-size (gap-buffer-ref lines cursor))
             )
            (else #f)
            ))))
@@ -870,7 +969,7 @@
          ;; the line editor contains changes from the text-line in the
          ;; line buffer.
          ((or (= 0 line-cur) (text-editor-line-changed ed))
-          (gap-buffer-ref (text-editor-line-editor ed) offset)
+          (integer->char (gap-buffer-ref (text-editor-line-editor ed) offset))
           )
          ;; Otherwise we read from the text line in the line buffer
          (else
@@ -885,7 +984,6 @@
       (let*((lines    (text-editor-lines ed))
             (line-num (gap-buffer-cursor lines))
             (line-ed  (text-editor-line-editor ed))
-            (vec      (gap-buffer-vector lines))
             (cdf      (text-editor-cdf ed))
             (cdf-cur  (cdf-cursor cdf))
             (offset
@@ -894,22 +992,27 @@
                (cdf-fill
                 cdf (text-editor-make-cdf-fill-range lines line-num)
                 ))
-              (else
-               (cdf-ref cdf line-num)
-               ))))
+              ((< 0 line-num)
+               (cdf-ref cdf (- line-num 1))
+               )
+              (else 0)
+              )))
         (+ offset (or (and line-ed (gap-buffer-cursor line-ed)) 0))
         ))
 
     (define (text-editor-move-cursor ed move-by)
       (let*-values
           (((lines) (text-editor-lines ed))
-           ((line-num-before) (gap-buffer-cursor lines))
+           ((ch-index) (text-editor-get-cursor ed))
+           ((line-num-before _old-offset)
+            (text-editor-index-line-offset ed ch-index)
+            )
            ((cdf-cur offset)
             (text-editor-index-line-offset ed (+ ch-index move-by))
             )
            ;; First set the cursor position according to the value
            ;; computed from the CDF.
-           (() (gap-buffer-set-cursor (text-editor-lines ed) cdf-cur))
+           (() (gap-buffer-set-cursor lines cdf-cur))
            ((line-num-after)  (gap-buffer-cursor lines))
            )
         ;; Then make a note that the text editor line changed and
@@ -920,24 +1023,31 @@
           (gap-buffer-clear (text-editor-line-editor ed))
           )))
 
-    (define (text-editor-set-cursor ed index)
-      (cond
-       ((text-location-type? index)
+    (define text-editor-set-cursor
+      (case-lambda
+       ((ed index)
+        (cond
+         ((text-location-type? index)
+          (text-editor-set-cursor
+           ed (text-location-line index)
+                 (text-location-column index)
+              ))
+         ((integer? index)
+          (let ((cursor (text-editor-get-cursor ed)))
+            (text-editor-move-cursor ed (- index cursor))
+            ))
+         (else
+          (error
+           "text editor index must be set with integer or text-location-type"
+           index
+           ))))
+       ((ed line-num column-num)
         (let ((lines (text-editor-lines ed)))
-          (gap-buffer-set-cursor lines (text-location-line index))
+          (gap-buffer-set-cursor lines line-num)
           (set!text-editor-line-moved ed #t)
           (gap-buffer-clear (text-editor-line-editor ed))
-          (set!text-editor-column ed (text-location-line index))
-          ))
-       ((integer? index)
-        (let ((cursor (text-editor-get-cursor ed)))
-          (text-editor-move-cursor ed (- index cursor))
-          ))
-       (else
-        (error
-         "text editor index must be set with integer or text-location-type"
-         index
-         ))))
+          (set!text-editor-column ed column-num)
+          ))))
 
     (define (text-editor-index-line-offset ed ch-index)
       ;; This function is used to update the CDF and to return the
@@ -952,42 +1062,39 @@
             (cdf-max (cdf-maximum cdf))
             )
         (cond
-         ((< ch-index cdf-max)
-          (let*((cdf-cur (cdf-find cdf ch-index))
-                (offset (cdf-ref cdf cdf-cur))
-                )
-            (values cdf-cur offset)
-            ))
+         ((< ch-index cdf-max) (cdf-find cdf ch-index))
          (else
           (cdf-fill cdf (text-editor-make-cdf-fill-until lines ch-index))
           (let((cdf-cur (cdf-cursor cdf)))
             (cond
-             ((<= cdf-cur 0) #f)
+             ((<= cdf-cur 0) (values 0 0))
              (else
               (let*((cdf-cur (- cdf-cur 1))
-                    (offset (cdf-ref cdf-cur))
+                    (offset (cdf-ref cdf cdf-cur))
                     )
-                (values cdf-cur offset)
+                (values cdf-cur (+ 1 (- ch-index offset)))
                 ))))))))
 
-    (define (text-buffer-get-char-index ed ch-index)
+    (define (text-editor-get-char-index ed ch-index)
       ;; Get the character at the given index `CH-INDEX`. This
       ;; recomputes part of the CDF for the editor buffer.
       ;;--------------------------------------------------------------
       (let*-values
           (((cdf-cur offset) (text-editor-index-line-offset ed ch-index))
+           ((line-offset) (- ch-index offset))
            ((lines) (text-editor-lines ed))
            )
         (cond
-         ((= cdf-cur (text-editor-line-index ed))
-          (text-editor-line-editor-ref ed offset)
-          )
+         ((= cdf-cur (gap-buffer-cursor lines))
+          (integer->char
+           (gap-buffer-ref (text-editor-line-editor ed) line-offset)
+           ))
          (else
           (let ((line (gap-buffer-ref lines cdf-cur)))
-            (text-line-ref line (- ch-index offset))
+            (text-line-ref line line-offset)
             )))))
 
-    (define (text-buffer-get-line-column ed ch-index)
+    (define (%text-editor-get-line-column ed ch-index)
       (cond
        ;; If `index` is not `#f` compute the line and column number of
        ;; that character index.
@@ -1001,39 +1108,55 @@
        ;; Otherwise get the current cursor position.
        (else
         (make<text-location>
-         (+ 1 (text-edtior-cursor-line ed))
+         (+ 1 (text-editor-cursor-line ed))
          (+ 1 (text-editor-cursor-column ed))
          ))))
+
+    (define text-editor-get-line-column
+      (case-lambda
+       ((ed) (%text-editor-get-line-column ed #f))
+       ((ed ch-index) (%text-editor-get-line-column ed ch-index))
+       ))
 
     (define (text-editor-get-end-of-line ed)
       (text-editor-get-cursor ed)
       (let*((lines (text-editor-lines ed))
             (line-num (gap-buffer-cursor lines))
+            (cdf (text-editor-cdf ed))
             )
         (cond
-         ((= 0 line-num)
+         ;; First check if the current line editor contains recently
+         ;; added characters. If not, we need the CDF for the current
+         ;; line cursor.
+         ((text-editor-line-moved ed)
           (cond
-           ((text-editor-line-moved ed) #f)
-           (else (- (gap-buffer-weight (text-editor-line-editor ed)) 1))
+           ((< 0 line-num) (cdf-ref cdf (- line-num 1)))
+           (else 0)
            ))
+         ;; Otherwise we need the CDF for the previous line, and then
+         ;; add the number of characters in the current line editor.
          (else
-          (- (cdf-ref (text-editor-cdf ed) (- line-num 1)) 1)
-          ))))
+          (+ (cond
+              ((< 1 line-num) (cdf-ref cdf (- line-num 2)))
+              (else 0)
+              )
+             (gap-buffer-weight (text-editor-line-editor ed))
+             )))))
 
     (define (text-editor-get-start-of-line ed)
       (text-editor-get-cursor ed)
       (let*((lines (text-editor-lines ed))
             (line-num (gap-buffer-cursor lines))
+            (cdf (text-editor-cdf ed))
             )
         (cond
-         ((< line-num 2)
-          (cond
-           ((text-editor-line-moved ed) #f)
-           (else 0)
-           ))
-         (else
-          (- (cdf-ref (text-editor-cdf ed) (- line-num 2)) 1)
-          ))))
+         ;; The start of line is always the value of the CDF index of
+         ;; the line before the line cursor.
+         ((< 1 line-num) (cdf-ref cdf (- line-num 2)))
+         ;; If the cursor is at the beginning of the buffer, the
+         ;; start-of-line is always zero.
+         (else 0)
+         )))
 
     ;;----------------------------------------------------------------
 

@@ -18,8 +18,8 @@
      ))
 
   (export
-   sequence-grow
-   *sequence-grow-size-function*
+   sequence-grow  sequence-allocate  sequence-resize
+   *sequence-allocate-function*  default-allocate-function
 
    make-seq  seq-length  seq-ref  seq-set!
    seq-for-each  seq->list  list->seq
@@ -29,7 +29,7 @@
    seq-min-max
 
    get-sequence-iface  sequence-iface-type?
-   iface-sequence  iface-make-sequence
+   iface-sequence?  iface-make-sequence
    iface-sequence-length  iface-sequence-ref
    iface-sequence-set!  iface-sequence-copy!
    iface-sequence->list  iface-list->sequence
@@ -52,7 +52,7 @@
    )
 
   (cond-expand
-    ((library (srfi 4))
+    ((and (library (srfi 4)) (not (library (srfi 160))))
       (begin
         ;; SRFI-4 does not define the mutable `@vector-copy!`
         ;; procedures, so a generic implementation based on
@@ -68,14 +68,27 @@
                (let ((start (or start 0))
                      (end (or end (vlength from)))
                      )
-                 (let loop ((start start) (at at))
-                   (cond
-                    ((< start end)
-                     (vset! to at (vref from start))
-                     (loop (+ 1 start) (+ 1 at))
-                     )
-                    (else (values))
-                    ))))))
+                 (cond
+                  ((and (eq? to from) (< start at))
+                   (let ((dist (- end start)))
+                     (let loop ((sink (+ at dist)) (src (+ start dist)))
+                       (cond
+                        ((< start src)
+                         (let ((src (- src 1)) (sink (- sink 1)))
+                           (vset! to sink (vref from src))
+                           (loop sink src)
+                           ))
+                        (else (values))
+                        ))))
+                  (else
+                   (let loop ((start start) (at at))
+                     (cond
+                      ((< start end)
+                       (vset! to at (vref from start))
+                       (loop (+ 1 start) (+ 1 at))
+                       )
+                      (else (values))
+                      ))))))))
           copy!
           )
 
@@ -272,39 +285,63 @@
     ;;----------------------------------------------------------------
     ;; Function for resizing sequences
 
-    (define *sequence-grow-size-function*
+    (define (default-allocate-function len request)
+      (let loop ((len (max 1 len)))
+        (if (< len request) (loop (* 2 len)) len)
+        ))
+
+    (define *sequence-allocate-function*
       ;; A parameter which defines the function that should be used to
       ;; compute a new size for a sequence when it needs to be grown
       ;; to fit more elements than it has room to hold. The default is
-      ;; to simply double the size of the current allocation.
+      ;; to simply double the size of the current allocation until it
+      ;; is larger than the requested amount. The function stored in
+      ;; this parameter takes two arguments: the current size, and the
+      ;; new requested size. The value returned must be an integer
+      ;; that is well-suited the requested size, for some arbitrary
+      ;; definition of "well-suited."
       ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (len +size)
-         (let ((request (+ len +size)))
-           (let loop ((len len))
-             (if (< len request) (loop (* 2 len)) len)
-             )))))
+      (make-parameter default-allocate-function)
+      )
+
+    (define (sequence-resize iface old-seq new-len)
+      ;; Force the allocation of a sequence `OLD-SEQ` to change to
+      ;; `NEW-LEN`.  If the `NEW-LEN` is not the same as the current
+      ;; length of `OLD-SEQ`, the a new sequence is allocated and the
+      ;; values of the `OLD-SEQ` are copied to the new sequence.
+      ;;--------------------------------------------------------------
+      (let ((old-len ((iface-sequence-length iface) old-seq)))
+        (cond
+         ((not (= new-len old-len))
+          (let ((new-seq ((iface-make-sequence iface) new-len)))
+            ((iface-sequence-copy! iface) new-seq 0 old-seq 0 old-len)
+            new-seq
+            ))
+         (else old-seq)
+         )))
+
+    (define (sequence-allocate iface old-seq request)
+      ;; Ensure the `OLD-SEQ` is at least `SIZE`. If it is not, call
+      ;; the `*SEQUENCE-GROW-SIZE-FUNCTION*` (applying the arguments 0
+      ;; and `SIZE`) to produce a new allocation size, return the
+      ;; newly allocated vector if this size is greater than the size
+      ;; of `OLD-SEQ`, otherwise return `OLD-SEQ` unchanged.
+      (let*((old-len ((iface-sequence-length iface) old-seq)))
+        (sequence-resize
+         iface old-seq
+         ((*sequence-allocate-function*) old-len request)
+         )))
 
     (define (sequence-grow iface old-seq +size)
       ;; Grow a sequence by allocating a new one and copying the old
-      ;; values. Uses the `*sequence-grow-size-function*` parameter to
+      ;; values. Uses the `*sequence-allocate-function*` parameter to
       ;; increase the size of the old sequence to at least the size of
       ;; `(+ old-length +size)`. If the new size is the same as the
       ;; old size, #f is returned, otherwise the newly allocated and
       ;; filled vector is returned.
-      (let*((old-len ((iface-sequence-length iface) old-seq))
-            (new-len
-             ((*sequence-grow-size-function*)
-              old-len +size
-              )))
-        (cond
-         ((< old-len new-len)
-          (let ((new-vec ((iface-make-sequence iface) new-len)))
-            ((iface-sequence-copy! iface) new-vec 0 old-vec 0 old-len)
-            new-vec
-            ))
-         (else #f)
-         )))
+      (let*((old-len ((iface-sequence-length iface) old-seq)))
+        (sequence-allocate iface old-len (+ old-len +size))
+        ))
 
     ;;----------------------------------------------------------------
     ;; Sequence interfaces for SRFI-4 and SRFI-160
@@ -515,7 +552,7 @@
               (((from to)
                 (if (< from to) (values from to) (values to from))
                 ))
-            (apply proc subproc (iface-sequence-ref iface) from to seqs)
+            (proc subproc (iface-sequence-ref iface) from to seqs)
             )))))
 
     (define seq-step-forward/index
@@ -529,7 +566,7 @@
          (let loop ((i lo))
            (cond
             ((< i hi)
-             (apply proc i (map (lambda (vec) (ref vec i)) seqs))
+             (proc i (map (lambda (vec) (ref vec i)) seqs))
              (loop (+ 1 i))
              )
             (else (values))
@@ -547,7 +584,7 @@
            (let ((i (- i0 1)))
              (cond
               ((< lo i0)
-               (apply proc i (map (lambda (vec) (ref vec i)) seqs))
+               (proc i (map (lambda (vec) (ref vec i)) seqs))
                (loop i)
                )
               (else (values))

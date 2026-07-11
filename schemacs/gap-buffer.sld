@@ -163,7 +163,8 @@
       ;; is made.
       ;;--------------------------------------------------------------
       (let*((vec (gap-buffer-vector gb))
-            (old-size (vector-length vec))
+            (iface (gap-buffer-seq-iface gb))
+            (old-size ((iface-sequence-length iface) vec))
             )
         (when (< old-size new-size)
           (gap-buffer-grow gb (- new-size old-size))
@@ -353,7 +354,7 @@
     (define (gap-buffer-update-min-max gb)
       (gap-buffer-update
        gb
-       (lambda (iface _vec len weight cursor)
+       (lambda (iface vec len weight cursor)
          (let*((lo  (gap-buffer-minimum gb))
                (hi  (gap-buffer-maximum gb))
                (ref (iface-sequence-ref iface))
@@ -364,7 +365,7 @@
              ;; value are invalid. The init value is the first or last
              ;; element depending on cursor position.
              (let*((i (if (< 0 cursor) 0 (- len 1)))
-                   (init-val (ref i))
+                   (init-val (ref vec i))
                    )
                (set! lo init-val)
                (set! hi init-val)
@@ -375,7 +376,7 @@
                    ((< hi elem) (set! hi elem))
                    (else (values))
                    ))
-                iface gb
+                gb
                 )
                (set!gap-buffer-minimum gb lo)
                (set!gap-buffer-maximum gb hi)
@@ -390,7 +391,7 @@
        gb
        (lambda (iface vec len weight cursor)
          (cond
-          ((> cursor 0)
+          ((< 0 cursor)
            ((iface-sequence-ref iface) vec (- cursor 1))
            )
           (else
@@ -405,8 +406,8 @@
        gb
        (lambda (iface vec len weight cursor)
          (cond
-          ((< 0 weight)
-           ((iface-sequence-ref iface) vec (- len 1 (- weight cursor)))
+          ((< cursor weight)
+           ((iface-sequence-ref iface) vec (- len (- weight cursor)))
            )
           (else
            ;;(error "cannot reference empty gap buffer" gb)
@@ -417,27 +418,25 @@
       (gap-buffer-update
        gb
        (lambda (iface vec len weight cursor)
-	 (cond
-	  ((< i (gap-buffer-cursor gb))
-           (vector-ref vec (%gapbuf-get-index-before cursor weight len))
-	   )
-	  (else (vector-ref vec (%gapbuf-get-index-after cursor weight len)))
-	  ))))
+         (let ((ref (iface-sequence-ref iface)))
+           (cond
+            ((< i cursor) (ref vec i))
+            (else (ref vec (+ i (- len weight))))
+            )))))
 
     (define (%gapbuf-get-index-before cur _wt _len) cur)
     (define (%gapbuf-get-index-after  cur  wt  len) (- len 1 (- wt cur)))
 
     (define (%gap-buffer-insert get-index)
       (lambda (gb elem)
-        (let ((iface (gap-buffer-seq-iface gb)))
-          (gap-buffer-grow gb 1)
-          (gap-buffer-update
-           gb
-           (lambda (iface vec len weight cursor)
-             ((iface-sequence-set! iface) vec (get-index cursor weight len) elem)
-             (set!gap-buffer-weight gb (+ 1 weight))
-             elem
-             )))))
+        (gap-buffer-grow gb 1)
+        (gap-buffer-update
+         gb
+         (lambda (iface vec len weight cursor)
+           ((iface-sequence-set! iface) vec (get-index cursor weight len) elem)
+           (set!gap-buffer-weight gb (+ 1 weight))
+           elem
+           ))))
 
     (define gap-buffer-insert-after (%gap-buffer-insert %gapbuf-get-index-after))
 
@@ -479,7 +478,7 @@
          (cond
           ((= n 0) 0)     ;; no movement
           ((= len weight) ;; no gap
-           (set!gap-buffer-cursor gb (max 0 (min len (+ n cursor))))
+           (set!gap-buffer-cursor gb (max 0 (min weight (+ n cursor))))
            )
           (else
            (let ((limit (min weight (max 0 (+ cursor n))))

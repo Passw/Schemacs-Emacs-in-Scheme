@@ -107,6 +107,19 @@
 
 (gap-buffer-move-cursor gb -5)
 
+(test-equal '(0 10 20 30 40 50 60 70 80 90)
+  (let loop ((i 0))
+    (cond
+     ((< i 10) (cons (gap-buffer-ref gb i) (loop (+ 1 i))))
+     (else '())
+     )))
+
+(test-equal '(40 50)
+  (list
+   (gap-buffer-ref-before gb #f)
+   (gap-buffer-ref-after  gb #f)
+   ))
+
 (test-assert
     (test-results=?
      '((cursor . 5) (weight . 10) (length . 16)
@@ -116,6 +129,7 @@
        )
      (test-gap-buffer-state gb)
      ))
+
 
 (gap-buffer-cursor-to-start gb)
 
@@ -257,5 +271,23 @@
        (deleted-after  . ,(count-deletions gb 2))
        . ,(test-gap-buffer-state gb)
          )))
+
+(test-equal '(16 64)
+  (list
+   (gap-buffer-length gb)
+   (let ()
+     (gap-buffer-allocate gb 50)
+     (gap-buffer-length gb)
+     )))
+
+(test-equal '(10 80)
+  (let ()
+    (gap-buffer-move-cursor gb -3)
+    (gap-buffer-delete gb 1)
+    (gap-buffer-move-cursor gb 5)
+    (gap-buffer-delete gb -1)
+    (gap-buffer-update-min-max gb)
+    (list (gap-buffer-minimum gb) (gap-buffer-maximum gb))
+    ))
 
 (test-end "schemacs_GapBuffer")

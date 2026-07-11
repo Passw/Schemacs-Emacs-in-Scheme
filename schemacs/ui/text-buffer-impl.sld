@@ -19,7 +19,8 @@
    get-selection*  set-selection*
    scan-for-char*  scan-for-string*
 
-   make<text-location>  text-location-line  text-location-column
+   make<text-location>  text-location-type?
+   text-location-line   text-location-column
    )
   (begin
 
@@ -52,6 +53,13 @@
          (error "`buffer-length` not defined" buffer)
          )))
 
+    (define undefined-text-load-port
+      (case-lambda
+       ((buffer port) (undefined-text-load-port buffer port #f))
+       ((buffer port flags)
+        (error "`text-load-port` not defined" buffer port flags)
+        )))
+
     (define text-load-port*
       ;; Takes a `BUFFER`, and a character `PORT` similar to ports
       ;; created by `open-input-file`. This function must read
@@ -65,10 +73,15 @@
       ;; HTML in the file and set text properties according to HTML
       ;; tags.
       ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer port flags)
-         (error "`text-load-port` not defined" buffer port flags)
-         )))
+      (make-parameter undefined-text-load-port)
+      )
+
+    (define undefined-text-dump-port
+      (case-lambda
+       ((buffer port) (undefined-text-dump-port buffer port #f))
+       ((buffer port flags)
+        (error "`text-dump-port` not defined" buffer port flags)
+        )))
 
     (define text-dump-port*
       ;; Takes a `BUFFER` and a character `PORT` similar to ports
@@ -80,10 +93,8 @@
       ;; Gtk to parse HTML in the file and set text properties
       ;; according to HTML tags.
       ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer port flags)
-         (error "`text-dump-port` not defined" buffer port flags)
-         )))
+      (make-parameter undefined-text-dump-port)
+      )
 
     (define style-type?*
       ;; Returns `#t` only if the applied argument `STYLE` is an
