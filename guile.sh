@@ -18,6 +18,10 @@ GUILE_IN_GUIX_SHELL=false;
 export GTK_DEBUG='interactive';
 #export GOBJECT_DEBUG='instance-count';
 
+die() {
+  echo "$@" >&2; exit 1;
+}
+
 #---------------------------------------------------------------------
 
 if ${GUILE_IN_GUIX_SHELL}; then
@@ -28,7 +32,7 @@ else
    GUIX_SHELL_CMD='';
 fi;
 
-type guile;
+type guile || die '"guile" command not found"';
 echo "Guile CLI arguments: ${GUILE_CMD_ARGS} ${@}";
 
 if ${GUILE_REPL_IN_GDB}; then
