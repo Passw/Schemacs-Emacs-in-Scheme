@@ -36,6 +36,52 @@ understand this agreement before asking to contribute. The CoC is
 currently based on the [Contributor Covenant 3.0 Code of
 Conduct](https://www.contributor-covenant.org/version/3/0/code_of_conduct/).
 
+### Official AI Policy: "The Software Engineer's **Prime Directive**"
+
+I am borrowing the term, "The Prime Directive," from the popular
+science fiction series Star Trek to describe my AI policy. My policy
+is this:
+
+> Every single line of code, every S-expression, every comment, every
+> piece of documentation, every part of this software that serves a
+> function **must** have that function be well-understood by at least
+> one person (and of course, AI is not a person).
+
+The term "well-understood" is deliberately vague so that we (the
+Schemacs developer community) can decide on a case-by-case basis
+whether a person understands a function well enough.
+
+#### Vibe coding is banned
+
+The definition of "Vibe Coding" is that you don't bother to understand
+what the computer code means, if the software appears to behave in the
+way you expect you declare the code "correct." By definition, vibe
+coding violates the Software Engineer's Prime Directive.
+
+#### Some LLM-generated output is OK
+
+If you are differently-abled and use an AI coding assistant to write
+code faster, this is perfectly acceptable so long you adhere to the
+Prime Directive --- you must be able to defend the code you write by
+explaining the function of all of it's component parts.
+
+The term "differently abled" is deliberately vague because I don't
+believe we as a community should define tests to decide whether
+someone qualifies as "being differently abled." If writing text simply
+bothers you, and you wish to claim being differently-abled for that
+reason, that is OK too. **Just obey the Prime Directive.**
+
+### Unofficial AI Policy: *we don't need it*
+
+This is a project for people to have fun. If you don't like writing
+computer code, then don't contribute computer code, contribute in some
+other way.
+
+There is no hurry, there is no deadline. Write code because you like
+to, or because you want to learn how computers work. It is OK to take
+your time and enjoy yourself. There is really no reason to use AI for
+this project.
+
 ### First steps toward contributing to Schemacs
 
 There are many tasks to complete, many of which are fairly simple to
