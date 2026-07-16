@@ -150,4 +150,4 @@
    ))
 
 ;;--------------------------------------------------------------------
-(test-begin "schemacs_editor_engine")
+(test-end "schemacs_editor_engine")
