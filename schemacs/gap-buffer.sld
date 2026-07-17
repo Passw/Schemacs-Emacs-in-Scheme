@@ -19,6 +19,7 @@
    gap-buffer-insert-before     gap-buffer-insert-after
    gap-buffer-move-cursor       gap-buffer-set-cursor
    gap-buffer-delete            gap-buffer-clear
+   gap-buffer-clear-before      gap-buffer-clear-after
 
    gap-buffer-end-of-line?      gap-buffer-start-of-line?
    gap-buffer-for-each          gap-buffer-for-each/index
@@ -622,6 +623,16 @@
       (set!gap-buffer-cursor  gb 0)
       (set!gap-buffer-minimum gb #f)
       (set!gap-buffer-maximum gb #f)
+      )
+
+    (define (gap-buffer-clear-before gb)
+      (let ((new-weight (- (gap-buffer-weight gb) (gap-buffer-cursor gb))))
+	(set!gap-buffer-weight gb new-weight)
+	(set!gap-buffer-cursor gb 0)
+	))
+
+    (define (gap-buffer-clear-after gb)
+      (set!gap-buffer-weight gb (gap-buffer-cursor gb))
       )
 
     ))

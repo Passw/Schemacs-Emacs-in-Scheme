@@ -22,9 +22,9 @@
           )
     (only (schemacs lexer) make<source-file-location>)
     (only (schemacs editor cdf)
-	  new-cdf  cdf-cursor  cdf-maximum  cdf-ref
-	  cdf-fill  cdf-invalidate!  cdf-push  cdf-find
-	  )
+          new-cdf  cdf-cursor  cdf-maximum  cdf-ref
+          cdf-fill  cdf-invalidate!  cdf-push  cdf-find
+          )
     (prefix (schemacs ui text-buffer-impl) impl/)
     (only (schemacs ui text-buffer-impl)
           make<text-location>  text-location-type?
@@ -49,26 +49,20 @@
           typeof-vector?
           )
     (only (schemacs gap-buffer)
-          new-gap-buffer
-          gap-buffer-end-of-line?  gap-buffer-start-of-line?
-          gap-buffer-for-each  gap-buffer-for-each/index
-          gap-buffer-for-each-after
-          gap-buffer-for-each-after/index
-          gap-buffer-for-each-before
-          gap-buffer-for-each-before/index
-          gap-buffer-update-min-max
-          gap-buffer-insert-min-max
-          gap-buffer-set-cursor
-          gap-buffer-cursor-to-start
-          gap-buffer-cursor-to-end
-          gap-buffer-insert-before
-          gap-buffer-insert-after
-          gap-buffer-minimum     set!gap-buffer-minimum
-          gap-buffer-maximum     set!gap-buffer-maximum
-          gap-buffer-ref-before  gap-buffer-ref-after
-          gap-buffer-cursor      gap-buffer-weight
-          gap-buffer-ref         gap-buffer-clear
-          gap-buffer-allocate
+          new-gap-buffer              gap-buffer-allocate
+          gap-buffer-end-of-line?     gap-buffer-start-of-line?
+          gap-buffer-for-each         gap-buffer-for-each/index
+          gap-buffer-for-each-after   gap-buffer-for-each-after/index
+          gap-buffer-for-each-before  gap-buffer-for-each-before/index
+          gap-buffer-update-min-max   gap-buffer-insert-min-max
+          gap-buffer-set-cursor       gap-buffer-ref
+          gap-buffer-ref-before       gap-buffer-ref-after
+          gap-buffer-cursor-to-start  gap-buffer-cursor-to-end
+          gap-buffer-insert-before    gap-buffer-insert-after
+          gap-buffer-minimum          set!gap-buffer-minimum
+          gap-buffer-maximum          set!gap-buffer-maximum
+          gap-buffer-cursor           gap-buffer-weight
+          gap-buffer-clear-before     gap-buffer-clear
           )
     )
   (export
@@ -83,7 +77,7 @@
    new-text-editor  text-editor-type?
    *init-text-editor-line-count*
    text-editor-char-count
-   text-load-port  text-dump-port
+   text-load-port  text-dump-port  text-editor-to-string
    text-editor-insert
 
    ;; Changing the line-break protocol for the editor
@@ -452,12 +446,16 @@
       )
 
     (define (%line-editor-pre-freeze lo hi)
-      (let*((range (abs (- hi lo))))
-        (cond
-         ((<= range #xFF) bytevector-sequence-iface)
-         ((<= range #xFFFF) u16vector-sequence-iface)
-         (else u32vector-sequence-iface)
-         )))
+      (or
+       (and lo hi
+        (let*((range (abs (- hi lo))))
+          (cond
+           ((<= range #xFF) bytevector-sequence-iface)
+           ((<= range #xFFFF) u16vector-sequence-iface)
+           (else #f)
+           )))
+       u32vector-sequence-iface
+       ))
 
     (define (line-editor-freeze line-ed lbrk)
       ;; Freeze all characters in the line buffer into a new
@@ -612,6 +610,10 @@
         ;; CDF is up-to-date. If not, do nothing, the CDF buffer will
         ;; have to be brought up-to-date later.
         (when sum (cdf-push cdf (text-line-outer-size line)))
+        (gap-buffer-clear-before line-ed)
+	(set!text-editor-line-changed
+	 ed (< 0 (gap-buffer-weight line-ed))
+	 )
         line
         ))
 
@@ -715,6 +717,14 @@
        ((ed port) (text-dump-port ed port #f))
        ((ed port _flags) (text-editor-dump ed port))
        ))
+
+    (define (text-editor-to-string ed)
+      ;; Dump the text editor buffer into a string.
+      (call-with-port (open-output-string)
+        (lambda (port)
+          (text-dump-port ed port)
+          (get-output-string port)
+          )))
 
     (define (text-editor-cursor-line ed)
       (let ((lines (text-editor-lines ed)))

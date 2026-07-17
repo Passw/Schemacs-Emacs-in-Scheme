@@ -314,7 +314,9 @@
         (cond
          ((not (= new-len old-len))
           (let ((new-seq ((iface-make-sequence iface) new-len)))
-            ((iface-sequence-copy! iface) new-seq 0 old-seq 0 old-len)
+            ((iface-sequence-copy! iface)
+             new-seq 0 old-seq 0 (min old-len new-len)
+             )
             new-seq
             ))
          (else old-seq)

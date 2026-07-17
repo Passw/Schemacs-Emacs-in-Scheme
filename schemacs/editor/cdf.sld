@@ -17,6 +17,7 @@
          iface-sequence-length
          iface-sequence-ref
          iface-sequence-set!
+         sequence-allocate
          )
    )
 
@@ -92,10 +93,8 @@
              (next
               (let*-values
                   (((vec len)
-                    (let*((new-len
-                           ((*sequence-allocate-function*) cursor (+ 1 cursor))
-                           )
-                          (new-vec (sequence-resize iface vec new-len))
+                    (let*((new-vec (sequence-allocate iface vec (+ 1 cursor)))
+			  (new-len ((iface-sequence-length iface) new-vec))
                           )
                       (cond
                        ((not (eq? vec new-vec))
@@ -157,9 +156,11 @@
              next
              ))))))
 
-    (define (cdf-pop cdf n)
-      (cdf-invalidate! cdf (max 0 (- (cdf-cursor cdf) n)))
-      )
+    (define cdf-pop
+      (case-lambda
+       ((cdf) (cdf-pop cdf 1))
+       ((cdf n) (cdf-invalidate! cdf (max 0 (- (cdf-cursor cdf) n))))
+       ))
 
     (define cdf-find
       ;; Binary search returning which "bucket" I in a PDF does the
@@ -186,25 +187,56 @@
       ;; into which bucket the random integer N will fall. This
       ;; function computes the address of the bucket using a binary
       ;; search.
+      ;;
+      ;; This procedure returns two values:
+      ;;
+      ;;  1. the index `I` of the bucket into which the value `N`
+      ;;     falls. In the context of a text editor, if `N` is the
+      ;;     index of a character (from the start of the whole buffer
+      ;;     of characters) this function returns the line number on
+      ;;     which that index is placed.
+      ;;
+      ;;  2. the sum `S` of the sizes of all buckets before that
+      ;;     index. In the context of a text editor, this is the
+      ;;     number of all characters in the buffer prior to the start
+      ;;     of the line on which the index `N` is placed.
+      ;;
+      ;; If `N` is out-of-bounds, that is, does not fall into any
+      ;; bucket (too far to the negative or positive ends of the
+      ;; field) then `(values #f #f)` is the result.
+      ;;
+      ;; One property of the return values of the function is that the
+      ;; following expression is always true so long as `N` is in bounds:
+      ;; 
+      ;; ```
+      ;; (let-values (((i s) (cdf-find buckets n)))
+      ;;   (and (<= s n) (< n (cdf-ref buckets i)))
+      ;;   )
+      ;; ```
       (case-lambda
         ((cdf n) (cdf-find cdf #f n))
         ((cdf init n)
 	 (let*((cursor (cdf-cursor cdf)))
            (cond
 	    ((< 0 cursor)
-	     (let*((iface  (cdf-vector-iface cdf))
-		   (ref    (iface-sequence-ref iface))
-		   (vec    (cdf-vector cdf))
-		   (half   (floor-quotient cursor 2))
-		   (init   (or (and init (max 0 (min init (- cursor 1)))) half))
+	     (let*((iface (cdf-vector-iface cdf))
+		   (ref   (iface-sequence-ref iface))
+		   (vec   (cdf-vector cdf))
+		   (half  (floor-quotient cursor 2))
+		   (init  (or (and init (max 0 (min init (- cursor 1)))) half))
 		   )
-	       (display "init = ") (write init) (display ", cursor = ") (write cursor);;DEBUG
+	       (display "n = ") (write n);;DEBUG
+	       (display ", init = ") (write init);;DEBUG
+	       (display ", cursor = ") (write cursor);;DEBUG
 	       (display ", half = ") (write half) (newline);;DEBUG
 	       (let loop ((interval half) (i0 init))
-		 (let*((i0 (min i0 (- cursor 1)))
+		 ;; Here we have a cursor i which selects the current and next
+                 ;; element in the CDF vector. We want to check if the given
+                 ;; value `n` is somewhere in between.
+		 (let*((i0 (min i0 (- cursor 2)))
 		       (i1 (+ 1 i0))
-		       (lo (ref vec i0))
-		       (hi (if (>= i1 cursor) #f (ref vec i1)))
+		       (lo (if (<= 0 i0) (ref vec i0) #f))
+		       (hi (if (<= cursor i1) #f (ref vec i1)))
 		       )
 		   (display "interval = ") (write interval);;DEBUG
 		   (display ", i0 = ") (write i0);;DEBUG
@@ -212,17 +244,21 @@
 		   (display ", lo = ") (write lo);;DEBUG
 		   (display ", hi = ") (write hi) (newline);;DEBUG
 		   (cond
-		    ((and (<= lo n) (or (not hi) (< n hi)))
-		     (values i0 lo)
-		     )
-		    ((< n lo)
-		     (let ((interval (floor-quotient interval 2)))
-		       (loop interval (- i0 interval))
-		       ))
-		    (else
-		     (let ((interval (floor-quotient (- cursor i0) 2)))
-		       (loop interval (+ i0 interval))
-		       )))))))
+		    ((and (or (not lo) (<= lo n)) (< n hi)) (values i0 lo))
+		    ((< 0 interval)
+		     (cond
+		      ((< n lo)
+		       (let ((interval (floor-quotient interval 2)))
+			 (loop interval (- i0 interval))
+			 ))
+		      ((<= hi n)
+		       (let ((interval (floor-quotient (- cursor i0) 2)))
+			 (loop interval (+ i0 interval))
+			 ))
+		      (else (values i0 lo))
+		      ))
+		    (else (values #f #f))
+		    )))))
 	    (else (values #f #f))
 	    )))))
 

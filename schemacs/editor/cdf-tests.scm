@@ -29,7 +29,7 @@
     (find testcdf 1)
     ))
 
-(test-equal '((3 . 8) (4 . 10))
+(test-equal '((1 . 2) (2 . 8))
   (let ()
     (cdf-push testcdf 6)
     (cdf-push testcdf 2)

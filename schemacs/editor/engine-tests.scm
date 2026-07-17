@@ -102,22 +102,20 @@
 
 (define ed (new-text-editor))
 
+(define (gb-insert-list ed elems)
+  (let loop ((elems elems))
+    (cond
+     ((pair? elems)
+      ;; Write the sample text into the text editor buffer.
+      (text-editor-insert ed (car elems))
+      (loop (cdr elems))
+      )
+     (else
+      (text-editor-to-string ed)
+      ))))
+
 (test-assert
-  (let*((ed-str
-	 (let loop ((elems *sample-text-1*))
-	   (cond
-	    ((pair? elems)
-	     ;; Write the sample text into the text editor buffer.
-	     (text-editor-insert ed (car elems))
-	     (loop (cdr elems))
-	     )
-	    (else
-	     ;; Dump the text editor buffer into a string.
-	     (call-with-port (open-output-string)
-	       (lambda (port)
-		 (text-dump-port ed port)
-		 (get-output-string port)
-		 ))))))
+  (let*((ed-str (gb-insert-list ed *sample-text-1*))
 	(cat-str *sample-string-1*)
 	)
     (cond
