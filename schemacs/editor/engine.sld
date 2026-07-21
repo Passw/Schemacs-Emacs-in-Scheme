@@ -84,7 +84,7 @@
    text-editor-set-line-break!
    line-break-newline  line-break-return
    line-break-null  line-break-crlf  line-break-lfcr
-   line-break-as-string  line-break-write-to-port
+   line-break-bytevector  line-break-write-to-port
    line-break-size   *default-line-break*
 
    ;; Getting and setting the cursor index
@@ -144,13 +144,13 @@
       ;; state of the state machine.
       (make<line-break> str to-port ins-char)
       line-break-type?
-      (str       line-break-as-string)
+      (str       line-break-bytevector)
       (to-port   line-break-write-to-port)
       (ins-char  line-break-setup-editor!)
       )
 
     (define (line-break-size lbrk)
-      (string-length (line-break-as-string lbrk))
+      (bytevector-length (line-break-bytevector lbrk))
       )
 
     (define (line-break-2-state break-ch0 break-ch1)
@@ -197,9 +197,9 @@
         state-1
         )
       (make<line-break>
-       (let ((str (make-string 2)))
-         (string-set! str 0 break-ch0)
-         (string-set! str 1 break-ch1)
+       (let ((str (make-bytevector 2)))
+         (bytevector-u8-set! str 0 (char->integer break-ch0))
+         (bytevector-u8-set! str 1 (char->integer break-ch1))
          str
          )
        (lambda (port)
@@ -212,7 +212,7 @@
 
     (define (line-break-1-state break-ch)
       (make<line-break>
-       (make-string 1 break-ch)
+       (make-bytevector 1 (char->integer break-ch))
        (lambda (port) (write-char break-ch port))
        (lambda (ed)
          (set!text-editor-insert-char
@@ -316,10 +316,27 @@
       ;; Like `text-line-ref` but returns the UTF code point, rather
       ;; than a `char?` value.
       ;;--------------------------------------------------------------
-      (+ (text-line-char-offset line)
-         ((iface-sequence-ref (text-line-sequence-iface line))
-          (text-line-string line) i
-          )))
+      (let*((iface (text-line-sequence-iface line))
+            (str (text-line-string line))
+            (len ((iface-sequence-length iface) str))
+            )
+        (cond
+         ((< i 0) #f)
+         ((< i len)
+          (+ (text-line-char-offset line)
+             ((iface-sequence-ref (text-line-sequence-iface line))
+              (text-line-string line) i
+              )))
+         (else
+          (let*((lbrk (text-line-break line))
+                (lbrk-str (and lbrk (line-break-bytevector lbrk)))
+                (lbrk-len (and lbrk-str (bytevector-length lbrk-str)))
+                (i (and lbrk-len (- i len)))
+                )
+            (cond
+             ((and i (< i lbrk-len)) (bytevector-u8-ref lbrk-str i))
+             (else #f)
+             ))))))
 
     (define (text-line-for-each proc line)
       (let ((str (text-line-string line)))
@@ -611,9 +628,9 @@
         ;; have to be brought up-to-date later.
         (when sum (cdf-push cdf (text-line-outer-size line)))
         (gap-buffer-clear-before line-ed)
-	(set!text-editor-line-changed
-	 ed (< 0 (gap-buffer-weight line-ed))
-	 )
+        (set!text-editor-line-changed
+         ed (< 0 (gap-buffer-weight line-ed))
+         )
         line
         ))
 

@@ -96,7 +96,7 @@
               (let*-values
                   (((vec len)
                     (let*((new-vec (sequence-allocate iface vec (+ 1 cursor)))
-			  (new-len ((iface-sequence-length iface) new-vec))
+                          (new-len ((iface-sequence-length iface) new-vec))
                           )
                       (cond
                        ((not (eq? vec new-vec))
@@ -209,31 +209,31 @@
       ;; field) then `(values #f #f)` is the result.
       ;;--------------------------------------------------------------
       (let*((iface  (cdf-vector-iface cdf))
-	    (ref    (iface-sequence-ref iface))
-	    (cursor (cdf-cursor cdf))
-	    (vec    (cdf-vector cdf))
-	    (top    (and (< 0 cursor) (ref vec (- cursor 1))))
-	    )
-	(cond
-	 ((or (not top) (<= top n)) (values #f #f))
-	 (else
-	  (let ((half (floor-quotient cursor 2)))
-	    (let loop ((interval half) (i half))
-	      ;; Here we have a cursor i which selects the current and next
-	      ;; element in the CDF vector. We want to check if the given
-	      ;; value `n` is somewhere in between.
-	      (let*((lo (if (< 0 i) (ref vec (- i 1)) 0))
-		    (hi (and (< i cursor) (ref vec i)))
-		    (small (and lo (< n lo)))
+            (ref    (iface-sequence-ref iface))
+            (cursor (cdf-cursor cdf))
+            (vec    (cdf-vector cdf))
+            (top    (and (< 0 cursor) (ref vec (- cursor 1))))
+            )
+        (cond
+         ((or (not top) (<= top n)) (values #f #f))
+         (else
+          (let ((half (floor-quotient cursor 2)))
+            (let loop ((interval half) (i half))
+              ;; Here we have a cursor i which selects the current and next
+              ;; element in the CDF vector. We want to check if the given
+              ;; value `n` is somewhere in between.
+              (let*((lo (if (< 0 i) (ref vec (- i 1)) 0))
+                    (hi (and (< i cursor) (ref vec i)))
+                    (small (and lo (< n lo)))
                     (big (and hi (<= hi n)))
-		    )
-		(cond
-		 ((or small big)
-		  (let ((interval (floor-quotient interval 2)))
-		    (loop i (if small (- i interval) (+ i interval)))
-		    ))
-		 (else (values i lo))
-		 ))))))))
+                    )
+                (cond
+                 ((or small big)
+                  (let ((interval (floor-quotient interval 2)))
+                    (loop i (if small (- i interval) (+ i interval)))
+                    ))
+                 (else (values i lo))
+                 ))))))))
 
     (define (cdf-for-each proc cdf)
       ;; Map over the internal CDF vector, applying each value to
@@ -244,13 +244,13 @@
       ;;--------------------------------------------------------------
       (let*((vec (cdf-vector cdf))
             (cursor (cdf-cursor cdf))
-	    (iface (cdf-vector-iface cdf))
-	    (ref (iface-sequence-ref iface))
+            (iface (cdf-vector-iface cdf))
+            (ref (iface-sequence-ref iface))
             )
-	(let loop ((i 0))
-	  (cond
-	   ((< i cursor) (if (proc (ref vec i)) (loop (+ 1 i)) #f))
-	   (else #t)
-	   ))))
+        (let loop ((i 0))
+          (cond
+           ((< i cursor) (if (proc (ref vec i)) (loop (+ 1 i)) #f))
+           (else #t)
+           ))))
 
     ))
