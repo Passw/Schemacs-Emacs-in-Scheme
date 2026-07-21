@@ -9,7 +9,7 @@
   (import
    (scheme base)
    (scheme case-lambda)
-   (scheme write) ;;DEBUG
+   ;;(scheme write) ;;DEBUG
    (only (schemacs sequence)
          *sequence-allocate-function*
          u64vector-sequence-iface
@@ -25,7 +25,7 @@
    new-cdf  cdf-vector-type?
    cdf-vector-iface  cdf-vector  cdf-cursor  cdf-maximum
    cdf-ref  cdf-fill  cdf-invalidate!  cdf-push  cdf-pop
-   cdf-find
+   cdf-find cdf-for-each
    )
 
   (begin
@@ -56,8 +56,10 @@
         )))
 
     (define (cdf-ref cdf i)
-      ((iface-sequence-ref (cdf-vector-iface cdf)) (cdf-vector cdf) i)
-      )
+      (and
+       (<= 0 i) (< i (cdf-cursor cdf))
+       ((iface-sequence-ref (cdf-vector-iface cdf)) (cdf-vector cdf) i)
+       ))
 
     (define (cdf-fill cdf generate)
       ;; Internally, the CDF is modeled as vector and as a stack. The
@@ -162,15 +164,12 @@
        ((cdf n) (cdf-invalidate! cdf (max 0 (- (cdf-cursor cdf) n))))
        ))
 
-    (define cdf-find
+    (define (cdf-find cdf n)
       ;; Binary search returning which "bucket" I in a PDF does the
       ;; integer argument `N` fall into given a CDF computed for the
-      ;; PDF. Takes two or three arguments
+      ;; PDF. Takes two arguments
       ;;
       ;;   - `CDF` is the <cdf-vector-type>
-      ;;
-      ;;   - `INIT` (optional) from which index should the search begin.
-      ;;      Defaults to the middle index.
       ;;
       ;;   - `N` the number to search for, and return which bucket
       ;;      into which it would be placed.
@@ -182,11 +181,14 @@
       ;; has a discrete cumulative distribution function (CDF) which
       ;; is a vector of integers, but at each address in the CDF we
       ;; store the sum of all bucket sizes before that address in the
-      ;; PDF. When a random integer `N` is "dropped" onto the field of
-      ;; buckets (modeled by the PDF), we may want to know the address
-      ;; into which bucket the random integer N will fall. This
-      ;; function computes the address of the bucket using a binary
-      ;; search.
+      ;; PDF, allowing us to see the distance (in the same units the
+      ;; bucket sizes measure) that any given vector index is from the
+      ;; origin, which allows us to find an index using a binary
+      ;; search algorithm. When a random integer `N` is "dropped" onto
+      ;; the field of buckets (modeled by the PDF), we can find
+      ;; address of bucket into which this random integer `N` will
+      ;; fall. This function computes the address of the bucket `N`
+      ;; falls into using a binary search.
       ;;
       ;; This procedure returns two values:
       ;;
@@ -196,70 +198,59 @@
       ;;     of characters) this function returns the line number on
       ;;     which that index is placed.
       ;;
-      ;;  2. the sum `S` of the sizes of all buckets before that
-      ;;     index. In the context of a text editor, this is the
-      ;;     number of all characters in the buffer prior to the start
-      ;;     of the line on which the index `N` is placed.
+      ;;  2. the sum `S` of the sizes of all buckets up to and
+      ;;     including the index `I`. In the context of a text editor,
+      ;;     this is the number of all characters in the buffer prior
+      ;;     to the start of the line on which the index `N` is
+      ;;     placed.
       ;;
       ;; If `N` is out-of-bounds, that is, does not fall into any
       ;; bucket (too far to the negative or positive ends of the
       ;; field) then `(values #f #f)` is the result.
-      ;;
-      ;; One property of the return values of the function is that the
-      ;; following expression is always true so long as `N` is in bounds:
-      ;; 
-      ;; ```
-      ;; (let-values (((i s) (cdf-find buckets n)))
-      ;;   (and (<= s n) (< n (cdf-ref buckets i)))
-      ;;   )
-      ;; ```
-      (case-lambda
-        ((cdf n) (cdf-find cdf #f n))
-        ((cdf init n)
-	 (let*((cursor (cdf-cursor cdf)))
-           (cond
-	    ((< 0 cursor)
-	     (let*((iface (cdf-vector-iface cdf))
-		   (ref   (iface-sequence-ref iface))
-		   (vec   (cdf-vector cdf))
-		   (half  (floor-quotient cursor 2))
-		   (init  (or (and init (max 0 (min init (- cursor 1)))) half))
-		   )
-	       (display "n = ") (write n);;DEBUG
-	       (display ", init = ") (write init);;DEBUG
-	       (display ", cursor = ") (write cursor);;DEBUG
-	       (display ", half = ") (write half) (newline);;DEBUG
-	       (let loop ((interval half) (i0 init))
-		 ;; Here we have a cursor i which selects the current and next
-                 ;; element in the CDF vector. We want to check if the given
-                 ;; value `n` is somewhere in between.
-		 (let*((i0 (min i0 (- cursor 2)))
-		       (i1 (+ 1 i0))
-		       (lo (if (<= 0 i0) (ref vec i0) #f))
-		       (hi (if (<= cursor i1) #f (ref vec i1)))
-		       )
-		   (display "interval = ") (write interval);;DEBUG
-		   (display ", i0 = ") (write i0);;DEBUG
-		   (display ", i1 = ") (write i1);;DEBUG
-		   (display ", lo = ") (write lo);;DEBUG
-		   (display ", hi = ") (write hi) (newline);;DEBUG
-		   (cond
-		    ((and (or (not lo) (<= lo n)) (< n hi)) (values i0 lo))
-		    ((< 0 interval)
-		     (cond
-		      ((< n lo)
-		       (let ((interval (floor-quotient interval 2)))
-			 (loop interval (- i0 interval))
-			 ))
-		      ((<= hi n)
-		       (let ((interval (floor-quotient (- cursor i0) 2)))
-			 (loop interval (+ i0 interval))
-			 ))
-		      (else (values i0 lo))
-		      ))
-		    (else (values #f #f))
-		    )))))
-	    (else (values #f #f))
-	    )))))
+      ;;--------------------------------------------------------------
+      (let*((iface  (cdf-vector-iface cdf))
+	    (ref    (iface-sequence-ref iface))
+	    (cursor (cdf-cursor cdf))
+	    (vec    (cdf-vector cdf))
+	    (top    (and (< 0 cursor) (ref vec (- cursor 1))))
+	    )
+	(cond
+	 ((or (not top) (<= top n)) (values #f #f))
+	 (else
+	  (let ((half (floor-quotient cursor 2)))
+	    (let loop ((interval half) (i half))
+	      ;; Here we have a cursor i which selects the current and next
+	      ;; element in the CDF vector. We want to check if the given
+	      ;; value `n` is somewhere in between.
+	      (let*((lo (if (< 0 i) (ref vec (- i 1)) 0))
+		    (hi (and (< i cursor) (ref vec i)))
+		    (small (and lo (< n lo)))
+                    (big (and hi (<= hi n)))
+		    )
+		(cond
+		 ((or small big)
+		  (let ((interval (floor-quotient interval 2)))
+		    (loop i (if small (- i interval) (+ i interval)))
+		    ))
+		 (else (values i lo))
+		 ))))))))
+
+    (define (cdf-for-each proc cdf)
+      ;; Map over the internal CDF vector, applying each value to
+      ;; `proc`.  The `proc` should return `#t` or `#f` to control
+      ;; whether iteration should continue. This procedure itself will
+      ;; return `#t` if all CDF elements were applied to `PROC`, or
+      ;; `#f` otherwise
+      ;;--------------------------------------------------------------
+      (let*((vec (cdf-vector cdf))
+            (cursor (cdf-cursor cdf))
+	    (iface (cdf-vector-iface cdf))
+	    (ref (iface-sequence-ref iface))
+            )
+	(let loop ((i 0))
+	  (cond
+	   ((< i cursor) (if (proc (ref vec i)) (loop (+ 1 i)) #f))
+	   (else #t)
+	   ))))
 
     ))
