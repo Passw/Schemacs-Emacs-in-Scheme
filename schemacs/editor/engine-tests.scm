@@ -53,19 +53,23 @@
 	(len (min strlen buflen))
 	)
     (let loop ((i 0))
+      ;;(display "f[") (write i) (display "]: ");;DEBUG
       (cond
        ((< i len)
 	(let ((str-ch (string-ref str i))
 	      (buf-ch (text-editor-get-char-index buf i))
 	      )
+	  ;;(display "s=") (write str-ch) (display ", b=") (write buf-ch) (newline);;DEBUG
 	  (cond
 	   ((char=? str-ch buf-ch) (loop (+ 1 i)))
 	   (else (values i str-ch buf-ch))
 	   )))
        ((< i strlen)
+	;;(display " end of buffer\n");;DEBUG
 	(values i (string-ref str i) #f)
 	)
        ((< i buflen)
+	;;(display " end of string\n");;DEBUG
 	(values i #f (text-editor-get-char-index buf i))
 	)
        (else (values i #f #f))

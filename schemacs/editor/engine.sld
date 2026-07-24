@@ -20,7 +20,7 @@
     (only (schemacs vbal)
           vbal-type?  vbal->alist  alist->vbal
           )
-    (only (schemacs lexer) make<source-file-location>)
+    ;;(only (schemacs lexer) make<source-file-location>)
     (only (schemacs editor cdf)
           new-cdf  cdf-cursor  cdf-maximum  cdf-ref
           cdf-fill  cdf-invalidate!  cdf-push  cdf-find
@@ -29,6 +29,7 @@
     (only (schemacs ui text-buffer-impl)
           make<text-location>  text-location-type?
           text-location-line   text-location-column
+          text-location  show-text-location
           )
     (only (schemacs sequence)
           *sequence-allocate-function*
@@ -65,13 +66,21 @@
           gap-buffer-clear-before     gap-buffer-clear
           )
     )
+  (cond-expand
+   ;; To define pretty-printers for Guile
+   (guile-3
+    (import (only (srfi srfi-9 gnu) set-record-type-printer!))
+    )
+   (else)
+   )
   (export
    ;; Text lines, these are contain individual lines of text possibly
    ;; terminated with some line breaking character sequence.
-   text-line-type?  new-text-line
+   text-line-type?  new-text-line  text-line
    text-line-inner-size  text-line-outer-size
    write-text-line  text-line-for-each
    text-line-ref    text-line-code-ref
+   text-line->string  show-text-line
 
    ;; The text editor data type
    new-text-editor  text-editor-type?
@@ -86,6 +95,7 @@
    line-break-null  line-break-crlf  line-break-lfcr
    line-break-bytevector  line-break-write-to-port
    line-break-size   *default-line-break*
+   line-break  show-line-break
 
    ;; Getting and setting the cursor index
    text-editor-char-count
@@ -99,6 +109,9 @@
    text-editor-move-cursor
    text-editor-get-cursor
    text-editor-get-char-index
+   text-editor-line-editor-ref
+   text-editor-text-line-ref
+   text-editor  show-text-editor
 
    run-editor-engine
    ;; ^ This procedure is called in the same way as the Scheme
@@ -142,9 +155,10 @@
       ;; editor will be updated to have it's
       ;; `text-editor-insert-char` procedure set to the initial
       ;; state of the state machine.
-      (make<line-break> str to-port ins-char)
+      (make<line-break> bv str to-port ins-char)
       line-break-type?
-      (str       line-break-bytevector)
+      (bv        line-break-bytevector)
+      (str       line-break-string)
       (to-port   line-break-write-to-port)
       (ins-char  line-break-setup-editor!)
       )
@@ -197,10 +211,15 @@
         state-1
         )
       (make<line-break>
-       (let ((str (make-bytevector 2)))
-         (bytevector-u8-set! str 0 (char->integer break-ch0))
-         (bytevector-u8-set! str 1 (char->integer break-ch1))
+       (let ((str (make-string 2)))
+         (string-set! str 0 break-ch0)
+         (string-set! str 1 break-ch1)
          str
+         )
+       (let ((bv (make-bytevector 2)))
+         (bytevector-u8-set! bv 0 (char->integer break-ch0))
+         (bytevector-u8-set! bv 1 (char->integer break-ch1))
+         bv
          )
        (lambda (port)
          (write-char break-ch0 port)
@@ -213,6 +232,7 @@
     (define (line-break-1-state break-ch)
       (make<line-break>
        (make-bytevector 1 (char->integer break-ch))
+       (make-string 1 break-ch)
        (lambda (port) (write-char break-ch port))
        (lambda (ed)
          (set!text-editor-insert-char
@@ -230,6 +250,63 @@
     (define line-break-newline (line-break-1-state #\newline))
     (define line-break-return  (line-break-1-state #\return))
     (define line-break-null    (line-break-1-state #\null))
+
+    (define (line-break str)
+      (cond
+       ((not str) #f)
+       ((line-break-type? str) str)
+       ((char? str)
+        (cond
+         ((char=? str #\newline) line-break-newline)
+         ((char=? str #\return)  line-break-return)
+         ((char=? str #\null)    line-break-null)
+         (else (error "invalid line break" str))
+         ))
+       ((string? str)
+        (cond
+         ((string=? str "\n")   line-break-newline)
+         ((string=? str "\r")   line-break-return)
+         ((string=? str "\n\r") line-break-crlf)
+         ((string=? str "\r\n") line-break-lfcr)
+         ((string=? str "\0")   line-break-null)
+         (else (error "invalid line break" str))
+         ))
+       ((symbol? str)
+        (cond
+         ((eq? str 'crlf)    line-break-crlf)
+         ((eq? str 'lfcr)    line-break-lfcr)
+         ((eq? str 'newline) line-break-newline)
+         ((eq? str 'return)  line-break-return)
+         ((eq? str 'null)    line-break-null)
+         (else (error "unknown line break type" str))
+         ))
+       (else (error "not a string or char" str))
+       ))
+
+    (define (line-break->string lbrk)
+      (cond
+       ((not lbrk) #f)
+       ((line-break-type? lbrk) (line-break-string lbrk))
+       ((string? lbrk) lbrk)
+       ((char? lbrk) lbrk)
+       (else (error "not a line break type" lbrk))
+       ))
+
+    (define show-line-break
+      (case-lambda
+       ((lbrk) (show-line-break lbrk (current-output-port)))
+       ((lbrk port)
+        (display "(line-break " port)
+        (write (line-break->string lbrk) port)
+        (display ")" port)
+        )))
+
+    (cond-expand
+     (guile
+      (set-record-type-printer! <line-break-type> show-line-break)
+      )
+     (else)
+     )
 
     (define (text-editor-set-line-break! ed lbrk)
       ;; Change the line breaking character used by the editor. By
@@ -318,7 +395,7 @@
       ;;--------------------------------------------------------------
       (let*((iface (text-line-sequence-iface line))
             (str (text-line-string line))
-            (len ((iface-sequence-length iface) str))
+            (len (if iface ((iface-sequence-length iface) str) 0))
             )
         (cond
          ((< i 0) #f)
@@ -359,6 +436,11 @@
                ))))))))
 
     (define write-text-line
+      ;; Write the content of a `text-line-type?` to a port. If the
+      ;; text line applied is the only argument, and no port is
+      ;; applied as an argument, then the port returned by
+      ;; `current-output-port` is used.
+      ;;--------------------------------------------------------------
       (case-lambda
         ((line) (write-text-line line (current-output-port)))
         ((line port)
@@ -366,6 +448,68 @@
            (text-line-for-each (lambda (c) (write-char c port)) line)
            (when lbrk ((line-break-write-to-port lbrk) port))
            ))))
+
+    (define (text-line->string line)
+      (call-with-port (open-output-string)
+        (lambda (port)
+          (write-text-line line port)
+          (get-output-string port)
+          )))
+
+    (define (text-line str)
+      ;; Construct a text line from a string `STR`. The given `STR` is
+      ;; copied into a new character vector up to but not including
+      ;; any line breaking character (if any). All characters after a
+      ;; line breaking character are ignored. Line breaking characters
+      ;; include `#\newline`, `#\return`, and `#\null`.
+      ;;--------------------------------------------------------------
+      (cond
+       ((string? str)
+        (let ((len (string-length str)))
+          (let loop ((lo #x10FFFF) (hi 0) (count 0))
+            (let ((ch (and (< count len) (string-ref str count))))
+              (cond
+               ((or (not ch) 
+                    (char=? ch #\newline)
+                    (char=? ch #\return)
+                    (char=? ch #\null)
+                    )
+                (let*((iface (%line-editor-pre-freeze lo hi))
+                      (set-char! (iface-sequence-set! iface))
+                      (vec ((iface-make-sequence iface) count))
+                      )
+                  (let loop ((i 0))
+                    (cond
+                     ((< i count)
+                      (set-char! vec (- (char->integer (string-ref str i)) lo))
+                      (loop (+ 1 i))
+                      )
+                     (else (make<text-line> vec #f #f lo hi #f iface))
+                     ))))
+               (else
+                (let ((pt (char->integer ch)))
+                  (loop (min lo pt) (max hi pt) (+ 1 count))
+                  )))))))
+       (else (error "not a string" str))
+       ))
+
+    (define show-text-line
+      (case-lambda
+       ((line) (show-text-line line (current-output-port)))
+       ((line port)
+        (display "(text-line " port)
+        (write (text-line->string line) port)
+          ;; ^ TODO: this need to output characters WITHOUT allocating
+          ;; a string copy of the line first
+        (display ")" port)
+        )))
+
+    (cond-expand
+     (guile
+      (set-record-type-printer! <text-line-type> show-text-line)
+      )
+     (else)
+     )
 
     ;;----------------------------------------------------------------
 
@@ -450,6 +594,56 @@
              ((line-break-setup-editor! lbrk) ed)
              ed
              ))))))
+
+    (define (text-editor location lbrk . lines)
+      ;; Construct a text editor from a list of text lines.
+      ;;--------------------------------------------------------------
+      (let ((ed (new-text-editor lbrk)))
+        (let loop ((lines lines))
+          (cond
+           ((null? lines)
+            (when location (text-editor-set-cursor ed location))
+            ed)
+           (else
+            (text-editor-insert ed (car lines))
+            (loop (cdr lines))
+            )))))
+
+    (define (show-text-editor-single-line port)
+      (lambda (line)
+        (display "  " port)
+        (write (text-line->string line) port)
+        (newline port)
+        ))
+
+    (define show-text-editor
+      ;; Write the whole content of a text editor to a port.
+      ;;--------------------------------------------------------------
+      (case-lambda
+       ((ed) (show-text-editor ed (current-output-port)))
+       ((ed port)
+        (let*((lines (text-editor-lines ed))
+              (weight (gap-buffer-weight lines))
+              (location (text-editor-cursor-location ed))
+              )
+          (display "(text-editor " port)
+          (show-text-location location port)
+          (cond
+           ((= weight 0) (display ")" port))
+           (else
+            (newline port)
+            (gap-buffer-for-each-before (show-text-editor-single-line port) lines)
+            ;; TODO: output current gap buffer, if necessary.
+            (gap-buffer-for-each-after (show-text-editor-single-line port) lines)
+            (display "  )\n" port)
+            ))))))
+
+    (cond-expand
+     (guile
+      (set-record-type-printer! <text-editor-type> show-text-editor)
+      )
+     (else)
+     )
 
     ;;----------------------------------------------------------------
     ;; Line editor procedures
@@ -636,11 +830,16 @@
 
     (define (text-editor-insert ed thing)
       (cond
-       ((char? thing)
-        ((%text-editor-insert-char ed) thing)
-        )
+       ((text-line-type? thing)
+        (text-line-for-each
+         (lambda (c) ((%text-editor-insert-char ed) c))
+         thing
+         ))
        ((string? thing)
         (string-for-each (%text-editor-insert-char ed) thing)
+        )
+       ((char? thing)
+        ((%text-editor-insert-char ed) thing)
         )
        ((and (input-port? thing) (input-port-open? thing))
         (text-editor-insert-line-from-port ed thing)
@@ -762,8 +961,7 @@
       )
 
     (define (text-editor-cursor-location ed)
-      (make<source-file-location>
-       #f
+      (make<text-location>
        (text-editor-cursor-line-number ed)
        (text-editor-cursor-column-number ed)
        ))
@@ -799,10 +997,17 @@
            ))))
 
     (define (text-editor-text-line-ref ed offset)
-      ;; Used internally to get the character on the current
-      ;; line. Checks if the line has been editted first, then decides
-      ;; whether to lookup the character from the line buffer or from
-      ;; the text line under the cursor.
+      ;; Get a whole line of text given the line number.
+      ;;--------------------------------------------------------------
+      (gap-buffer-ref (text-editor-lines ed) offset)
+      )
+
+    (define (text-editor-line-editor-ref ed offset)
+      ;; Used to get the character on the current line. Checks if the
+      ;; line has been edited first, then decides whether to lookup
+      ;; the character from the line buffer or from the text line
+      ;; under the cursor.
+      ;;--------------------------------------------------------------
       (let*((lines (text-editor-lines ed))
             (line-cur (gap-buffer-cursor lines))
             )

@@ -4,7 +4,15 @@
   (import
     (scheme base)
     (scheme case-lambda)
+    (only (scheme write) display write)
     )
+  (cond-expand
+   ;; To define pretty-printers for Guile
+   (guile-3
+    (import (only (srfi srfi-9 gnu) set-record-type-printer!))
+    )
+   (else)
+   )
   (export
    new-buffer*  buffer-type?*
    buffer-length*  text-load-port*  text-dump-port*
@@ -21,6 +29,7 @@
 
    make<text-location>  text-location-type?
    text-location-line   text-location-column
+   text-location  show-text-location
    )
   (begin
 
@@ -30,6 +39,30 @@
       (line    text-location-line)
       (column  text-location-column)
       )
+
+    (define text-location
+      (case-lambda
+       ((line) (make<text-location> line 0))
+       ((line col) (make<text-location> line col))
+       ))
+
+    (define show-text-location
+      (case-lambda
+       ((loc) (show-location loc (current-output-port)))
+       ((loc port)
+        (display "(text-location " port)
+        (write (text-location-line loc) port)
+        (display " " port)
+        (write (text-location-column loc) port)
+        (display ")" port)
+        )))
+
+    (cond-expand
+     (guile
+      (set-record-type-printer! <text-location-type> show-location)
+      )
+     (else)
+     )
 
     (define buffer-type?*
       ;; Returns `#t` only if the applied argument `BUFFER` is an
