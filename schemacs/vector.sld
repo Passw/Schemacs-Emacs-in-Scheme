@@ -7,7 +7,10 @@
   ;; program without having to write a `COND-EXPAND` statement
   ;; everywhere one of these APIs are used.
 
-  (import (scheme base))
+  (import
+   (scheme base)
+   (scheme case-lambda)
+   )
   (export
    vector-fold
    )

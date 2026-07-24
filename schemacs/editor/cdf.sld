@@ -222,15 +222,15 @@
               ;; Here we have a cursor i which selects the current and next
               ;; element in the CDF vector. We want to check if the given
               ;; value `n` is somewhere in between.
-              (let*((lo (if (< 0 i) (ref vec (- i 1)) 0))
-                    (hi (and (< i cursor) (ref vec i)))
+              (let*((lo    (if (< 0 i) (ref vec (- i 1)) 0))
+                    (hi    (and (< i cursor) (ref vec i)))
                     (small (and lo (< n lo)))
-                    (big (and hi (<= hi n)))
+                    (big   (and hi (<= hi n)))
                     )
                 (cond
                  ((or small big)
-                  (let ((interval (floor-quotient interval 2)))
-                    (loop i (if small (- i interval) (+ i interval)))
+                  (let ((interval (max 1 (floor-quotient interval 2))))
+                    (loop interval (if small (- i interval) (+ i interval)))
                     ))
                  (else (values i lo))
                  ))))))))
@@ -254,3 +254,19 @@
            ))))
 
     ))
+
+;;------------------------------------------------------------------------------
+;; TODO: fix bug
+;;
+;; n = 124, cursor = 13, top = 446
+;; interval = 6, i = 6, lo =244, hi = 245, small = #t, big = #f
+;; interval = 6, i = 3, lo =185, hi = 198, small = #t, big = #f
+;; interval = 3, i = 0, lo =0, hi = 61, small = #f, big = #t
+;; interval = 0, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
+;; interval = 1, i = 1, lo =61, hi = 124, small = #f, big = #t
