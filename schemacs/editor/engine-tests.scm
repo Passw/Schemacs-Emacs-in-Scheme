@@ -52,6 +52,7 @@
 	(buflen (text-editor-char-count buf))
 	(len (min strlen buflen))
 	)
+    ;;(display "strlen=") (write strlen) (display ", buflen=") (write buflen) (newline);;DEBUG
     (let loop ((i 0))
       ;;(display "f[") (write i) (display "]: ");;DEBUG
       (cond
@@ -64,13 +65,13 @@
 	   ((char=? str-ch buf-ch) (loop (+ 1 i)))
 	   (else (values i str-ch buf-ch))
 	   )))
-       ((< i strlen)
-	;;(display " end of buffer\n");;DEBUG
-	(values i (string-ref str i) #f)
-	)
        ((< i buflen)
 	;;(display " end of string\n");;DEBUG
 	(values i #f (text-editor-get-char-index buf i))
+	)
+       ((< i strlen)
+	;;(display " end of buffer\n");;DEBUG
+	(values i (string-ref str i) #f)
 	)
        (else (values i #f #f))
        ))))

@@ -199,6 +199,7 @@
             ;; If we receive the LF character, trigger the `ON-BREAK`
             ;; event, which will freeze the line editor and push the
             ;; line into the buffer, then reset the line editor.
+            (text-editor-add-char-count ed 2)
             (text-editor-force-line-break ed)
             )
            (else
@@ -239,6 +240,7 @@
           ed (lambda (input-ch)
                (cond
                 ((char=? input-ch break-ch)
+                 (text-editor-add-char-count ed 1)
                  (text-editor-force-line-break ed)
                  )
                 (else
@@ -386,8 +388,9 @@
     (define (text-line-ref line i)
       ;; Lookup a character in the `LINE` at the given index `I`.
       ;;--------------------------------------------------------------
-      (integer->char (text-line-code-ref line i))
-      )
+      (let ((c (text-line-code-ref line i)))
+        (and c (integer->char c))
+        ))
 
     (define (text-line-code-ref line i)
       ;; Like `text-line-ref` but returns the UTF code point, rather
@@ -608,6 +611,10 @@
             (text-editor-insert ed (car lines))
             (loop (cdr lines))
             )))))
+
+    (define (text-editor-add-char-count ed count)
+      (set!text-editor-char-count ed (+ count (text-editor-char-count ed)))
+      )
 
     (define (show-text-editor-single-line port)
       (lambda (line)
@@ -854,7 +861,7 @@
             )
         (gap-buffer-insert-before line-ed chi)
         (gap-buffer-insert-min-max line-ed chi)
-        (set!text-editor-char-count ed (+ 1 (text-editor-char-count ed)))
+        (text-editor-add-char-count ed 1)
         (set!text-editor-line-changed ed #t)
         ch
         ))
