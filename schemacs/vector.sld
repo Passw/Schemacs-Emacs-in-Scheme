@@ -118,58 +118,57 @@
   (export
    s8vector? make-s8vector s8vector s8vector-length
    s8vector-ref s8vector-set! s8vector->list list->s8vector
-   s8vector-copy!
 
    u8vector? make-u8vector u8vector u8vector-length
    u8vector-ref u8vector-set! u8vector->list list->u8vector
-   u8vector-copy!
 
    s16vector? make-s16vector s16vector s16vector-length
    s16vector-ref s16vector-set! s16vector->list list->s16vector
-   s16vector-copy!
 
    u16vector? make-u16vector u16vector u16vector-length
    u16vector-ref u16vector-set! u16vector->list list->u16vector
-   u16vector-copy!
 
    s32vector? make-s32vector s32vector s32vector-length
    s32vector-ref s32vector-set! s32vector->list list->s32vector
-   s32vector-copy!
 
    u32vector? make-u32vector u32vector u32vector-length
    u32vector-ref u32vector-set! u32vector->list list->u32vector
-   u32vector-copy!
 
    s64vector? make-s64vector s64vector s64vector-length
    s64vector-ref s64vector-set! s64vector->list list->s64vector
-   s64vector-copy!
 
    u64vector? make-u64vector u64vector u64vector-length
    u64vector-ref u64vector-set! u64vector->list list->u64vector
-   u64vector-copy!
 
    f32vector? make-f32vector f32vector f32vector-length
    f32vector-ref f32vector-set! f32vector->list list->f32vector
-   f32vector-copy!
 
    f64vector? make-f64vector f64vector f64vector-length
    f64vector-ref f64vector-set! f64vector->list list->f64vector
-   f64vector-copy!
    )
 
    (cond-expand
-     ((or (library (srfi 160)))
+     ((and (library (srfi 160)) 
+           (not (library (srfi 4)))
+           )
       (import
         s8vector-copy!   u8vector-copy!
         s16-vector-copy! u16vector-copy!
         s32-vector-copy! u32vector-copy!
         s64-vector-copy! u64vector-copy!
         f32-vector-copy! f64vector-copy!
-        ))
+        )
+      (export
+       s8vector-copy!   u8vector-copy!
+       s16-vector-copy! u16vector-copy!
+       s32-vector-copy! u32vector-copy!
+       s64-vector-copy! u64vector-copy!
+       f32-vector-copy! f64vector-copy!
+       ))
      (else
       (begin
 
-        (define (generic-vector-copy iref iset length)
+        (define (generic-vector-copy! iref iset length)
           (define (copy! to-vec to from-vec start end)
             (let*((start    (min start end))
                   (end      (max start end))
@@ -208,44 +207,44 @@
              (copy! to-vec to from-vec start end)
              )))
 
-        (define s8vector-copy
-          (generic-vector-copy s8vector-ref s8vector-set! s8vector-length)
+        (define s8vector-copy!
+          (generic-vector-copy! s8vector-ref s8vector-set! s8vector-length)
           )
 
-        (define u8vector-copy
-          (generic-vector-copy u8vector-ref u8vector-set! u8vector-length)
+        (define u8vector-copy!
+          (generic-vector-copy! u8vector-ref u8vector-set! u8vector-length)
           )
 
-        (define s16vector-copy
-          (generic-vector-copy s16vector-ref s16vector-set! s16vector-length)
+        (define s16vector-copy!
+          (generic-vector-copy! s16vector-ref s16vector-set! s16vector-length)
           )
 
-        (define u16vector-copy
-          (generic-vector-copy u16vector-ref u16vector-set! u16vector-length)
+        (define u16vector-copy!
+          (generic-vector-copy! u16vector-ref u16vector-set! u16vector-length)
           )
 
-        (define s32vector-copy
-          (generic-vector-copy s32vector-ref s32vector-set! s32vector-length)
+        (define s32vector-copy!
+          (generic-vector-copy! s32vector-ref s32vector-set! s32vector-length)
           )
 
-        (define u32vector-copy
-          (generic-vector-copy u32vector-ref u32vector-set! u32vector-length)
+        (define u32vector-copy!
+          (generic-vector-copy! u32vector-ref u32vector-set! u32vector-length)
           )
 
-        (define s64vector-copy
-          (generic-vector-copy s64vector-ref s64vector-set! s64vector-length)
+        (define s64vector-copy!
+          (generic-vector-copy! s64vector-ref s64vector-set! s64vector-length)
           )
 
-        (define u64vector-copy
-          (generic-vector-copy u64vector-ref u64vector-set! u64vector-length)
+        (define u64vector-copy!
+          (generic-vector-copy! u64vector-ref u64vector-set! u64vector-length)
           )
 
-        (define f32vector-copy
-          (generic-vector-copy f32vector-ref f32vector-set! f32vector-length)
+        (define f32vector-copy!
+          (generic-vector-copy! f32vector-ref f32vector-set! f32vector-length)
           )
 
-        (define f64vector-copy
-          (generic-vector-copy f64vector-ref f64vector-set! f64vector-length)
+        (define f64vector-copy!
+          (generic-vector-copy! f64vector-ref f64vector-set! f64vector-length)
           )
 
         ))))
