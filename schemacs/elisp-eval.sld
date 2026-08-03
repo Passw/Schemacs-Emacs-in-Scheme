@@ -727,12 +727,11 @@
                    (func (view st
                                (=>env-symbol! name)
                                (=>sym-function! name)
-                               ))
-                   )
+                               )))
                (cond
                 (func (%elisp-apply func args-list (view func =>lambda-location*!)))
-                (else (eval-error "void variable" hook)))
-               ))
+                (else (eval-error "void variable" hook))
+                )))
            (define (second hook)
              ;; Second level of indirection. A hook must be a symbol or a
              ;; list of symbols, each symbol must resolve to a function
@@ -741,7 +740,8 @@
               ((not   hook) #f)
               ((null? hook) #f)
               ((and (pair? hook) (symbol? (car hook)))
-               (recurse (third (car hook)) second (cdr hook)))
+               (recurse (third (car hook)) second (cdr hook))
+               )
               ((symbol? hook) (third hook))
               (else
                (eval-error
@@ -791,16 +791,85 @@
         (match args
           (() (eval-error "wrong number of arguments" name 0 'min 1))
           ((hook args ...) (exec-run-hooks control (list hook) args))
-          ))
-      )
+          )))
 
     (define elisp-run-hooks-with-args (elisp-hook-runner "run-hooks-with-args" #f))
 
     (define elisp-run-hook-with-args-until-failure
-      (elisp-hook-runner "run-hook-with-args-until-failure" 'failure))
+      (elisp-hook-runner "run-hook-with-args-until-failure" 'failure)
+      )
 
     (define elisp-run-hook-with-args-until-success
-      (elisp-hook-runner "run-hook-with-args-until-success" 'success))
+      (elisp-hook-runner "run-hook-with-args-until-success" 'success)
+      )
+
+    (define (eval-add-hook hook func depth local)
+      ;; `byte-run.el` needs an initial implementation of `add-hook`,
+      ;; so a built-in implementation is provided here, but this one
+      ;; will be overriden by `subr.el` as soon as it loads. This
+      ;; function does not implement `add-hook` in precisely the same
+      ;; way as GNU Emacs Lisp does as it is only used once before it
+      ;; is replaced by the Emacs Lisp implementation of this
+      ;; function.
+      (cond
+       ((not (symbol? hook))
+        (eval-error "wrong type argument" hook 'expecting "symbol")
+        )
+       ((not (elisp-procedure? func))
+        (eval-error "wrong type argument" func 'expecting "symbol or function")
+        )
+       ((and depth (not (number? depth)))
+        (eval-error "wrong type argument" depth 'expecting "number")
+        )
+       (else
+        (let*((st (*the-environment*))
+              (hook-name (symbol->string hook))
+              (sym (view st (=>env-symbol! hook-name)))
+              (hook-list (view sym (=>sym-value! hook-name)))
+              )
+          (display "hook ") (write hook);;DEBUG
+          (display " contains ") (write hook-list) (newline);;DEBUG
+          (display " ^ will install ") (write func)
+          (display " at depth ") (write depth)
+          (display (if local " locally\n" " globally\n"));;DEBUG
+          (cond
+           ((pair? hook-list)
+            (cond
+             ((pair? (member func hook-list))
+              (display "function ") (write func);;DEBUG
+              (write " already exists in ") (write hook-name) (newline);;DEBUG
+              hook-list
+              )
+             (else
+              (let ((hook-list (cons func hook-list)))
+                (lens-set hook-list sym (=>sym-value! hook-name))
+                hook-list
+                ))))
+           (else
+            (display "hook was empty, now contains ") (write func) (newline);;DEBUG
+            (let ((hook-list (list func)))
+              (lens-set hook-list sym (=>sym-value! hook-name))
+              hook-list
+              )))))))
+
+    (define elisp-add-hook
+      ;; See `eval-add-hook` for comments on the implementation of this function.
+      (lambda args
+        (let ((numargs-err
+               (lambda ()
+                 (eval-error
+                  "wrong number of arguments"
+                  "add-hook" (length args) 'min 2 'max 4
+                  ))))
+          (display "add-hook args: ") (write args) (newline);;DEBUG
+          (match args
+            (() (numargs-err))
+            ((a) (numargs-err))
+            ((a b) (eval-add-hook a b #f #f))
+            ((a b c) (eval-add-hook a b c #f))
+            ((a b c d) (eval-add-hook a b c d))
+            (args (numargs-err))
+            ))))
 
     ;;====================================================================
     ;; Abstract interpreter:
@@ -1991,7 +2060,7 @@
                  (lambda (sym val) (eval-fset st sym val))
                  ))
             (val (eval-form val-expr))
-            (func
+            (func ;;TODO: use eval-indirect-function to get the alias target
              (cond
               ((symbol? val)
                (let*((val (eval-ensure-interned val)))
@@ -2566,6 +2635,35 @@
       (elisp-symbol-op "symbol-function" symbol? eval-symbol-function)
       )
 
+    (define (eval-indirect-function obj)
+      (let ((st (*the-environment*)))
+        (let loop ((obj obj) (history '()))
+          (cond
+           ((symbol? obj)
+            (cond
+             ((memq obj history)
+              (eval-error "cyclcic function indirection" history)
+              )
+             ((sym-type? obj)
+              (let ((func (view obj =>sym-function*!)))
+                (loop func (cons func history))
+                ))
+             (else
+              (let ((sym-obj (view obj =>elisp-symbol!)))
+                (loop sym-obj (cons sym-obj history))
+                ))))
+           (else obj)
+           ))))
+
+    (define (elisp-indirect-function . args)
+      (match args
+        ((obj) (eval-indirect-function obj))
+        (any
+         (eval-error
+          "wrong number of arguments" "indirect-function"
+          (length args) 'expecting 1
+          ))))
+
     (define elisp-fboundp
       (elisp-symbol-op "fboundp" symbol? eval-fboundp)
       )
@@ -2595,10 +2693,11 @@
               ;; values.
               (case weakness
                 ((key value key-and-value key-or-value)
-                 (write-string
-                  "WARNING (ELisp): make-hash-table \":weakness\" argument is ignored\n"
-                  (current-error-port)
-                  ))
+                 (let ((port (current-error-port)))
+                   (write-string "WARNING (ELisp): make-hash-table (:weakness " port)
+                   (write weakness port)
+                   (write-string ") argument is ignored\n" port)
+                   ))
                 (else (values)))
               (let ((key-compare
                      (case testfunc
@@ -2629,6 +2728,28 @@
              (any (eval-error "odd number of arguments"))
              )))))
 
+    (define (elisp-puthash . args)
+      (match args
+        ((key val hash)
+         (cond
+          ((hash-table? hash) (hash-table-set! hash key val) val)
+          (else (eval-error "wrong type argument" "puthash" hash))
+          ))
+        (any (eval-error "wrong number of arguments" "puthash" (length args) 'expecting 3))
+        ))
+
+    (define (eval-gethash key table deflt)
+      (cond
+       ((hash-table? hash) (hash-table-ref/default hash key deflt))
+       (else (eval-error "wrong type argument" "puthash" hash))
+       ))
+
+    (define (elisp-gethash . args)
+      (match args
+        ((key hash) (eval-gethash key table #f))
+        ((key hash deflt) (eval-gethash key table deflt))
+        (any (eval-error "wrong number of arguments" "puthash" (length args) 'expecting 3))
+        ))
 
     (define (elisp-native-comp-function-p . args)
       (match args
@@ -3185,12 +3306,15 @@
          (get              . ,elisp-get)
          (put              . ,elisp-put)
          (symbol-function  . ,elisp-symbol-function)
+         (indirect-function . ,elisp-indirect-function)
          (fboundp          . ,elisp-fboundp)
          (fmakunbound      . ,elisp-fmakunbound)
          (fset             . ,elisp-fset)
          (declare          . ,elisp-void-syntax) ;; pattern matcher special symbol
          (interactive      . ,elisp-void-syntax) ;; pattern matcher special symbol
          (make-hash-table  . ,elisp-make-hash-table)
+         (puthash          . ,elisp-puthash)
+         (gethash          . ,elisp-gethash)
 
          (format           . ,elisp-format)
          (message          . ,elisp-message)
@@ -3219,6 +3343,10 @@
          (run-hooks-with-args              . ,elisp-run-hooks-with-args)
          (run-hook-with-args-until-failure . ,elisp-run-hook-with-args-until-failure)
          (run-hook-with-args-until-success . ,elisp-run-hook-with-args-until-success)
+         (add-hook                         . ,elisp-add-hook)
+         ;; ^ an initial implementation of `add-hook` is needed by
+         ;; `byte-run.el`, but it will be overwritten by `subr.el`.
+
          ;; ------- end of assocaition list -------
          )))
 
