@@ -39,6 +39,7 @@
           =>canonical  =>view-only-lens  =>encapsulate
           =>hash-key!  =>hash-key*!  =>find
           )
+    (only (schemacs vector) vector-copy)
     (only (schemacs lens vector) mutable-vector-type?)
     (only (schemacs cursor)
           new-cursor  cursor-ref  cursor-step!
@@ -2764,6 +2765,40 @@
 
     (define (elisp-list . args) (map scheme->elisp args))
 
+    (define (elisp-concat . args)
+      (call-with-port (open-output-string)
+        (lambda (port)
+          (let loop ((args args) (count 0))
+            (cond
+             ((null? args) (get-output-string port))
+             (else
+              (let ((item (car args)))
+                (cond
+                 ((not item) (loop (cdr args) (+ 1 count)))
+                 ((string? item)
+                  (write-string item port)
+                  (loop (cdr args) (+ 1 count))
+                  )
+                 ((null? item) (loop (cdr args) (+ 1 count)))
+                 (else
+                  (eval-error "wrong type argument" "concat" item 'arg count)
+                  )))))))))
+
+    (define (elisp-copy-sequence seq)
+      (cond
+       ((null? seq) '())
+       ((pair? seq)
+        (let loop ((seq seq))
+          (let ((next (cdr seq)))
+            (cons (car seq) (if (pair? next) (loop next) next))
+            )))
+       ((vector? seq) (vector-copy seq))
+       ((string? seq) (string-copy seq))
+       ;; TODO: copy char tables as well
+       (else
+        (eval-error "wrong type argument" "copy-sequence" seq)
+        )))
+
     (define (elisp-car lst)
       (cond
        ((eq? lst nil) '())
@@ -3259,7 +3294,7 @@
          (cdr      . ,elisp-cdr)
          (car-safe . ,elisp-car-safe)
          (list     . ,elisp-list)
-         (concat   . ,(pure* string-append))
+         (concat   . ,elisp-concat)
          (setcar   . ,(pure-raw 2 "setcar" (lambda args (apply set-car! args) #f)))
          (setcdr   . ,(pure-raw 2 "setcdr" (lambda args (apply set-cdr! args) #f)))
          (nth      . ,(pure 2 'nth elisp-nth))
@@ -3272,6 +3307,7 @@
          (rassq    . ,elisp-rassq)
          (identity . ,elisp-identity)
          (purecopy . ,elisp-identity)
+         (copy-sequence . ,elisp-copy-sequence)
 
          ,(type-predicate 'null      elisp-null?)
          ,(type-predicate 'consp     elisp-pair?)
