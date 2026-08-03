@@ -4,7 +4,15 @@
   (import
     (scheme base)
     (scheme case-lambda)
+    (only (scheme write) display write)
     )
+  (cond-expand
+   ;; To define pretty-printers for Guile
+   (guile-3
+    (import (only (srfi srfi-9 gnu) set-record-type-printer!))
+    )
+   (else)
+   )
   (export
    new-buffer*  buffer-type?*
    buffer-length*  text-load-port*  text-dump-port*
@@ -12,14 +20,49 @@
    get-cursor-index*  set-cursor-index*
    move-cursor-index*  set-cursor-position*
    index->line-column*  get-end-of-line*  get-start-of-line*
-   insert-string*  insert-char*  copy-string*  get-char*
+   insert*  copy-string*  get-char*
    delete-range*  delete-from-cursor*
    get-default-style*  set-default-style*
    get-text-style*  set-text-style*
    get-selection*  set-selection*
    scan-for-char*  scan-for-string*
+
+   make<text-location>  text-location-type?
+   text-location-line   text-location-column
+   text-location  show-text-location
    )
   (begin
+
+    (define-record-type <text-location-type>
+      (make<text-location> line column)
+      text-location-type?
+      (line    text-location-line)
+      (column  text-location-column)
+      )
+
+    (define text-location
+      (case-lambda
+       ((line) (make<text-location> line 0))
+       ((line col) (make<text-location> line col))
+       ))
+
+    (define show-text-location
+      (case-lambda
+       ((loc) (show-location loc (current-output-port)))
+       ((loc port)
+        (display "(text-location " port)
+        (write (text-location-line loc) port)
+        (display " " port)
+        (write (text-location-column loc) port)
+        (display ")" port)
+        )))
+
+    (cond-expand
+     (guile
+      (set-record-type-printer! <text-location-type> show-location)
+      )
+     (else)
+     )
 
     (define buffer-type?*
       ;; Returns `#t` only if the applied argument `BUFFER` is an
@@ -43,35 +86,48 @@
          (error "`buffer-length` not defined" buffer)
          )))
 
+    (define undefined-text-load-port
+      (case-lambda
+       ((buffer port) (undefined-text-load-port buffer port #f))
+       ((buffer port flags)
+        (error "`text-load-port` not defined" buffer port flags)
+        )))
+
     (define text-load-port*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-input-file`, open a text file for reading at the
-      ;; `FILEPATH` and place it's content into the text buffer at the
-      ;; current cursor position. The `FLAGS` argument is a set of
-      ;; properties expressed as a `(schemacs vbal)` data structure,
-      ;; it can tweak the parameters of the file loading
-      ;; operation. This could, for example, tell Gtk to parse HTML in
-      ;; the file and set text properties according to HTML tags.
+      ;; Takes a `BUFFER`, and a character `PORT` similar to ports
+      ;; created by `open-input-file`. This function must read
+      ;; characters from the given `PORT` until it returns a value
+      ;; that satisfies the `eof-object?` predicate, each character
+      ;; should be buffered into the text buffer. The port is not
+      ;; closed. Takes a third `FLAGS` argument, which is used to
+      ;; specify a set of properties expressed as a `(schemacs vbal)`
+      ;; data structure, it can tweak the parameters of the file
+      ;; loading operation. This could, for example, tell Gtk to parse
+      ;; HTML in the file and set text properties according to HTML
+      ;; tags.
       ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer filepath flags)
-         (error "`text-load-port` not defined" buffer filepath flags)
-         )))
+      (make-parameter undefined-text-load-port)
+      )
+
+    (define undefined-text-dump-port
+      (case-lambda
+       ((buffer port) (undefined-text-dump-port buffer port #f))
+       ((buffer port flags)
+        (error "`text-dump-port` not defined" buffer port flags)
+        )))
 
     (define text-dump-port*
-      ;; Using a `FILEPATH` of the same type that would be applied to
-      ;; `open-output-file`, open a text file for writing at the
-      ;; `FILEPATH` and write the content of the buffer to the file.
-      ;; The `FLAGS` argument is a set of properties expressed as a
+      ;; Takes a `BUFFER` and a character `PORT` similar to ports
+      ;; created by `open-output-file`, and write all characters in
+      ;; the buffer to this port. The port argument is not closed. The
+      ;; `FLAGS` argument is a set of properties expressed as a
       ;; `(schemacs vbal)` data structure, it can tweak the parameters
       ;; of the file loading operation. This could, for example, tell
       ;; Gtk to parse HTML in the file and set text properties
       ;; according to HTML tags.
       ;;--------------------------------------------------------------
-      (make-parameter
-       (lambda (buffer filepath flags)
-         (error "`text-dump-port` not defined" buffer filepath flags)
-         )))
+      (make-parameter undefined-text-dump-port)
+      )
 
     (define style-type?*
       ;; Returns `#t` only if the applied argument `STYLE` is an
@@ -158,19 +214,13 @@
          (error "`get-start-of-line` not defined" buffer)
          )))
 
-    (define insert-string*
-      ;; Insert a Scheme string into the current buffer at the current
-      ;; cursor position using the current style.
+    (define insert*
+      ;; Insert a Scheme string or char into the current buffer at the
+      ;; current cursor position using the current style.
       ;;--------------------------------------------------------------
       (make-parameter
-       (lambda (buffer str)
-         (error "`insert-string` not defined" buffer str)
-         )))
-
-    (define insert-char*
-      (make-parameter
-       (lambda (buffer ch)
-         (error "`insert-char` not defined" buffer ch)
+       (lambda (buffer str-or-char)
+         (error "`insert-string` not defined" buffer str-or-char)
          )))
 
     (define copy-string*

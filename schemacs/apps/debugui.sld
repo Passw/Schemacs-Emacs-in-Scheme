@@ -198,7 +198,7 @@
            (let loop ((uarg (uarg->integer 1 uarg)))
              (cond
               ((< 0 uarg)
-               (impl/insert-char (buffer-impl buf) c)
+               (impl/insert (buffer-impl buf) c)
                (loop (- uarg 1))
                )
               (else #f)
@@ -216,11 +216,8 @@
 
     (define (insert string-or-char)
       (let ((buf (current-buffer)))
-        (cond
-         ((char? string-or-char) (impl/insert-char (buffer-impl buf) string-or-char))
-         ((string? string-or-char) (impl/insert-string (buffer-impl buf) string-or-char))
-         (error "argument must be a string or char" string-or-char)
-         )))
+        (impl/insert (buffer-impl buf) string-or-char)
+        ))
 
     (define delete-char
       (new-command

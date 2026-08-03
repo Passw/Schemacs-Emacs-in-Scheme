@@ -11,7 +11,7 @@
     get-cursor-index  set-cursor-index
     move-cursor-index  set-cursor-position
     index->line-column  get-end-of-line  get-start-of-line
-    insert-string  insert-char  copy-string  get-char
+    insert  copy-string  get-char
     delete-range  delete-from-cursor
     get-default-style  set-default-style
     get-text-style  set-text-style
@@ -19,7 +19,10 @@
     scan-for-char  scan-for-string
     get-tab-stops  set-tab-stops
     get-writing-direction  set-writing-direction
-   )
+
+    ;; Re-exporting from (schemacs ui text-buffer-impl)
+    make<text-location>  text-location-line  text-location-column
+    )
   (begin
     (define (new-buffer . args) (apply (new-buffer*) args))
     (define (buffer-type? . args) (apply (buffer-type?*) args))
@@ -35,8 +38,7 @@
     (define (index->line-column . args) (apply (index->line-column*) args))
     (define (get-end-of-line . args) (apply (get-end-of-line*) args))
     (define (get-start-of-line . args) (apply (get-start-of-line*) args))
-    (define (insert-string . args) (apply (insert-string*) args))
-    (define (insert-char . args) (apply (insert-char*) args))
+    (define (insert . args) (apply (insert*) args))
     (define (copy-string . args) (apply (copy-string*) args))
     (define (get-char . args) (apply (get-char*) args))
     (define (delete-range . args) (apply (delete-range*) args))

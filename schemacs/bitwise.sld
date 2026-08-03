@@ -5,7 +5,7 @@
      (import
        (only (srfi 60)
              bit-set?  copy-bit
-             logior  logand  logxor
+             logior  logand  logxor logbit?
              bitwise-ior  bitwise-and  bitwise-xor
              arithmetic-shift
              ))
@@ -20,12 +20,17 @@
     ((or chibi stklos (library (srfi 151)))
      (import
        (only (srfi 151)
-             bit-set?  logbit?  copy-bit
-             logand  logior  logxor
+             bit-set? copy-bit
              bitwise-ior  bitwise-and  bitwise-xor
              arithmetic-shift
              ))
-     ))
+     (begin
+       (define logbit? bit-set?)
+       (define lognot  bitwise-not)
+       (define logand  bitwise-and)
+       (define logior  bitwise-ior)
+       (define logxor  bitwise-xor)
+       )))
   (cond-expand
     (mit
      (export)
@@ -44,9 +49,7 @@
       logior  logand  logxor
       bitwise-ior  bitwise-and  bitwise-xor
       arithmetic-shift
-      )
-     (begin (define logbit? bit-set?))
-     )
+      ))
     (else
      (export
       bit-set?  logbit?  copy-bit

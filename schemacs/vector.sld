@@ -7,7 +7,10 @@
   ;; program without having to write a `COND-EXPAND` statement
   ;; everywhere one of these APIs are used.
 
-  (import (scheme base))
+  (import
+   (scheme base)
+   (scheme case-lambda)
+   )
   (export
    vector-fold
    )
@@ -75,13 +78,18 @@
        )))
 
   (cond-expand
-
     ((or (library (srfi 4))
          (library (srfi 160))
          )
      (import
        (only
         (srfi 4)
+        s8vector? make-s8vector s8vector s8vector-length
+        s8vector-ref s8vector-set! s8vector->list list->s8vector
+
+        u8vector? make-u8vector u8vector u8vector-length
+        u8vector-ref u8vector-set! u8vector->list list->u8vector
+
         s16vector? make-s16vector s16vector s16vector-length
         s16vector-ref s16vector-set! s16vector->list list->s16vector
 
@@ -105,32 +113,138 @@
 
         f64vector? make-f64vector f64vector f64vector-length
         f64vector-ref f64vector-set! f64vector->list list->f64vector
-        )))
+        ))))
 
-    (export
-     s16vector? make-s16vector s16vector s16vector-length
-     s16vector-ref s16vector-set! s16vector->list list->s16vector
+  (export
+   s8vector? make-s8vector s8vector s8vector-length
+   s8vector-ref s8vector-set! s8vector->list list->s8vector
 
-     u16vector? make-u16vector u16vector u16vector-length
-     u16vector-ref u16vector-set! u16vector->list list->u16vector
+   u8vector? make-u8vector u8vector u8vector-length
+   u8vector-ref u8vector-set! u8vector->list list->u8vector
 
-     s32vector? make-s32vector s32vector s32vector-length
-     s32vector-ref s32vector-set! s32vector->list list->s32vector
+   s16vector? make-s16vector s16vector s16vector-length
+   s16vector-ref s16vector-set! s16vector->list list->s16vector
 
-     u32vector? make-u32vector u32vector u32vector-length
-     u32vector-ref u32vector-set! u32vector->list list->u32vector
+   u16vector? make-u16vector u16vector u16vector-length
+   u16vector-ref u16vector-set! u16vector->list list->u16vector
 
-     s64vector? make-s64vector s64vector s64vector-length
-     s64vector-ref s64vector-set! s64vector->list list->s64vector
+   s32vector? make-s32vector s32vector s32vector-length
+   s32vector-ref s32vector-set! s32vector->list list->s32vector
 
-     u64vector? make-u64vector u64vector u64vector-length
-     u64vector-ref u64vector-set! u64vector->list list->u64vector
+   u32vector? make-u32vector u32vector u32vector-length
+   u32vector-ref u32vector-set! u32vector->list list->u32vector
 
-     f32vector? make-f32vector f32vector f32vector-length
-     f32vector-ref f32vector-set! f32vector->list list->f32vector
+   s64vector? make-s64vector s64vector s64vector-length
+   s64vector-ref s64vector-set! s64vector->list list->s64vector
 
-     f64vector? make-f64vector f64vector f64vector-length
-     f64vector-ref f64vector-set! f64vector->list list->f64vector
-     )
+   u64vector? make-u64vector u64vector u64vector-length
+   u64vector-ref u64vector-set! u64vector->list list->u64vector
 
-    ))
+   f32vector? make-f32vector f32vector f32vector-length
+   f32vector-ref f32vector-set! f32vector->list list->f32vector
+
+   f64vector? make-f64vector f64vector f64vector-length
+   f64vector-ref f64vector-set! f64vector->list list->f64vector
+   )
+
+   (cond-expand
+     ((and (library (srfi 160)) 
+           (not (library (srfi 4)))
+           )
+      (import
+        s8vector-copy!   u8vector-copy!
+        s16-vector-copy! u16vector-copy!
+        s32-vector-copy! u32vector-copy!
+        s64-vector-copy! u64vector-copy!
+        f32-vector-copy! f64vector-copy!
+        )
+      (export
+       s8vector-copy!   u8vector-copy!
+       s16-vector-copy! u16vector-copy!
+       s32-vector-copy! u32vector-copy!
+       s64-vector-copy! u64vector-copy!
+       f32-vector-copy! f64vector-copy!
+       ))
+     (else
+      (begin
+
+        (define (generic-vector-copy! iref iset length)
+          (define (copy! to-vec to from-vec start end)
+            (let*((start    (min start end))
+                  (end      (max start end))
+                  (copy-len (- end start))
+                  (final    (+ to copy-len))
+                  )
+              (cond
+               ;; Requesting copying of zero elements, already done.
+               ((= 0 copy-len) (values))
+               ;; To copy a range to itself, already done.
+               ((and (eq? to-vec from-vec) (= to-vec start)) (values))
+               ;; If there is overlap between the source and destination
+               ((and (eq? to-vec from-vec) (< start to end))
+                (let loop ((from (- end 1)) (i (- (+ to copy-len) 1)))
+                  (iset to-vec i (iref from-vec from))
+                  (cond
+                   ((<= from to) (values))
+                   (else (loop (- from 1) (- i 1)))
+                   )))
+               (else
+                (let loop ((from start) (i to))
+                  (cond
+                   ((>= from end) (values))
+                   (else
+                    (iset to-vec i (iref from-vec from))
+                    (loop (+ 1 from) (+ 1 i))
+                    )))))))
+          (case-lambda
+            ((to-vec to from-vec)
+             (copy! to-vec to from-vec 0 (length from-vec))
+             )
+            ((to-vec to from-vec start)
+             (copy! to-vec to from-vec start (length from-vec))
+             )
+            ((to-vec to from-vec start end)
+             (copy! to-vec to from-vec start end)
+             )))
+
+        (define s8vector-copy!
+          (generic-vector-copy! s8vector-ref s8vector-set! s8vector-length)
+          )
+
+        (define u8vector-copy!
+          (generic-vector-copy! u8vector-ref u8vector-set! u8vector-length)
+          )
+
+        (define s16vector-copy!
+          (generic-vector-copy! s16vector-ref s16vector-set! s16vector-length)
+          )
+
+        (define u16vector-copy!
+          (generic-vector-copy! u16vector-ref u16vector-set! u16vector-length)
+          )
+
+        (define s32vector-copy!
+          (generic-vector-copy! s32vector-ref s32vector-set! s32vector-length)
+          )
+
+        (define u32vector-copy!
+          (generic-vector-copy! u32vector-ref u32vector-set! u32vector-length)
+          )
+
+        (define s64vector-copy!
+          (generic-vector-copy! s64vector-ref s64vector-set! s64vector-length)
+          )
+
+        (define u64vector-copy!
+          (generic-vector-copy! u64vector-ref u64vector-set! u64vector-length)
+          )
+
+        (define f32vector-copy!
+          (generic-vector-copy! f32vector-ref f32vector-set! f32vector-length)
+          )
+
+        (define f64vector-copy!
+          (generic-vector-copy! f64vector-ref f64vector-set! f64vector-length)
+          )
+
+        ))))

@@ -51,7 +51,6 @@
         (import
           (only (srfi 128)
                 default-hash
-                string-hash
                 ))
         )))
     )
