@@ -12,6 +12,7 @@
    (scheme case-lambda)
    )
   (export
+   vector-copy
    vector-fold
    )
 

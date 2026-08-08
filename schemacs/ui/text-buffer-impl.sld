@@ -59,6 +59,7 @@
 
     (cond-expand
      (guile
+      (define show-location display)
       (set-record-type-printer! <text-location-type> show-location)
       )
      (else)
