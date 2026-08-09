@@ -48,7 +48,7 @@
 
     (define show-text-location
       (case-lambda
-       ((loc) (show-location loc (current-output-port)))
+       ((loc) (show-text-location loc (current-output-port)))
        ((loc port)
         (display "(text-location " port)
         (write (text-location-line loc) port)
@@ -59,8 +59,7 @@
 
     (cond-expand
      (guile
-      (define show-location display)
-      (set-record-type-printer! <text-location-type> show-location)
+      (set-record-type-printer! <text-location-type> show-text-location)
       )
      (else)
      )
