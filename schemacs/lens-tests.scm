@@ -2,6 +2,7 @@
   (scheme base)
   (scheme cxr)
   (schemacs lens)
+  (only (schemacs comparator) make-default-comparator)
   (only (schemacs hash-table)
         hash-table?  default-hash  string-hash
         hash-table-set!
@@ -10,6 +11,7 @@
         alist->hash-table
         hash-table->alist
         hash-table-for-each
+        make-string-comparator
         )
   (schemacs test)
   )
@@ -43,10 +45,10 @@
 (test-equal 1 (lens-unit-count =>list3-first))
 (test-equal 9 (lens-unit-count (lens =>list3-end =>list3-end =>list3-third)))
 
-(define tt (make-hash-table equal? default-hash))
+(define tt (make-hash-table (make-default-comparator)))
 (define (=>tt-key key) (=>hash-key*! key))
 
-(define h (alist->hash-table '(("one" . 1) ("zero" . 0))  string=? string-hash))
+(define h (alist->hash-table '(("one" . 1) ("zero" . 0)) (make-string-comparator)))
 
 (define h2
   (alist->hash-table
@@ -57,12 +59,13 @@
            ,(alist->hash-table
              '(("four" . 4)
                ("five" . 5))
-             string=? string-hash
+             (make-string-comparator)
              ))
           ("three" . 3))
-        string=? string-hash
+        (make-string-comparator)
         )))
-   string=? string-hash))
+   (make-string-comparator)
+   ))
 
 (test-equal 0 (view h (=>tt-key "zero")))
 (test-equal 1 (view h (=>tt-key "one")))
@@ -136,7 +139,7 @@
  (vector
   "zero" "one"
   (lens-set
-   "how are you" (make-hash-table string=? string-hash) "hello"
+   "how are you" (make-hash-table (make-string-comparator)) "hello"
    )
   "three"
   )
@@ -171,18 +174,18 @@
             (alist->hash-table ;; at index 0
              `(("C" . "go-up")
                ("D" . "go-down"))
-             string=? string-hash
+             (make-string-comparator)
              )
             (alist->hash-table ;; at index 1
              '(("E" . "turn-around")
                ("F" . "jump"))
-             string=? string-hash
+             (make-string-comparator)
              )
             #f ;; at index 2
             )))
-        string=? string-hash
+        (make-string-comparator)
         )))
-   string=? string-hash
+   (make-string-comparator)
    ))
 
 (test-equal 0 (view ht "zero"))
@@ -349,6 +352,7 @@
           #f "Hydrogen" "Helium" "Lithium" "Berylium" "Boron"
           "Carbon" "Nitrogen" "Oxygen" "Flourine" "Neon")))
       )))
+   (make-default-comparator)
    ))
 
 (test-equal "Hydrogen"
@@ -510,7 +514,7 @@
 
 (test-equal '(("" . "Hello"))
   (hash-table->alist
-   (lens-set "Hello" (make-hash-table string=? string-hash) =>initial)))
+   (lens-set "Hello" (make-hash-table (make-string-comparator)) =>initial)))
 
 (test-equal '("Hello")
   (lens-set "Hello" '() =>initial))

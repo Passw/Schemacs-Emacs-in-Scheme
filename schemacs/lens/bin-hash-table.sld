@@ -10,19 +10,18 @@
           =>canonical =>encapsulate)
     (only (schemacs pretty)
            pretty print bracketed newline-indent line-break)
+    (only (schemacs comparator) make-equal-comparator)
     (only (schemacs hash-table) ; Standard hash tables
           hash-table-empty?
           default-hash make-hash-table alist->hash-table hash-table->alist
           hash-table-size hash-table-copy hash-table-for-each
           hash-table-update!/default hash-table-set!
           hash-table-fold hash-table?
-          )
-    )
+          ))
 
   (export
    *bin-hash-table-init-size*
-   *default-make-hash-table*
-   *default-key-hash*
+   *bin-hash-comparator*
    make<bin-hash-table>
    bin-hash-table-type?
    empty-bin-hash-table
@@ -44,13 +43,13 @@
   (begin
 
     (define-record-type <bin-hash-table-type>
-      ;; This exists because SRFI-69 does not provide any API for
-      ;; discovering the number of bins in the vector backing store of the
-      ;; hash table, even though it is an argument to the constructor.
+      ;; It might be better in the future for this to be replaced with
+      ;; a proper vector-backed hash table implemetaion.
       (make<bin-hash-table> store-size hash-table)
       bin-hash-table-type?
       (store-size get-bin-hash-table-store-size set!bin-hash-table-store-size)
-      (hash-table get-bin-hash-table-hash set!bin-hash-table-hash))
+      (hash-table get-bin-hash-table-hash set!bin-hash-table-hash)
+      )
 
     (define *bin-hash-table-init-size* (make-parameter 11))
 
@@ -61,8 +60,8 @@
          (make<bin-hash-table> init-size ((*default-make-hash-table*) init-size))
          )))
 
-    (define *default-key-hash*
-      (make-parameter (lambda (key size) (modulo (default-hash key) size)))
+    (define *bin-hash-comparator*
+      (make-parameter (make-equal-comparator))
       )
 
     (define (bin-hash-table-size bht)
@@ -73,7 +72,7 @@
       (make-parameter
        (lambda (size)
          ;; TODO: make use of the `SIZE` parameter. Look into SRFI 162
-         (make-hash-table equal? (*default-key-hash*))
+         (make-hash-table (*bin-hash-comparator*))
          )))
 
     (define empty-bin-hash-table 

@@ -15,6 +15,10 @@
     (only (scheme file) open-input-file)
     (only (scheme write) display write)
     (only (schemacs editor command) command-type? command-procedure)
+    (only (schemacs comparator)
+          make-eq-comparator     make-eqv-comparator
+          make-equal-comparator  make-default-comparator
+          )
     (only (schemacs hash-table)
           hash-table?
           hash-table-empty?
@@ -26,8 +30,8 @@
           hash-table-delete!
           hash-table-ref/default
           hash-table-for-each
+          make-string-comparator
           default-hash
-          string-hash
           )
     (only (schemacs pretty) pretty print line-break)
     (only (schemacs lens)
@@ -2346,7 +2350,7 @@
          (else '())))
       (cond
        ((hash-table? plist) plist)
-       ((pair? plist) (alist->hash-table (filter plist) string=? string-hash))
+       ((pair? plist) (alist->hash-table (filter plist) (make-string-comparator)))
        (else #f)
        ))
 
@@ -2729,24 +2733,27 @@
                 (else (values)))
               (let ((key-compare
                      (case testfunc
-                       ((eq) eval-eq)
-                       ((eq?) eq?)
-                       ((eql) eval-eql)
-                       ((eql?) eqv?)
-                       ((equal) eval-equal)
-                       ((equal?) equal?)
+                       ((eq) make-eq-comparator)
+                       ((eq?) make-eq-comparator)
+                       ((eql) make-eqv-comparator)
+                       ((eql?) make-eqv-comparator)
+                       ((equal) make-equal-comparator)
+                       ((equal?) make-equal-comparator)
                        (else
                         (cond
-                         ((eq? testfunc eq?) eq?)
-                         ((eq? testfunc eqv?) eqv?)
-                         ((eq? testfunc equal?) equal?)
-                         ((eq? testfunc elisp-equal) elisp-equal)
-                         ((eq? testfunc elisp-eql) elisp-eql)
-                         ((eq? testfunc elisp-eq) elisp-eq)
+                         ((eq? testfunc eq?) make-eq-comparator)
+                         ((eq? testfunc eqv?) make-eqv-comparator)
+                         ((eq? testfunc equal?) make-equal-comparator)
+                         ((eq? testfunc elisp-equal) make-equal-comparator)
+                         ((eq? testfunc elisp-eql) make-eqv-comparator)
+                         ((eq? testfunc elisp-eq) make-eq-comparator)
                          (else #f)
                          )))))
                 (cond
-                 (key-compare (make-hash-table key-compare))
+                 (key-compare
+                  (make-hash-table
+                   (or (and key-compare (key-compare)) (make-default-comparator))
+                   ))
                  (else
                   (eval-error "invalid hash table test" testfunc)
                   ))))
@@ -2768,8 +2775,8 @@
 
     (define (eval-gethash key table deflt)
       (cond
-       ((hash-table? hash) (hash-table-ref/default hash key deflt))
-       (else (eval-error "wrong type argument" "puthash" hash))
+       ((hash-table? table) (hash-table-ref/default table key deflt))
+       (else (eval-error "wrong type argument" "puthash" table))
        ))
 
     (define (elisp-gethash . args)

@@ -39,12 +39,13 @@
           *unicode-max-code-point*
           =>lexer-filepath*!
           )
+    (only (schemacs comparator) make-comparator)
     (only (schemacs hash-table)
           make-hash-table
           hash-table-ref
           hash-table-set!
           hash-table-ref/default
-          default-hash
+          string-hash
           ))
 
   (export
@@ -1313,7 +1314,7 @@
               ))
            (else table)
            )))
-       (make-hash-table equal?)
+       (make-hash-table (make-comparator string? equal? string<? string-hash))
        o))
 
     (define elisp-form-gather-symbols
@@ -1948,7 +1949,7 @@
         (cond
          (table (hash-table-set! table int-id value))
          (else
-          (let ((table (make-hash-table = default-hash)))
+          (let ((table (make-hash-table (make-integer-comparator))))
             (set!elisp-parse-backref-dict st table)
             (hash-table-set! table int-id value)
             value

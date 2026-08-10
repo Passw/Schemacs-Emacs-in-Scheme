@@ -28,7 +28,7 @@
           hash-table-delete!
           hash-table-ref/default
           hash-table-for-each
-          string-hash
+          make-string-comparator
           )
     (only (schemacs lens)
           unit-lens  record-unit-lens  lens
@@ -529,7 +529,7 @@
         ((size) (new-elstkfrm size '()))
         ((size bindings)
          ;; TODO: make use of the `SIZE` argument
-         (let ((elstkfrm (make-hash-table string=? string-hash)))
+         (let ((elstkfrm (make-hash-table (make-string-comparator))))
            (let loop ((bindings bindings))
              (cond
               ((null? bindings) elstkfrm)
@@ -1286,7 +1286,7 @@
         (() (new-empty-obarray *default-obarray-size*))
         ((size)
          ;; TODO: make use of the `SIZE` argument
-         (make-hash-table string=? string-hash)
+         (make-hash-table (make-string-comparator))
          )))
 
     (define *max-lisp-eval-depth* (make-parameter 1600))

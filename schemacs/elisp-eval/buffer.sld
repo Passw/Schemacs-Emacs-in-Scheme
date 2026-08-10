@@ -5,7 +5,7 @@
     (only (schemacs lens) record-unit-lens)
     )
   (only (schemacs hash-table)
-        make-hash-table  default-hash
+        make-hash-table
         hash-table-ref/default  hash-table-set!
         )
   (export
@@ -84,7 +84,7 @@
       )
 
     (define (new-buffer-table)
-      (make<buffer-table> 0 #f (make-hash-table string=?))
+      (make<buffer-table> 0 #f (make-hash-table))
       )
 
     (define *buffer-table*

@@ -20,6 +20,7 @@
     (only (schemacs hash-table)
           make-hash-table  default-hash
           hash-table-ref/default  hash-table-set!
+          make-string-comparator
           )
     (only (schemacs lens)
           view record-unit-lens lens-set update =>hash-key!
@@ -255,7 +256,7 @@
       )
 
     (define *buffer-table*
-      (make-parameter (make<buffer-table> 0 #f (make-hash-table string=?)))
+      (make-parameter (make<buffer-table> 0 #f (make-hash-table (make-string-comparator))))
       )
 
     (define (buffer-table-next-count! bt)

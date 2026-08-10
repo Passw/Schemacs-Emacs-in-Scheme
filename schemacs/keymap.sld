@@ -33,31 +33,23 @@
     (only (srfi 1) fold concatenate find)
     (only (schemacs string) string-fold)
     (only (schemacs bitwise) bitwise-ior bitwise-and)
+    (only (schemacs comparator)
+          make-eq-comparator  make-eqv-comparator
+          make-equal-comparator
+          )
     (only (schemacs hash-table)
           hash-table-empty?
           string-hash alist->hash-table hash-table->alist
           hash-table? hash-table-size make-hash-table
           hash-table-fold hash-table-ref/default
-          hash-table-copy hash-table-set!)
-    )
+          hash-table-copy hash-table-set!
+          ))
 
   (cond-expand
     (guile-3
      (import
-       (only (srfi srfi-9 gnu) set-record-type-printer!)))
-    (else))
-
-  (cond-expand
-    (gauche
-     (import
-       (only (srfi 114)
-             eq-comparator
-             eqv-comparator
-             equal-comparator
-             comparator-comparison-procedure
-             comparator-hash-function
-             ))
-     )
+       (only (srfi srfi-9 gnu) set-record-type-printer!)
+       ))
     (else)
     )
 
@@ -124,6 +116,7 @@
    modal-lookup-state-keymap
    modal-lookup-state-step!
    )
+
   (begin
     ;; =================================================================================================
 
@@ -139,8 +132,10 @@
       (hash-table-fold
        thing
        (lambda (key val head)
-         (cons (cons (*->expr key) (*->expr val)) head))
-       '()))
+         (cons (cons (*->expr key) (*->expr val)) head)
+         )
+       '()
+       ))
 
     ;; -------------------------------------------------------------------------------------------------
 
@@ -163,13 +158,15 @@
     (define (empty-char-table)
       ;; Construct a completely key table.
       ;;------------------------------------------------------------------
-      (make<char-table-type> #f #f))
+      (make<char-table-type> #f #f)
+      )
 
     (define (char-table-size kt)
       (if (not kt) 0
           (let ((size-of (lambda (bhm) (if bhm (bin-hash-table-size bhm) 0))))
             (+ (size-of (char-table-ascii-map kt))
-               (size-of (char-table-utf-map kt))))))
+               (size-of (char-table-utf-map kt))
+               ))))
 
     (define char-table-copy
       ;; Deep-copy the given key table, that is, allocate a new key table
@@ -189,13 +186,15 @@
               (if ascii-map (bin-hash-table-copy ascii-map copy-leaves) #f)
               (if utf-map (bin-hash-table-copy utf-map copy-leaves) #f)
               )))
-          (else kt)))))
+          (else kt)
+          ))))
 
     (define (char-table-empty? kt)
       (let ((empty? (lambda (bht) (or (not bht) (bin-hash-table-empty? bht)))))
         (or (not kt)
             (and (empty? (char-table-ascii-map kt))
-                 (empty? (char-table-utf-map kt))))))
+                 (empty? (char-table-utf-map kt))
+                 ))))
 
     (define (char-table-hash key table-size)
       ;; The hash function used to map characters to integers for key table indicies.
@@ -204,26 +203,32 @@
        (cond
         ((string? key) (string-hash key))
         ((char?   key) (char->integer key))
-        (else (error "key must be a char or string value" key)))
-       table-size))
+        (else (error "key must be a char or string value" key))
+        )
+       table-size
+       ))
 
     (define =>ascii-map
       (record-unit-lens
        char-table-ascii-map
        set!char-table-ascii-map
-       '=>ascii-map))
+       '=>ascii-map
+       ))
 
     (define =>ascii-map?
-      (=>canonical =>ascii-map empty-char-table char-table-empty?))
+      (=>canonical =>ascii-map empty-char-table char-table-empty?)
+      )
 
     (define =>utf-map
       (record-unit-lens
        char-table-utf-map
        set!char-table-utf-map
-       '=>utf-map))
+       '=>utf-map
+       ))
 
     (define =>utf-map?
-      (=>canonical =>utf-map empty-char-table char-table-empty?))
+      (=>canonical =>utf-map empty-char-table char-table-empty?)
+      )
 
     (define *char-table-ascii-min-code-point* (char->integer #\space))
     (define *char-table-ascii-max-code-point* (char->integer #\delete))
@@ -241,7 +246,8 @@
       ;;
       ;; See the "char-table-rebalance!" function.
       ;;------------------------------------------------------------------
-      (+ 1 (- *char-table-ascii-max-code-point* *char-table-ascii-min-code-point*)))
+      (+ 1 (- *char-table-ascii-max-code-point* *char-table-ascii-min-code-point*))
+      )
 
     (define (lower-char? char)
       ;; Pass a character, if the character is within the range of
@@ -249,25 +255,30 @@
       ;;------------------------------------------------------------------
       (<= *char-table-ascii-min-code-point*
           (char->integer char)
-          *char-table-ascii-max-code-point*))
+          *char-table-ascii-max-code-point*
+          ))
 
     (define (char-table-weight kt)
       (+ (hash-table-size (char-table-ascii-map kt))
-         (hash-table-size (char-table-utf-map kt))))
+         (hash-table-size (char-table-utf-map kt))
+         ))
 
     (define (char-table-hash->expr head hmap)
       (hash-table-fold
        hmap
        (lambda (key elem head)
-         (cons (cons key (*->expr elem)) head))
-       head))
+         (cons (cons key (*->expr elem)) head)
+         )
+       head
+       ))
 
     (define (char-table->expr kt)
       (list
        'char-table
        (char-table-hash->expr
         (char-table-hash->expr '() (char-table-utf-map kt))
-        (char-table-ascii-map kt))))
+        (char-table-ascii-map kt)
+        )))
 
     (define (char-table alist)
       ;; Construct a new key table. Returns a cons with the minimum
@@ -277,8 +288,10 @@
         (char-table-rebalance!
          (fold
           (lambda (pair kt)
-            (char-table-set! #f (cdr pair) kt (car pair)))
-          kt alist))))
+            (char-table-set! #f (cdr pair) kt (car pair))
+            )
+          kt alist
+          ))))
 
     (define (char-table-bin-rebalance! bin-hash-table)
       ;; This function rebalances a single hash table. Two values are
@@ -295,17 +308,10 @@
                 bin-hash-table
                 (make<bin-hash-table>
                  size
-                 (cond-expand
-                   (gauche
-                    (alist->hash-table
-                     (hash-table->alist ht)
-                     equal-comparator
-                     ))
-                   (else
-                    (alist->hash-table
-                     ;; TODO: make use of the `SIZE` parameter
-                     (hash-table->alist ht)
-                     eqv? char-table-hash))))))))
+                 (alist->hash-table
+                  (hash-table->alist ht)
+                  (make-equal-comparator)
+                  ))))))
 
     (define (char-table-rebalance! kt)
       ;; It is expected that there will be a lot of character maps loaded
@@ -327,10 +333,13 @@
       ;;------------------------------------------------------------------
       (let ((rebalance!
              (lambda (bin-hash-char-table)
-               (char-table-bin-rebalance! bin-hash-char-table))))
+               (char-table-bin-rebalance! bin-hash-char-table)
+               )))
         (let*((kt (update rebalance! kt =>ascii-map?))
-              (kt (update rebalance! kt   =>utf-map?)))
-          kt)))
+              (kt (update rebalance! kt   =>utf-map?))
+              )
+          kt
+          )))
 
     ;; (define kt (char-table #f '((#\a . "A") (#\b . "B") (#\c . "C") (#\d . "D"))))
 
@@ -342,13 +351,7 @@
       ;; of a <CHAR-TABLE-TYPE>, with the given number of bins.
       ;;------------------------------------------------------------------
       ;; TODO: make use of the `SIZE` parameter
-      (cond-expand
-        (gauche
-         (make-hash-table equal-comparator)
-         )
-        (else
-         (make-hash-table eqv? char-table-hash)
-         ))
+      (make-hash-table (make-equal-comparator))
       )
 
     (define (=>char-table-char do-rebalance char)
@@ -524,20 +527,11 @@
         (H       . ,hyper-bit)
         (hyper   . ,hyper-bit)
         (A       . ,alt-bit)
-        (alt     . ,alt-bit)))
+        (alt     . ,alt-bit)
+        ))
 
     (define sym-lookup-table
-      (cond-expand
-        (gauche
-         (alist->hash-table
-          sym-lookup-table-alist
-          (comparator-comparison-procedure eq-comparator)
-          (comparator-hash-function eq-comparator)
-          ))
-        (else
-         ;; TODO: the lookup table should have a vector of size 14
-         (alist->hash-table sym-lookup-table-alist eqv? sym-lookup-hash-func)
-         ))
+      (alist->hash-table sym-lookup-table-alist (make-eq-comparator))
       )
 
     (define (modifier->integer sym)
@@ -873,16 +867,8 @@
       ;; this because the use of super, hyper and alt modifiers are so
       ;; unusual in normal Emacs usage that I expect these upper 3 bins
       ;; will almost never be used.
-      (cond-expand
-        (gauche
-         (make-hash-table eqv-comparator)
-         )
-        (else
-         (make-hash-table
-          eqv?
-          (lambda (x size) (if (> x 3) (+ 4 (modulo x (- size 4))) x))
-          ;; TODO: the size of this table should be 7
-          ))))
+      (make-hash-table (make-eqv-comparator))
+      )
 
 
     (define (=>keymap-layer-mod-table-key? key)
@@ -890,7 +876,8 @@
       ;; KEYMAP-LAYER-MOD-TABLE.
       (lens
        =>keymap-layer-mod-table?
-       (=>canonical (=>hash-key! key) default-make-keymap-layer-mod-table hash-table-empty?)))
+       (=>canonical (=>hash-key! key) default-make-keymap-layer-mod-table hash-table-empty?)
+       ))
 
 
     (define (=>keymap-layer-index! key-path)
