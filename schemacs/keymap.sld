@@ -92,11 +92,13 @@
    keymap-layer-type?
    keymap-layer
    keymap-layer->alist
+   keymap-layer-assoc-split
    keymap-layer-copy
    keymap-layer-print
    keymap-layer-action
    map-key
    keymap-layer-lookup
+   keymap-layer-lookup-binding-key
    keymap-layer-ref
    keymap-layer-update!
    prefer-new-bindings
@@ -111,7 +113,9 @@
    =>keymap-layers*!
    =>keymap-label!
    =>keymap-top-layer!
-   keymap keymap-lookup keymap->layers-list
+   keymap keymap-lookup
+   keymap->layers-list
+   keymap-lookup-binding-key
    keymap-print
 
    modal-lookup-state-type?
@@ -919,21 +923,21 @@
 
 
     (define (=>kbd! . syms)
-      ;; This function calls `=>KEYMAP-INDEX!` lens with an arbitrary
+      ;; This function calls `=>keymap-layer-index!` lens with an arbitrary
       ;; number of keyboard modifier and character symbols arguments, and
-      ;; encapsulates the resulting `<COMPOUND-LENS-TYPE>` into a new
-      ;; `<UNIT-LENS-TYPE>.` The `FINAL` argument to `=>KEYMAP-INDEX` is
-      ;; `=>KEYMAP-LAYER-ALT-ACTION`, so the lens constructed by this
+      ;; encapsulates the resulting `<compound-lens-type>` into a new
+      ;; `<unit-lens-type>.` the `final` argument to `=>keymap-layer-index!`
+      ;; is `=>keymap-layer-alt-action`, so the lens constructed by this
       ;; function will always operates on the leaf of the keymap-layer
-      ;; node. The lens constructed in `=>CANONICAL`, so if the
-      ;; `<KEYMAP-LAYER-TYPE>` is updated and becomes empty, the `UPDATE`
-      ;; or `LENS-SET` function returns `#F` instead of an empty
-      ;; `<KEYMAP-LAYER-TYPE>.`
+      ;; node. The lens constructed in `=>canonical`, so if the
+      ;; `<keymap-layer-type>` is updated and becomes empty, the `update`
+      ;; or `lens-set` function returns `#f` instead of an empty
+      ;; `<keymap-layer-type>.`
       ;;------------------------------------------------------------------
       (let ((label (cons '=>kbd syms))
             (=>lens (lens (=>keymap-layer-index! syms)
-                          =>keymap-layer-alt-action))
-            )
+                          =>keymap-layer-alt-action
+                          )))
         (unit-lens
          (lambda (km) (view km =>lens))
          (lambda (km val) (lens-set val km =>lens))
@@ -1031,6 +1035,47 @@
             )
         (if alt (cons (cons #f alt) ht) ht)))
 
+    (define (keymap-layer-assoc-split assoc)
+      ;; Split an association from a key to a binding. The association
+      ;; must be and element from a list of the elements produced by
+      ;; `keymap-layer->alist` Returns two values, the key and the binding.
+      (cond
+       ((null? assoc) (error "not a key->binding association" assoc))
+       (else
+        (let loop ((head (car assoc)) (tail (cdr assoc)) (stack '()))
+          (cond
+           ((null? tail) (values (reverse stack) head))
+           ((not (pair? tail)) (values (reverse (cons head stack)) tail))
+           (else (loop (car tail) (cdr tail) (cons head stack)))
+           )))))
+
+    (define (keymap-layer-lookup-binding-key layer binding)
+      ;; Used by the `[rebind binding]` syntax of `define-key`, looks
+      ;; up a key sequence for a given `binding` in the given
+      ;; `keymap`.  It is sort-of like a reverse lookup, finding a key
+      ;; for a binding in a keymap.
+      ;;--------------------------------------------------------------
+      (let loop ((assocs (keymap-layer->alist layer)))
+        (cond
+         ((null? assocs) #f)
+         (else
+          (let*-values
+              (((assoc) (car assocs))
+               ((key candidate) (keymap-layer-assoc-split assoc))
+               )
+            (cond
+             ((eq? binding candidate) key)
+             (else (loop (cdr assocs)))
+             ))))))
+
+    (define (keymap-lookup-binding-key keymap binding)
+      (let loop ((layers (keymap->layers-list keymap)))
+        (cond
+         ((null? layers) #f)
+         (else
+          (let ((result (keymap-layer-lookup-binding (car layers))))
+            (or result (loop (cdr layers)))
+            )))))
 
     (define (keymap-layer-print km)
       (cond

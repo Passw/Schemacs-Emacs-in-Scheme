@@ -108,9 +108,10 @@
     (only (schemacs elisp-eval format) format format-to-port)
     (only (schemacs keymap)
           keymap  keymap-type?  keymap-layer
-          =>keymap-label!
+          =>keymap-label!  =>kbd!
           =>keymap-layer-index!
           =>keymap-top-layer!
+          keymap-lookup-binding-key
           )
     (only (schemacs match) match)
     )
@@ -498,7 +499,22 @@
             (cond
              ((eq? form #t) (loop result))
              ((or (not form) (eof-object? form)) result)
-             ((elisp-form-type? form) (loop (use-form form)))
+             ((elisp-form-type? form)
+              (when #f  ;; <- set to #t to enable.
+                ;;--------------------------------------------
+                ;; This is a simple debugging aid, it prints
+                ;; the head of each top-level form and it's
+                ;; location as it is being evaluated. It helps
+                ;; to disect where an error occurs in a file.
+                (let ((formlist (elisp-form->list form)))
+                  (write-parser-location form)
+                  (write-char #\space)
+                  (cond
+                   ((null? formlist) (display "()\n"))
+                   (else (display (car formlist))(newline))
+                   )))
+              (loop (use-form form))
+              )
              (else (loop (use-form form)))
              )))
         (cond
@@ -2880,7 +2896,7 @@
         ((elt lst0)
          (let ((on-fail
                 (lambda ()
-                  (eval-error "wrong type argument" "delq" 'expected 'list lst0)
+                  (eval-error "wrong type argument" "delq" '(expecting . "list") lst0)
                   )))
            (let loop ((anchor (drop-while eq? on-fail elt lst0)))
              (cond
@@ -2917,7 +2933,7 @@
                 ((pair? seq)
                  (cons ((scheme-lambda->elisp-lambda func) (car seq))
                        (loop (cdr seq))))
-                (else (eval-error "wrong type argument" "mapcar" 'expected "listp" seq))
+                (else (eval-error "wrong type argument" "mapcar" '(expecting . "listp") seq))
                 )))
             ((elisp-form-type? seq) (loop (elisp-form-tokens seq)))
             ((vector? seq)
@@ -2929,7 +2945,7 @@
                          (loop (+ 1 i))))
                   (else '())
                   ))))
-            (else (eval-error "wrong type argument" "mapcar" '(expected . "listp") seq))
+            (else (eval-error "wrong type argument" "mapcar" '(expecting . "listp") seq))
             )))
         (any (eval-error "wrong number of arguments" "mapcar" (length any) '(expected . 2)))
         ))
@@ -2968,7 +2984,7 @@
                    ((pair? lst) lst)
                    ((null? lst) lst)
                    ((elisp-form-type? lst) (elisp-form->list lst))
-                   (else (eval-error "wrong type argument" 'expected "list" lst))
+                   (else (eval-error "wrong type argument" '(expecting . "list") lst))
                    )))
              (member elt lst compare)
              ))
@@ -2994,7 +3010,7 @@
               (else
                (eval-error
                 "wrong type argument"
-                '(expected . "list") '(got . alist)
+                '(expecting . "list") alist
                 )))))
           (any
            (eval-error
@@ -3093,7 +3109,7 @@
         ((filepath)
          (cond
           ((string? filepath) (elisp-load! filepath (*the-environment*)))
-          (else (eval-error "wrong type argument" filepath 'expecting "string"))
+          (else (eval-error "wrong type argument" filepath '(expecting . "string")))
           ))
         (any
          (eval-error
@@ -3113,33 +3129,84 @@
         (any
          (eval-error
           "wrong number of arguments"
-          "make-keymap" (length any) '(min . 0) '(max . 1)))
-        ))
+          "make-keymap" (length any) '(min . 0) '(max . 1)
+          ))))
 
+    (define (key-syms-elisp->schemacs key)
+      (map
+       (lambda (elem)
+         (cond
+          ((integer? elem) (integer->char elem))
+          ;;TODO: cover all possible elisp keye elements
+          (else elem)
+          ))
+       key
+       ))
+
+    (define (eval-rebind-key keymap key defn)
+      ;; A vector form begining with the symbol 'remap has a special
+      ;; meaning in `define-key`, it tells Emacs to re-define a key
+      ;; binding. This means the function needs to be looked-up in the
+      ;; keymap, and then rebind to the given `KEY` sequence.
+      (let ((key (keymap-lookup-binding-key keymap binding)))
+        (cond
+         (key (lens-set defn keymap (apply =>kbd! key)))
+         (else
+          (eval-error "not a valid key sequence" key)
+          ))))
 
     (define (elisp-define-key . args)
-      (define (define-key keymap key binding remove)
-        (let ((binding (if binding binding nil))
-              (=>lens (lens =>keymap-top-layer! (=>keymap-layer-index! key)))
-              )
+      (define (define-key keymap key defn remove)
+        (let*((defn (if defn defn nil)))
           (cond
            ((not (keymap-type? keymap))
-            (eval-error "wrong type argument" keymap 'expecting "keymapp"))
-           (remove (lens-set #f keymap =>lens))
-           (else (lens-set binding keymap =>lens)))
-          binding
-          ))
+            (eval-error "wrong type argument" keymap '(expecting . "keymap"))
+            )
+           ((vector? key)
+            (cond
+             ;; Vectors starting with the symbol 'rebind are special,
+             ;; they indicate that a new key sequence should be assigned
+             ;; to an existing command in the map which needs to be
+             ;; looked-up and bound to the new sequence.
+             ((and (= 2 (vector-length key))
+                   (eq? 'remap (vector-ref 0 key))
+                   )
+              (eval-rebind-key
+               keymap (key-syms-elisp->schemacs (cdr (vector->list key)))
+               defn remove
+               ))
+             (else
+              ;; Vectors are otherwise are treated as ordinary
+              ;; key sequences
+              (lens-set
+               defn keymap
+               (apply =>kbd! (key-syms-elisp->schemacs (vector->list key)))
+               ))))
+           ((pair? key)
+            (lens-set
+             defn keymap
+             (lens =>keymap-top-layer! (=>keymap-layer-index! key))
+             ))
+           (else
+            (eval-error "not a valid key sequence" key)
+            ))
+          (when remove (lens-set #f keymap =>lens))
+          defn
+          )
+      ;;(display "; define-key ") (write args) (newline);;DEBUG
       (match args
         ((keymap key binding)
-         (define-key keymap key binding #f))
+         (define-key keymap key binding #f)
+         )
         ((keymap key binding remove)
-         (define-key keymap key binding remove))
+         (define-key keymap key binding remove)
+         )
         (any
          (eval-error
           "wrong number of arguments"
           "define-key" (length any)
           '(min . 3) '(max . 4)
-          ))))
+          )))))
 
     (define (elisp-make-vector . args)
       (match args
