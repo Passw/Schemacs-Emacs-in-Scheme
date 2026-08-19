@@ -148,6 +148,12 @@
    *elisp-output-port*
    *elisp-error-port*
 
+   ;; Different interpreters
+   *current-interpreter*
+   new-interpreter
+   ordinary-interpreter
+   tracing-interpreter
+
    ;; Symbol objects
    sym-type?  new-symbol
    =>sym-name  =>sym-value!  =>sym-function!  =>sym-plist!
@@ -1237,6 +1243,22 @@
         (set!interpret-new-frame  i (i-push-stack-frame-eval-body   i))
         i))
 
+    (define tracing-interpreter
+      (let*((i (new-interpreter))
+            (print-eval
+             (lambda (form . args)
+               (write-elisp-form form) (newline)
+               (apply (i-eval-form i) form args)
+               )))
+        (set!interpret-apply      i (i-%elisp-apply                 i))
+        (set!interpret-eval       i print-eval                        )
+        (set!interpret-eval-qq    i (i-eval-backquote               i))
+        (set!interpret-args       i (i-eval-args-list               i))
+        (set!interpret-body       i (i-eval-progn-body              i))
+        (set!interpret-wrap       i (i-scheme-lambda->elisp-lambda  i))
+        (set!interpret-new-frame  i (i-push-stack-frame-eval-body   i))
+        i))
+
     (define *current-interpreter* (make-parameter ordinary-interpreter))
 
     ;;--------------------------------------------------------------------
@@ -1534,8 +1556,8 @@
           ((debugger-state-type? st)
            (%elisp-debug-eval expr st)
            )
-          ((elisp-environment-type? st)
-           (%elisp-debug-eval expr (new-debugger st))
+          ((or (elisp-environment-type? st) (not st))
+           (%elisp-debug-eval expr (or st (new-debugger st)))
            )
           (else
            (error

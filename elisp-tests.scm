@@ -9,6 +9,9 @@
   (only (schemacs elisp-eval)
         elisp-load!
         elisp-eval!
+        *current-interpreter*
+        tracing-interpreter
+        ordinary-interpreter
         )
   )
 
