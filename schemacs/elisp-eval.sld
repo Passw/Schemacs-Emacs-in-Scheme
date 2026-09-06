@@ -173,6 +173,7 @@
    elisp-debug-write-obarray
 
    ;; Debugging
+   new-debugger   call-with-debugger
    elisp-debug-eval  debugger-state-type?
    elisp-debug-step!  elisp-debug-view-step!
    elisp-debug-step-value!
@@ -1418,6 +1419,16 @@
         (set!interpret-new-frame  i (i-push-stack-frame-eval-body i))
         (set!debugger-stepper st #t)
         st))
+
+    (define (call-with-debugger proc debug-state)
+      ;; Evaluate a procedure `PROC` setting the current interpreter state
+      ;; to be the same interpreter used by the `DEBUG-STATE`. The `PROC`
+      ;; should be a procedure that takes no arguments.
+      ;;------------------------------------------------------------------
+      (parameterize
+          ((*current-interpreter* (debugger-interpreter debug-state)))
+        (proc)
+        ))
 
     (define (elisp-debug-step! debug-state)
       ;; Single-step the evaluator in the `DEBUG-STATE`.
@@ -3377,6 +3388,33 @@
           '(max . 1)
           ))))
 
+    (define elisp-system-type
+      (cond-expand
+       (linux        'linux)
+       (gnu/linux    'gnu/linux)
+       (gnu-linux    'gnu-linux)
+       (windows      'windows)
+       (darwin       'darwin)
+       (bsd          'bsd)
+       (unix         'unix)
+       (netbsd       'netbsd)
+       (freebsd      'freebsd)
+       (openbsd      'openbsd)
+       (solaris      'solaris)
+       (opensolaris  'opensolaris)
+       (qnx          'qnx)
+       (freedos      'freedos)
+       (haiku        'haiku)
+       (plan9        'plan9)
+       (os2          'os2)
+       (msdos        'msdos)
+       (cp/m         'cp/m)
+       (cp-m         'cp/m)
+       (macos        'macos)
+       (geos         'geos)
+       (else         'unknown-platform)
+       ))
+
     ;;--------------------------------------------------------------------------------------------------
 
     (define *elisp-init-env*
@@ -3399,6 +3437,7 @@
          ,(new-symbol "after-load-functions" '())
          ,(new-symbol "features" '())
          ,(new-symbol "max-lisp-eval-depth" (*max-lisp-eval-depth*))
+         ,(new-symbol "system-type" elisp-system-type)
 
          (lambda      . ,elisp-lambda)
          (apply       . ,elisp-apply)
