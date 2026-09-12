@@ -30,6 +30,7 @@
     (schemacs bitwise)
     (schemacs string)
     (schemacs vector)
+    (schemacs comparator)
     (schemacs hash-table)
     (schemacs lens)
     (schemacs cursor)

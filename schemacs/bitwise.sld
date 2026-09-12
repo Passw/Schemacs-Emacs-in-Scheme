@@ -17,11 +17,14 @@
     (chez
      (import (srfi 151))
      )
-    ((or chibi stklos (library (srfi 151)))
+    ((or chibi stklos lispkit
+         (library (srfi 151))
+         (library (scheme bitwise))
+         )
      (import
        (only (srfi 151)
              bit-set? copy-bit
-             bitwise-ior  bitwise-and  bitwise-xor
+             bitwise-ior  bitwise-and  bitwise-xor  bitwise-not
              arithmetic-shift
              ))
      (begin
@@ -40,7 +43,7 @@
      ;; Even if you do, Guile does not evaluate "else" condition
      ;; below, although it should. This (guile ...) condition is a
      ;; copy of the (else ...) condition below pasted here since
-     ;; Guile's `COND-EXPAND` implementation seems to be not working
+     ;; Guile's `COND-EXPAND` implementation seems to not be working
      ;; according to spec. The `COND-EXPAND` implementation used in
      ;; `DEFINE-LIBRARY` seems to be broken, but the `COND-EXPAND`
      ;; implementation used elsewhere in Guile works just fine.

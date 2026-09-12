@@ -39,7 +39,7 @@
           *unicode-max-code-point*
           =>lexer-filepath*!
           )
-    (only (schemacs comparator) make-comparator)
+    (only (schemacs comparator) make-comparator make-eq-comparator)
     (only (schemacs hash-table)
           make-hash-table
           hash-table-ref
@@ -223,15 +223,15 @@
 
     (define (%tokenize-decimal-digits buffer st)
       (run-lexer st
-                 (lex-fold-count 0
-                                 (%accum-dec-int buffer st)
-                                 (lambda (accum count)
-                                   (if (> count 0)
-                                       (values accum count)
-                                       (values #f 0)
-                                       ))
-                                 (char char-numeric?)
-                                 )))
+       (lex-fold-count 0
+        (%accum-dec-int buffer st)
+        (lambda (accum count)
+          (if (> count 0)
+              (values accum count)
+              (values #f 0)
+              ))
+        (char char-numeric?)
+        )))
 
     (define (negative i) (- i))
     (define (positive i) i)
@@ -1949,7 +1949,7 @@
         (cond
          (table (hash-table-set! table int-id value))
          (else
-          (let ((table (make-hash-table (make-integer-comparator))))
+          (let ((table (make-hash-table (make-eq-comparator))))
             (set!elisp-parse-backref-dict st table)
             (hash-table-set! table int-id value)
             value
