@@ -59,6 +59,14 @@
           ))
 
   (cond-expand
+   ((not lispkit)
+    (import
+     (only (schemacs comparator)
+           string-hash
+           string-ci-hash
+           ))))
+
+  (cond-expand
    ((and
      (or guile gambit (library (srfi 69)))
      (not (library (srfi 125)))
@@ -180,19 +188,36 @@
 
       ))
 
-   ((library (srfi 125))
+   ((and (library (srfi 125))
+         (library (srfi 128))
+         )
     (import
-     (except (srfi 125)
-             make-hash-table
-             alist->hash-table
-             )
      (rename (srfi 125)
              (make-hash-table    srfi125:make-hash-table)
              (alist->hash-table  srfi125:alist->hash-table)
              )
+     (only (srfi 125)
+           hash-table
+           hash-table-unfold
+           hash-table-empty?
+           hash-table->alist
+           hash-table-keys
+           hash-table-values
+           hash-table-copy
+           hash-table-delete!
+           hash-table-fold
+           hash-table-ref
+           hash-table-ref/default
+           hash-table-set!
+           hash-table-size
+           hash-table-update!
+           hash-table-update!/default
+           hash-table-for-each
+           hash-table-walk
+           hash-table?
+           )
      (only (srfi 128)
            default-hash
-           string-hash  string-ci-hash
            make-default-comparator
            ))
     (begin

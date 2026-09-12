@@ -7,6 +7,7 @@ SCHEME_LIBRARIES := \
   ./schemacs/bitwise.sld \
   ./schemacs/string.sld \
   ./schemacs/vector.sld \
+  ./schemacs/comparator.sld \
   ./schemacs/hash-table.sld \
   ./schemacs/lens.sld \
   ./schemacs/cursor.sld \

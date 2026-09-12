@@ -6,7 +6,7 @@
     (only (schemacs lens) record-unit-lens))
 
   (export
-   <command-type> command-type? make<command> new-command
+   command-type? make<command> new-command
    command-name command-procedure command-doc-string
    run-command apply-command show-command
    =>command-name*!

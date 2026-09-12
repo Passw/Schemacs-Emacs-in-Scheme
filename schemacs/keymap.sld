@@ -793,7 +793,8 @@
       ;; `KEYMAP-LAYER-ALT-ACTION` field of the constructed `<KEYMAP-LAYER-TYPE>`
       ;; value.
       ;; ------------------------------------------------------------------
-      (keymap-layer-update! (lambda (_old new) new) (make<keymap-layer> #f #f) assocs))
+      (keymap-layer-update! (lambda (_old new) new) (make<keymap-layer> #f #f) assocs)
+      )
 
     (define keymap-layer-copy
       ;; Deep-copy the given key map object `KM`. If the object `KM` does
@@ -813,16 +814,20 @@
              (lambda (ct) (char-table-copy ct keymap-layer-copy)))
             (alt-copy (keymap-layer-alt-action km))
             ))
-          (else km)))))
+          (else km)
+          ))))
 
     (define =>keymap-layer-mod-table
-      (record-unit-lens keymap-layer-mod-table set!keymap-layer-mod-table '=>keymap-layer-mod-table))
+      (record-unit-lens keymap-layer-mod-table set!keymap-layer-mod-table '=>keymap-layer-mod-table)
+      )
 
     (define =>keymap-layer-mod-table?
-      (=>canonical =>keymap-layer-mod-table keymap-layer keymap-layer-empty?))
+      (=>canonical =>keymap-layer-mod-table keymap-layer keymap-layer-empty?)
+      )
 
     (define =>keymap-layer-alt-action
-      (record-unit-lens keymap-layer-alt-action set!keymap-layer-alt-action '=>keymap-layer-alt-action))
+      (record-unit-lens keymap-layer-alt-action set!keymap-layer-alt-action '=>keymap-layer-alt-action)
+      )
 
     (define =>keymap-layer-alt-action?
       (=>canonical =>keymap-layer-alt-action keymap-layer keymap-layer-empty?))
@@ -846,19 +851,20 @@
         (lambda (kmix kt head)
           (cons
            (keymap-index->expr (keymap-index-head kmix))
-           (char-table->expr kt)))
-        '())))
-
+           (char-table->expr kt)
+           ))
+        '()
+        )))
 
     (define (map-key syms proc)
-      "Construct an association between a list of symbols passed to
-    ~KEYMAP-INDEX~ to construct a keymap index, and a procedure. A list of
-    these values is used to initialize or update a ~<KEYMAP-LAYER>~.
-
-    The ~PROC~ argument may be a procedure, or it may be another
-    ~<KEYMAP-LAYER>~."
-      (cons (keymap-index syms) proc))
-
+      ;; Construct an association between a list of symbols passed to
+      ;; ~KEYMAP-INDEX~ to construct a keymap index, and a procedure. A list of
+      ;; these values is used to initialize or update a ~<KEYMAP-LAYER>~.
+      ;; 
+      ;; The ~PROC~ argument may be a procedure, or it may be another
+      ;; ~<KEYMAP-LAYER>~.
+      (cons (keymap-index syms) proc)
+      )
 
     (define (default-make-keymap-layer-mod-table)
       ;; This hash table has a size of 7. Any combination of the control
@@ -1060,7 +1066,7 @@
         (cond
          ((null? layers) #f)
          (else
-          (let ((result (keymap-layer-lookup-binding (car layers))))
+          (let ((result (keymap-layer-lookup-binding-key (car layers) binding)))
             (or result (loop (cdr layers)))
             )))))
 

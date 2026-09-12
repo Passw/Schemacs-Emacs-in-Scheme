@@ -43,7 +43,6 @@
           =>canonical  =>view-only-lens  =>encapsulate
           =>hash-key!  =>hash-key*!  =>find
           )
-    (only (schemacs vector) vector-copy)
     (only (schemacs lens vector) mutable-vector-type?)
     (only (schemacs cursor)
           new-cursor  cursor-ref  cursor-step!
@@ -3183,56 +3182,57 @@
        key
        ))
 
-    (define (eval-rebind-key keymap key defn)
+    (define (eval-rebind-key-lens keymap key defn)
       ;; A vector form begining with the symbol 'remap has a special
       ;; meaning in `define-key`, it tells Emacs to re-define a key
       ;; binding. This means the function needs to be looked-up in the
       ;; keymap, and then rebind to the given `KEY` sequence.
-      (let ((key (keymap-lookup-binding-key keymap binding)))
+      (let ((key (keymap-lookup-binding-key keymap defn)))
         (cond
-         (key (lens-set defn keymap (apply =>kbd! key)))
+         (key (apply =>kbd! key))
          (else
           (eval-error "not a valid key sequence" key)
           ))))
 
     (define (elisp-define-key . args)
       (define (define-key keymap key defn remove)
-        (let*((defn (if defn defn nil)))
-          (cond
-           ((not (keymap-type? keymap))
-            (eval-error "wrong type argument" keymap '(expecting . "keymap"))
-            )
-           ((vector? key)
-            (cond
-             ;; Vectors starting with the symbol 'rebind are special,
-             ;; they indicate that a new key sequence should be assigned
-             ;; to an existing command in the map which needs to be
-             ;; looked-up and bound to the new sequence.
-             ((and (= 2 (vector-length key))
-                   (eq? 'remap (vector-ref 0 key))
-                   )
-              (eval-rebind-key
-               keymap (key-syms-elisp->schemacs (cdr (vector->list key)))
-               defn remove
-               ))
-             (else
-              ;; Vectors are otherwise are treated as ordinary
-              ;; key sequences
-              (lens-set
-               defn keymap
-               (apply =>kbd! (key-syms-elisp->schemacs (vector->list key)))
-               ))))
-           ((pair? key)
-            (lens-set
-             defn keymap
-             (lens =>keymap-top-layer! (=>keymap-layer-index! key))
-             ))
-           (else
-            (eval-error "not a valid key sequence" key)
-            ))
+        (let*((defn (if defn defn nil))
+              (=>lens
+               (cond
+                ((not (keymap-type? keymap))
+                 (eval-error "wrong type argument" keymap '(expecting . "keymap"))
+                 )
+                ((vector? key)
+                 (cond
+                  ;; Vectors starting with the symbol 'rebind are special,
+                  ;; they indicate that a new key sequence should be assigned
+                  ;; to an existing command in the map which needs to be
+                  ;; looked-up and bound to the new sequence.
+                  ((and (= 2 (vector-length key))
+                        (eq? 'remap (vector-ref 0 key))
+                        )
+                   (eval-rebind-key-lens
+                    keymap (key-syms-elisp->schemacs (cdr (vector->list key))) defn
+                    ))
+                  (else
+                   ;; Vectors are otherwise are treated as ordinary
+                   ;; key sequences
+                   (apply =>kbd! (key-syms-elisp->schemacs (vector->list key)))
+                   )))
+                ((pair? key)
+                 ;;(lens =>keymap-top-layer! (=>keymap-layer-index! key))
+                 (apply =>kbd! key)
+                 )
+                ((string? key)
+                 (apply =>kbd! (string->list key))
+                 )
+                (else
+                 (eval-error "not a valid key sequence" key)
+                 ))))
+          (lens-set defn keymap =>lens)
           (when remove (lens-set #f keymap =>lens))
           defn
-          )
+          ))
       ;;(display "; define-key ") (write args) (newline);;DEBUG
       (match args
         ((keymap key binding)
@@ -3246,7 +3246,7 @@
           "wrong number of arguments"
           "define-key" (length any)
           '(min . 3) '(max . 4)
-          )))))
+          ))))
 
     (define (elisp-make-vector . args)
       (match args

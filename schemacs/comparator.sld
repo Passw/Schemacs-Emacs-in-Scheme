@@ -47,25 +47,53 @@
    )
 
   (cond-expand
+   ((library (scheme comparator))
+    (import
+     (only (scheme comparator)
+           string-hash
+           string-ci-hash
+           )))
+   ((library (srfi 128))
+    (import
+     (only (srfi 128)
+           string-hash
+           string-ci-hash
+           )))
+   ((library (scheme hash-table))
+    (import
+     (only (scheme hash-table)
+           string-hash
+           string-ci-hash
+           )))
    ((library (srfi 125))
     (import
      (only (srfi 125)
            string-hash
            string-ci-hash
-           )
-     (rename (srfi 125) (hash default-hash))
-     ))
+           )))
    ((library (srfi 69))
     (import
      (only (srfi 69)
            string-hash
            string-ci-hash
-           )
-     (rename (srfi 69)
-             (hash default-hash)
-             )))
-   (else)
-   )
+           ))))
+
+  (cond-expand
+   ((library (scheme comparator))
+    (import (only (scheme comparator) default-hash))
+    )
+   ((library (srfi 128))
+    (import (only (srfi 128) default-hash))
+    )
+   ((library (scheme hash-table))
+    (import (rename (scheme hash-table) (hash default-hash)))
+    )
+   ((library (srfi 125))
+    (import (rename (srfi 125) (hash default-hash)))
+    )
+   ((library (srfi 69))
+    (import (rename (srfi 69) (hash default-hash)))
+    ))
 
   (cond-expand
    ((and
@@ -583,8 +611,11 @@
           ))
 
       ))
+   ((library (scheme comparator))
+    (import (scheme comparator))
+    )
    ((library (srfi 128))
     (import (srfi 128))
-    ))
-
+    )
+   )
   )

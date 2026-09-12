@@ -153,12 +153,13 @@
            (not (library (srfi 4)))
            )
       (import
+       (only (srfi 160)
         s8vector-copy!   u8vector-copy!
         s16-vector-copy! u16vector-copy!
         s32-vector-copy! u32vector-copy!
         s64-vector-copy! u64vector-copy!
         f32-vector-copy! f64vector-copy!
-        )
+        ))
       (export
        s8vector-copy!   u8vector-copy!
        s16-vector-copy! u16vector-copy!
