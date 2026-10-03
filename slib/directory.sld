@@ -108,6 +108,11 @@
                         dir))
           (define list-directory-files directory-list)))
 
+      (gambit
+       (define make-directory create-directory)
+       ;;TODO: define other missing APIs for Gambit
+       )
+
       (kawa
         (import (only (kawa lib files) create-directory path-directory)
                 (only (kawa lib ports) current-path)

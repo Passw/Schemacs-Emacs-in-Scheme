@@ -131,21 +131,35 @@
 
   (gambit
 
-   (for-each module-search-order-add!
-             (map (lambda (lib) (library-id->path lib ".sld"))
-                  library-directories
-                  ))
+   (for-each
+    (lambda (libdir)
+      (let ((libdir-path (library-id->path libdir "/"))
+            (build-path (library-id->path (cons 'build libdir) ""))
+            )
+        (display "; +search ") (write libdir-path) (newline)
+        (module-search-order-add! libdir-path)
+        (with-exception-handler 
+         (lambda _ (values))
+         (lambda _
+           (create-directory build-path)
+           (display "; mkdir ") (write build-path) (newline)
+            ))))
+    library-directories
+    )
 
-   (define (loader lib)
+   (define (compiler lib)
      (let ((src (library-id->path lib ".sld"))
-           (obj (library-id->path lib ""))
+           (obj (library-id->path lib ".o"))
+           (clean (library-id->path (cons 'build lib) ".o"))
            )
        (display "; compile ") (write src) (newline)
-       (compile-file src)
-       (load obj)
-       ))
+       (let ((created (compile-file src 'options: '(obj) 'output: obj)))
+         ;;(display "; created ") (write created) (newline)
+         (load created)
+         (rename-file created clean)
+         )))
 
-   (for-each loader library-list)
+   (for-each compiler library-list)
 
    )
 

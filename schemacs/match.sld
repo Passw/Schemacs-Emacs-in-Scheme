@@ -3,7 +3,7 @@
     (chez (import (chibi match)))
     (chicken (import (matchable)))
     (guile (import (chibi match)))
-    (gambit (import (termite match)))
+    (gambit (import (chibi match)))
     (else (import (chibi match)))
     )
   (export

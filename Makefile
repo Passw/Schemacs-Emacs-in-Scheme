@@ -54,7 +54,7 @@ schemacs-guile: $(SCHEME_LIBRARIES)
 
 
 schemacs-gambit: $(SCHEME_LIBRARIES)
-	gsc -:r7rs . $(SEARCH_PATHS) $(SCHEME_LIBRARIES)
+	gsc -:r7rs -i -e '(load "./build.scm")';
 
 schemacs-stklos: $(SCHEME_LIBRARIES)
 	stklos -l "./build.scm";
